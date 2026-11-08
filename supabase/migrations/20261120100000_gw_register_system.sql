@@ -33,6 +33,10 @@
 
 create extension if not exists pgcrypto with schema extensions;
 
+-- 旧版本（p_access_level smallint）先移除，否则会变成两个同名函数
+drop function if exists public.gw_register_system(text, text, text, text, text, text, smallint, text, text, text, text[], text[]);
+drop function if exists public.gw_register_system(text, text, text, text, text, text, integer, text, text, text, text[], text[], integer);
+
 create or replace function public.gw_register_system(
   p_code          text,
   p_name          text,
@@ -40,7 +44,7 @@ create or replace function public.gw_register_system(
   p_icon          text default 'app-window',
   p_description   text default null,
   p_category      text default null,
-  p_access_level  smallint default 1,
+  p_access_level  integer default 1,
   p_kind          text default 'system',
   p_open_mode     text default 'new_tab',
   p_api_key       text default null,
@@ -121,7 +125,7 @@ begin
 end;
 $$;
 
-revoke all on function public.gw_register_system(text, text, text, text, text, text, smallint, text, text, text, text[], text[], integer)
+revoke all on function public.gw_register_system(text, text, text, text, text, text, integer, text, text, text, text[], text[], integer)
   from public, anon;
-grant execute on function public.gw_register_system(text, text, text, text, text, text, smallint, text, text, text, text[], text[], integer)
+grant execute on function public.gw_register_system(text, text, text, text, text, text, integer, text, text, text, text[], text[], integer)
   to authenticated;

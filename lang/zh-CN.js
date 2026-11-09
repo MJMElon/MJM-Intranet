@@ -12,6 +12,12 @@ window.GW_LANG["zh-CN"] = {
     "settings": "设置",
     "logout": "登出"
   },
+  "unsaved": {
+    "title": "还没存，要离开吗？",
+    "body": "你有还没存的改动。确定要离开？",
+    "leave": "离开",
+    "stay": "继续编辑"
+  },
   "errors": {
     "title": "出了点问题",
     "description": "页面暂时无法载入，请稍后再试。",
@@ -601,10 +607,10 @@ window.GW_LANG["zh-CN"] = {
       "save": "保存"
     },
     "modules": {
+      "editTitleNamed": "编辑「{name}」模块",
       "removeBusiness": "从这个 Business 移除",
       "allCompanies": "这个 Business 的全部 Company",
-      "sectorHint": "一个模块只属于一个 Sector；它开给的每个 Business 都显示在那一栏。",
-      "companyPickHint": "勾这个模块开给哪些 Company。全部不勾 = 这个 Business 的每个 Company 都能用。",
+      "companyPickHint": "勾要开给哪些 Company，再按新增。一个 Company 都没加的 Business = 它的每个 Company 都能用。",
       "deleteTitle": "删除模块",
       "deleteBody": "删除「{name}」？所有人都会失去它的权限，它也会从 Intranet 消失。另一个系统本身不受影响。",
       "noMatch": "没有符合筛选的模块。",
@@ -782,7 +788,6 @@ window.GW_LANG["zh-CN"] = {
     },
     "roles": {
       "manageAccess": "管理用户权限",
-      "manageAccessHint": "有这个角色的人可以把勾选的 Business 的用户加进 Company 和模块、移除，以及设定模块管理员。",
       "description": "角色 = 一组功能，只在你勾选的 Business 和模块内有效。在用户名单把角色给人。",
       "add": "新增角色",
       "addTitle": "新增角色",

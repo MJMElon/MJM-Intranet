@@ -258,14 +258,25 @@ window.GW = (function () {
       document.removeEventListener("keydown", onKey);
       if (opts && opts.onClose) opts.onClose();
     };
+    /* 还没存的改动：点外面 / 叉 / Esc 先问要不要放弃。
+       opts.guard：true = 弹窗里有 input / change 事件就算改过；函数 = 自己判断；false = 不问。
+       没给的话，内容是 <form> 的弹窗自动 true。程式自己叫 close()（例如存好了）不会问。m.touch() 可以手动标成改过。 */
+    const guard = opts && "guard" in opts ? opts.guard : /^\s*<form\b/.test(bodyHtml || "");
+    let touched = false;
+    if (guard === true) ["input", "change"].forEach((ev) => wrap.addEventListener(ev, () => (touched = true)));
+    const isDirty = () => (typeof guard === "function" ? !!guard() : guard === true && touched);
+    const tryClose = async () => {
+      if (isDirty() && !(await confirmDialog(t("unsaved.title"), t("unsaved.body"), t("unsaved.leave"), t("unsaved.stay")))) return;
+      close();
+    };
     // Esc 只关最上面那一个（弹窗叠弹窗时，下面的留着）
-    const onKey = (e) => e.key === "Escape" && [...document.querySelectorAll(".gw-modal")].pop() === wrap && close();
+    const onKey = (e) => e.key === "Escape" && [...document.querySelectorAll(".gw-modal")].pop() === wrap && tryClose();
     document.addEventListener("keydown", onKey);
-    wrap.addEventListener("click", (e) => e.target === wrap && close());
-    wrap.querySelector("[data-close]").addEventListener("click", close);
+    wrap.addEventListener("click", (e) => e.target === wrap && tryClose());
+    wrap.querySelector("[data-close]").addEventListener("click", tryClose);
     document.body.appendChild(wrap);
     refreshIcons();
-    return { el: wrap.querySelector("[data-body]"), close };
+    return { el: wrap.querySelector("[data-body]"), close, touch: () => (touched = true) };
   }
 
   function confirmDialog(title, text, confirmLabel, cancelLabel) {

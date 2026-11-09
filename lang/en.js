@@ -12,6 +12,12 @@ window.GW_LANG["en"] = {
     "settings": "Settings",
     "logout": "Sign out"
   },
+  "unsaved": {
+    "title": "Leave without saving?",
+    "body": "You have changes that are not saved yet. Leave anyway?",
+    "leave": "Leave",
+    "stay": "Keep editing"
+  },
   "errors": {
     "title": "Something went wrong",
     "description": "This page could not be loaded. Please try again later.",
@@ -601,10 +607,10 @@ window.GW_LANG["en"] = {
       "save": "Save"
     },
     "modules": {
+      "editTitleNamed": "Edit “{name}” module",
       "removeBusiness": "Remove from business",
       "allCompanies": "All companies in this business",
-      "sectorHint": "A module belongs to one sector; it shows in that column in every business it is open to.",
-      "companyPickHint": "Tick the companies this module is for. Leave all unticked to open it to every company in the business.",
+      "companyPickHint": "Tick the companies to open this module to, then click Add. A business with no company added is open to every company in it.",
       "deleteTitle": "Delete module",
       "deleteBody": "Delete “{name}”? Everyone loses access to it and it disappears from the Intranet. The other system itself is not touched.",
       "noMatch": "No modules match the filter.",
@@ -782,7 +788,6 @@ window.GW_LANG["en"] = {
     },
     "roles": {
       "manageAccess": "Manage user access",
-      "manageAccessHint": "People with this role can add users of the ticked business to its companies and modules, remove them, and set module admins.",
       "description": "A role is a set of functions, limited to the businesses and modules you tick for it. Give the role to people in the user list.",
       "add": "Add role",
       "addTitle": "Add New Role",

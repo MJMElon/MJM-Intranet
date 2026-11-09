@@ -24,7 +24,7 @@
   const SECTIONS = isSuper
     ? [
         ["userGroup", "users-round", ["users"]],
-        ["master", "database", ["roles", "structure", "connector"]],
+        ["master", "database", ["structure", "roles", "connector"]],
         ["audit", "scroll-text", ["audit"]],
       ]
     : [
@@ -206,7 +206,7 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: true, onClose });
+    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -214,7 +214,8 @@
       sb.from("gw_companies").select("id, name, short_name, code").order("sort_order").order("name"),
       sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
       sb.from("gw_group_modules").select("group_id, module_id"),
-      sb.from("gw_member_companies").select("group_id, company_id, role_id").eq("user_id", uid),
+      // 资料库还没套用「每个 Company 的角色」migration（没有 role_id 栏）的话，退回只读 Company
+      sb.from("gw_member_companies").select("group_id, company_id, role_id").eq("user_id", uid).then((r) => (r.error && /role_id/.test(r.error.message || "") ? sb.from("gw_member_companies").select("group_id, company_id").eq("user_id", uid) : r)),
       sb.from("gw_business_companies").select("group_id, company_id"),
       sb.from("gw_roles").select("id, name").order("sort_order").order("name"),
     ]);
@@ -497,7 +498,8 @@
           const e1 = await ensureMember(gid);
           if (e1) return (fail(e1), paint());
           if (!cur) {
-            const { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
+            let { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
+            if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid })); // 没有 role_id 栏的旧资料库
             if (error) return (fail(error), paint());
             mcs.push({ group_id: gid, company_id: cid, role_id: null });
           }
@@ -877,11 +879,10 @@
           }
         </div>
         <div data-sec="access" class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <div class="mb-1 flex items-center justify-between gap-2">
+          <div class="mb-2 flex items-center justify-between gap-2">
             <p class="text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(tr("manageAccess"))}</p>
             ${readOnly || !groups.length ? "" : `<label class="flex items-center gap-1.5 text-xs text-slate-500"><input type="checkbox" data-all class="size-3.5 accent-emerald-600">${esc(t("admin.modules.tickAll"))}</label>`}
           </div>
-          <p class="mb-2 text-xs text-slate-500">${esc(tr("manageAccessHint"))}</p>
           ${
             groups.length
               ? `<div class="divide-y divide-slate-100 dark:divide-slate-800">${groups
@@ -1512,7 +1513,7 @@
       const opt = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur || "") ? "selected" : ""}>${esc(l)}</option>`).join("");
       let photo = null; // 新选的照片
       const m = modal(
-        mod.name,
+        tmod("editTitleNamed", { name: mod.name }),
         `<form class="space-y-4">
           <div data-err></div>
           <div class="flex items-start gap-4">
@@ -1527,7 +1528,7 @@
               </div>
               ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
-              ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`, tmod("sectorHint")) : ""}
+              ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`) : ""}
               ${isSuper ? `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : ""}
             </div>
           </div>
@@ -1588,29 +1589,33 @@
         refreshIcons();
       }
       paintBiz();
-      // 「+」：勾这个 Business 的 Company（勾 = 这个模块开给这个 Company；一个都不勾 = 全部 Company）
+      // 「+」：勾这个 Business 还没开的 Company，按 Add 加进来（一个都没加 = 这个 Business 全部 Company 都能用）
       function companyPick(g) {
-        const cos = companiesIn(g.id);
+        const cos = companiesIn(g.id).filter((c) => !coOn.has(c.id));
         const pm = modal(
-          t("admin.userWindow.companies", { business: g.name }),
-          `<div class="space-y-2">
+          ts("addCompanyTitle", { name: g.name }),
+          `<div class="space-y-3">
             <p class="text-xs text-slate-500">${esc(tmod("companyPickHint"))}</p>
-            <label class="flex items-center gap-2 px-1 text-xs text-slate-500"><input type="checkbox" data-all class="size-3.5 accent-emerald-600" ${cos.every((c) => coOn.has(c.id)) ? "checked" : ""}>${esc(tmod("tickAll"))}</label>
+            <label class="flex items-center gap-2 px-1 text-xs text-slate-500"><input type="checkbox" data-all class="size-3.5 accent-emerald-600">${esc(tmod("tickAll"))}</label>
             <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${cos
-              .map((c) => `<label class="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm"><input type="checkbox" data-co="${c.id}" ${coOn.has(c.id) ? "checked" : ""} class="size-4 accent-emerald-600"><span class="min-w-0 flex-1 truncate font-medium">${esc(c.name)}</span></label>`)
+              .map((c) => `<label class="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm"><input type="checkbox" data-co="${c.id}" class="size-4 accent-emerald-600"><span class="min-w-0 flex-1 truncate font-medium">${esc(c.name)}</span></label>`)
               .join("")}</div>
+            <div class="flex justify-end"><button type="button" data-add-picked disabled class="${btn("primary")}">${icon("plus")} ${esc(ts("add"))}</button></div>
           </div>`,
-          { onClose: paintBiz },
         );
+        refreshIcons();
+        const picked = () => $$("[data-co]:checked", pm.el);
         pm.el.addEventListener("change", (e) => {
-          const el = e.target;
-          if (el.matches("[data-all]")) {
-            $$("[data-co]", pm.el).forEach((x) => ((x.checked = el.checked), el.checked ? coOn.add(x.dataset.co) : coOn.delete(x.dataset.co)));
-          } else if (el.dataset.co) {
-            el.checked ? coOn.add(el.dataset.co) : coOn.delete(el.dataset.co);
-            $("[data-all]", pm.el).checked = cos.every((c) => coOn.has(c.id));
-          }
+          if (e.target.matches("[data-all]")) $$("[data-co]", pm.el).forEach((x) => (x.checked = e.target.checked));
+          else $("[data-all]", pm.el).checked = $$("[data-co]", pm.el).every((x) => x.checked);
+          $("[data-add-picked]", pm.el).disabled = !picked().length;
         });
+        $("[data-add-picked]", pm.el).onclick = () => {
+          picked().forEach((x) => coOn.add(x.dataset.co));
+          m.touch();
+          pm.close();
+          paintBiz();
+        };
       }
       // 「+ Add business」：列还没开的 Business
       function bizPick() {
@@ -1633,6 +1638,7 @@
           if (!b) return;
           bizOn.add(b.dataset.pickBiz);
           leadOf.set(b.dataset.pickBiz, "");
+          m.touch();
           pm.close();
           paintBiz();
         });
@@ -1654,6 +1660,7 @@
         if ("bizAdd" in d) return bizPick();
         if (d.coAdd) return companyPick(groups.find((g) => g.id === d.coAdd));
         if (d.coOff) coOn.delete(d.coOff);
+        if (d.coOff || d.bizOff) m.touch();
         if (d.bizOff) {
           bizOn.delete(d.bizOff);
           // 这个 Business 的 Company 标签也拿掉（别的还开着的 Business 也有的 Company 留着）

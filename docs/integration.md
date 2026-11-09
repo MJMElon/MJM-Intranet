@@ -64,6 +64,22 @@
 
 如果只想自行验证签名（不经过兑换接口），公钥在 `GET /functions/v1/gw-jwks`。但这样无法保证 Token 只用一次，建议用兑换接口。
 
+## 同步主资料（Business / Company）
+
+接入的系统可以用同一把 API Key 取得 Intranet 的 Business、Company、连结，以及哪些 Company 标签了这个 Icon，
+自己同步到它的资料库（CMMS 2 每次有人从 Intranet 登录时同步一次，也有「Sync from MJM Intranet」按钮）：
+
+```http
+POST /functions/v1/gw-master-data
+x-gw-api-key: gwk_...
+
+{}
+```
+
+回应：`{ module_code, businesses: [{id, name, description, sort_order}], companies: [{id, code, name, short_name, registration_no, description, is_active, sort_order}], links: [{group_id, company_id}], module_company_ids: [...], exported_at }`
+
+Edge Functions 由 GitHub Actions 部署（`.github/workflows/functions.yml`，需要 repo secret `SUPABASE_ACCESS_TOKEN`）。
+
 ## 查询权限
 
 目标系统随时可以确认某人现在还能不能用这个模块（例如每次 session 续期时）：

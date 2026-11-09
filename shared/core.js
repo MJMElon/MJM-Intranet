@@ -263,7 +263,7 @@ window.GW = (function () {
        没给的话，内容是 <form> 的弹窗自动 true。程式自己叫 close()（例如存好了）不会问。m.touch() 可以手动标成改过。 */
     const guard = opts && "guard" in opts ? opts.guard : /^\s*<form\b/.test(bodyHtml || "");
     let touched = false;
-    if (guard === true) ["input", "change"].forEach((ev) => wrap.addEventListener(ev, () => (touched = true)));
+    if (guard === true) ["input", "change"].forEach((ev) => wrap.addEventListener(ev, (e) => e.target.closest && e.target.closest("[data-no-dirty]") ? null : (touched = true)));
     const isDirty = () => (typeof guard === "function" ? !!guard() : guard === true && touched);
     const tryClose = async () => {
       if (isDirty() && !(await confirmDialog(t("unsaved.title"), t("unsaved.body"), t("unsaved.leave"), t("unsaved.stay")))) return;

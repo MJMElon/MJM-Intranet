@@ -832,6 +832,7 @@ window.GW_LANG["en"] = {
       "clear": "Clear all"
     },
     "userWindow": {
+      "companyLimited": "{modules}: limited to certain companies in this business. Add the person to one of those companies first, then the module can be added.",
       "withAccess": "Modules with access",
       "noAccessYet": "No access yet",
       "edit": "Edit access",

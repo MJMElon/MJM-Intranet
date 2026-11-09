@@ -832,6 +832,7 @@ window.GW_LANG["zh-CN"] = {
       "clear": "清除全部"
     },
     "userWindow": {
+      "companyLimited": "{modules}：只开给这个 Business 的某些 Company。先把这个人加进那些 Company，才能加这个模块。",
       "withAccess": "有权限的模块",
       "noAccessYet": "还没开通",
       "edit": "编辑权限",

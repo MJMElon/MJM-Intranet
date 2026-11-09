@@ -245,17 +245,22 @@
     if (opts && opts.edit && (canEditProfile || canRolesAny())) ((editing = true), (draft = mkDraft()));
 
     // 这个 Business 里、这个人能用的模块：标到 Business、启用中；模块有标 Company 的话，这个人要在其中一个 Company
-    function modulesFor(gid) {
-      const myCos = cosIn(gid).map((c) => c.id);
-      return (gxRows || [])
+    // 模块的 Company 标签是全域的：只看属于这个 Business 的 Company 标签；这里一个都没标 = 这个 Business 全部 Company 都能用
+    const linkedMods = (gid) =>
+      (gxRows || [])
         .filter((x) => x.group_id === gid)
         .map((x) => modById.get(x.module_id))
         .filter((mod) => mod && mod.is_active)
-        .filter((mod) => {
-          const tags = ctx ? ctx.coTags.filter((x) => x.module_id === mod.id) : [];
-          return !tags.length || tags.some((x) => myCos.includes(x.company_id));
-        })
         .sort(byModName);
+    const openToHere = (mod, gid) => {
+      const here = cosOfBiz(gid).map((c) => c.id);
+      const tags = ctx ? ctx.coTags.filter((x) => x.module_id === mod.id && here.includes(x.company_id)) : [];
+      if (!tags.length) return true;
+      const myCos = cosIn(gid).map((c) => c.id);
+      return tags.some((x) => myCos.includes(x.company_id));
+    };
+    function modulesFor(gid) {
+      return linkedMods(gid).filter((mod) => openToHere(mod, gid));
     }
     const coLabel = (c) => c.short_name || c.code || c.name;
     const roleOf = (gid, cid) => {
@@ -304,6 +309,8 @@
       const place = editing && canPlace(g.id);
       const mine = list ? list.filter((x) => rowOf(x.id)) : [];
       const addable = list && !superU() ? list.filter((x) => !rowOf(x.id) && ctx.canGrant(u, g.id, x.id)) : [];
+      // 这个 Business 有、但这个人因为不在对的 Company 而拿不到的模块（提示先加 Company）
+      const limited = list && !superU() ? linkedMods(g.id).filter((mod) => !rowOf(mod.id) && !openToHere(mod, g.id)) : [];
       const tile = (mod) => {
         const row = rowOf(mod.id);
         const active = openMod.get(g.id) === mod.id;
@@ -340,6 +347,7 @@
           ${!list ? GW.spinner() : mine.length ? `<div class="flex flex-wrap gap-1.5">${mine.map(tile).join("")}</div>` : `<p class="px-0.5 text-xs text-slate-400">${esc(list.length ? tu("noModules") : tu("noModulesHere"))}</p>`}
           ${openMod.has(g.id) && list && list.some((x) => x.id === openMod.get(g.id)) ? panel(g.id, modById.get(openMod.get(g.id))) : ""}
           ${addable.length ? `<div class="mt-2">${dashedBtn(`data-add-mod="${g.id}"`, ts("addModule"))}</div>` : ""}
+          ${limited.length ? `<p class="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-300">${icon("info", "mt-0.5 size-3.5 shrink-0")}<span>${esc(tu("companyLimited", { modules: limited.map((x) => x.name).join(", ") }))}</span></p>` : ""}
         </div>
       </section>`;
     }
@@ -673,16 +681,19 @@
     const companiesOf = (gid) => companies.filter((c) => links.some((l) => l.group_id === gid && l.company_id === c.id));
     const modById = new Map(mods.map((x) => [x.id, x]));
     // 这个 Business（＋ Company）能用的模块：标到 Business、启用中；模块有标 Company 的话，选的 Company 要在里面
-    const modulesIn = (gid, cid) =>
-      gxRows
+    // 模块的 Company 标签是全域的：只看属于这个 Business 的 Company 标签；这里一个都没标 = 全部 Company 都能用
+    const modulesIn = (gid, cid) => {
+      const here = companiesOf(gid).map((c) => c.id);
+      return gxRows
         .filter((x) => x.group_id === gid)
         .map((x) => modById.get(x.module_id))
         .filter((mod) => mod && mod.is_active !== false)
         .filter((mod) => {
-          const tags = coTags.filter((x) => x.module_id === mod.id);
+          const tags = coTags.filter((x) => x.module_id === mod.id && here.includes(x.company_id));
           return !cid || !tags.length || tags.some((x) => x.company_id === cid);
         })
         .sort(byModName);
+    };
     const hasMod = (u, mid) => isSuperUser(u) || mm.some((r) => r.user_id === u.id && r.module_id === mid);
     const roleName = new Map(roles.map((r) => [r.id, r.name]));
     const roleBadge = (u) => (u.role_id && !isSuperUser(u) ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
@@ -1597,13 +1608,19 @@
       const bizArea = $("[data-biz-area]", m.el);
       const plusBtn = (attrs, label) =>
         `<button type="button" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>`;
-      // 负责人下拉：搜寻框筛名字（现在选的人永远留在选项里）
-      const leadOptions = (gid, q) => {
-        const cur = leadOf.get(gid) || "";
-        const s = q.trim().toLowerCase();
-        const list = people.filter((x) => x.id === cur || !s || (x.full_name || "").toLowerCase().includes(s));
-        return opt([["", "—"], ...list.map((x) => [x.id, x.full_name])], cur);
+      // 负责人：一个搜寻框，打字就列出符合的名字，点一个就选
+      const leadName = (gid) => ((people.find((x) => x.id === leadOf.get(gid)) || {}).full_name || "");
+      const showLeadList = (gid, q) => {
+        const box = $(`[data-lead-list="${gid}"]`, m.el);
+        if (!box) return;
+        const s = (q || "").trim().toLowerCase();
+        const list = people.filter((x) => !s || (x.full_name || "").toLowerCase().includes(s)).slice(0, 30);
+        box.innerHTML = list.length
+          ? list.map((x) => `<button type="button" data-lead-pick="${gid}:${x.id}" class="block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800 ${x.id === leadOf.get(gid) ? "font-semibold text-brand-600" : ""}">${esc(x.full_name)}</button>`).join("")
+          : `<p class="px-2.5 py-1.5 text-sm text-slate-400">${esc(t("admin.users.empty"))}</p>`;
+        box.classList.remove("hidden");
       };
+      const hideLeadLists = () => $$("[data-lead-list]", m.el).forEach((x) => x.classList.add("hidden"));
       function paintBiz() {
         if (!bizArea) return;
         const on = groups.filter((g) => bizOn.has(g.id));
@@ -1613,7 +1630,7 @@
           .map((g) => {
             const cos = companiesIn(g.id);
             const mine = cos.filter((c) => coOn.has(c.id));
-            return `<section data-biz-box="${g.id}" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+            return `<section data-biz-box="${g.id}" class="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
               <header class="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
                 ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
                 <h3 class="min-w-0 flex-1 truncate font-semibold">${esc(g.name)}</h3>
@@ -1627,10 +1644,13 @@
               </div>
               ${
                 sectorsReady
-                  ? `<div class="flex flex-col gap-2 border-t border-slate-100 px-3 py-2 sm:flex-row sm:items-center dark:border-slate-800">
+                  ? `<div class="flex items-center gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
                       <span class="w-24 shrink-0 text-xs text-slate-500">${esc(tmod("lead"))}</span>
-                      <input type="search" data-lead-q="${g.id}" placeholder="${esc(tmod("searchName"))}" class="${cls.input} h-9 sm:w-44">
-                      <select data-lead="${g.id}" class="${cls.input} h-9 min-w-0 flex-1">${leadOptions(g.id, "")}</select>
+                      <div data-lead-box="${g.id}" class="relative min-w-0 flex-1">
+                        <input type="text" data-lead-q="${g.id}" data-no-dirty autocomplete="off" value="${esc(leadName(g.id))}" placeholder="${esc(tmod("searchName"))}" class="${cls.input} h-9 pr-8">
+                        ${leadOf.get(g.id) ? `<button type="button" data-lead-clear="${g.id}" aria-label="${esc(tg("delete"))}" class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-red-600">${icon("x", "size-4")}</button>` : ""}
+                        <div data-lead-list="${g.id}" class="absolute top-full right-0 left-0 z-10 mt-1 hidden max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"></div>
+                      </div>
                     </div>`
                   : ""
               }
@@ -1712,9 +1732,21 @@
           structureTab();
         };
       m.el.addEventListener("click", (e) => {
+        if (!e.target.closest("[data-lead-box]")) hideLeadLists();
         const b = e.target.closest("button[type=button]");
         if (!b || !bizArea || !bizArea.contains(b)) return;
         const d = b.dataset;
+        if (d.leadPick) {
+          const [gid, uid] = d.leadPick.split(":");
+          leadOf.set(gid, uid);
+          m.touch();
+          return paintBiz();
+        }
+        if (d.leadClear) {
+          leadOf.set(d.leadClear, "");
+          m.touch();
+          return paintBiz();
+        }
         if ("bizAdd" in d) return bizPick();
         if (d.coAdd) return companyPick(groups.find((g) => g.id === d.coAdd));
         if (d.coOff) coOn.delete(d.coOff);
@@ -1727,14 +1759,14 @@
         paintBiz();
       });
       m.el.addEventListener("input", (e) => {
-        const el = e.target;
-        if (!el.dataset.leadQ) return;
-        $(`[data-lead="${el.dataset.leadQ}"]`, m.el).innerHTML = leadOptions(el.dataset.leadQ, el.value);
+        if (e.target.dataset.leadQ) showLeadList(e.target.dataset.leadQ, e.target.value);
+      });
+      m.el.addEventListener("focusin", (e) => {
+        if (e.target.dataset.leadQ) ((e.target.select()), showLeadList(e.target.dataset.leadQ, ""));
       });
       m.el.addEventListener("change", (e) => {
         const el = e.target;
-        if (el.dataset.lead) leadOf.set(el.dataset.lead, el.value);
-        else if (el.name === "photo" && el.files[0]) {
+        if (el.name === "photo" && el.files[0]) {
           photo = el.files[0];
           $("[data-preview]", m.el).innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" class="size-20 rounded-xl object-cover">`;
         }

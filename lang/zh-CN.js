@@ -369,6 +369,30 @@ window.GW_LANG["zh-CN"] = {
       "badCode": "代码格式不对，请用 2–20 个大写英文、数字、- 或 _。",
       "name": "Business 名称"
     },
+    "structure": {
+      "hint": "每个 Business 一个方块：上面是它的 Company，下面的模块按 Sector 分栏。把模块拖到别的栏就换 Sector；拖进「其他模块」就从这个 Business 拿掉。",
+      "hintReadOnly": "每个 Business 一个方块：上面是它的 Company，下面的模块按 Sector 分栏。",
+      "addBusiness": "新增 Business",
+      "sectors": "Sector",
+      "noSector": "没有 Sector",
+      "pool": "其他模块",
+      "poolHint": "把模块往上拖进某个 Sector 栏，就加进这个 Business。",
+      "noCompany": "还没有 Company",
+      "addCompany": "加 Company",
+      "addCompanyTitle": "把 Company 加进 {name}",
+      "pickCompany": "现有的 Company",
+      "add": "加入",
+      "or": "或",
+      "newCompany": "新增 Company…",
+      "noneToAdd": "所有 Company 都已经在这个 Business 里了。",
+      "removeTitle": "从 Business 拿掉模块",
+      "removeBody": "把「{module}」从 {business} 拿掉？这个 Business 的人以后就不能被开通这个模块。",
+      "remove": "拿掉",
+      "saved": "已储存",
+      "lead": "负责人：{name}",
+      "sectorsTitle": "Sector",
+      "sectorsHint": "Sector 就是每个 Business 方块里的直栏。拖拉改顺序，直接改字就改名。"
+    },
     "sector": {
       "add": "新增 Sector",
       "addTitle": "新增 Sector",
@@ -478,6 +502,7 @@ window.GW_LANG["zh-CN"] = {
       "access": "模块",
       "roles": "角色",
       "sectors": "Sector",
+      "structure": "Business 与模块",
       "connector": "AI Connector"
     },
     "users": {

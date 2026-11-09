@@ -63,3 +63,14 @@ body.gw-dragging { cursor: grabbing; }
   .gw-jiggle [data-list] > .gw-item, .gw-jiggle .gw-fw-body { animation: none; }
   .gw-jiggle [data-list] > .gw-item > button > .gw-icon, .gw-jiggle .gw-fw-body > div { outline: 2px dashed rgb(100 116 139 / .55); outline-offset: 3px; }
 }
+
+/* Admin Console › Master Manage › Business & Module board：每个 Business 一个直栏方块，里面按 Sector 分栏 */
+.st-biz { width: 100%; }
+.st-sectors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 640px) {
+  .st-biz { width: calc(var(--st-cols, 2) * 12rem + 1.5rem); min-width: 24rem; max-width: 72rem; }
+  .st-sectors { grid-template-columns: repeat(var(--st-cols, 2), minmax(0, 1fr)); }
+}
+.st-drop:empty { border: 1px dashed rgb(203 213 225); }
+.dark .st-drop:empty { border-color: rgb(71 85 105); }
+details[open] > summary .st-chev { transform: rotate(90deg); }

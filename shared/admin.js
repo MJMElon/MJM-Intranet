@@ -24,12 +24,12 @@
   const SECTIONS = isSuper
     ? [
         ["userGroup", "users-round", ["users"]],
-        ["master", "database", ["roles", "business", "company", "sectors", "modules", "connector"]],
+        ["master", "database", ["roles", "structure", "connector"]],
         ["audit", "scroll-text", ["audit"]],
       ]
     : [
         ["userGroup", "users-round", canGroupsPage || canUsersPage || canAccessPage ? ["users"] : []],
-        ...(C.can_edit_module_name ? [["master", "database", ["modules"]]] : []),
+        ...(C.can_edit_module_name ? [["master", "database", ["structure"]]] : []),
         ...(C.can_view_audit ? [["audit", "scroll-text", ["audit"]]] : []),
       ].filter(([, , tabs]) => tabs.length);
   const TABS = SECTIONS.flatMap(([, , tabs]) => tabs);
@@ -1556,98 +1556,6 @@
     };
   }
 
-  // ================================================================ Business（Master Manage；就是群组，决定成员能用哪些 App）
-  async function businessTab() {
-    const seq = routeSeq;
-    const tb = (k, v) => t("admin.business." + k, v);
-    const tg = (k, v) => t("admin.groups." + k, v);
-    const [groups, companies, companyRows] = await Promise.all([
-      sb.from("gw_groups").select("*").order("sort_order").order("name"),
-      sb.from("gw_business_companies").select("group_id, company_id, area, area_unit"),
-      sb.from("gw_companies").select("id, name, code, short_name"),
-    ]).then((r) => r.map((x) => x.data || []));
-    if (stale(seq)) return;
-    const coShort = new Map(companyRows.map((c) => [c.id, c.short_name || c.code || c.name]));
-
-    function draw() {
-      view.innerHTML = `<div class="space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div></div>
-          <button id="biz-add" class="${btn("primary")}">${icon("plus")} ${esc(tb("add"))}</button>
-        </div>
-        ${
-          groups.length
-            ? `<div id="biz-cards" class="${cls.card} divide-y divide-slate-100 dark:divide-slate-800">${groups
-                .map((g) => {
-                  const cos = companies.filter((l) => l.group_id === g.id && coShort.get(l.company_id));
-                  return `<div data-card="${g.id}" class="flex items-center gap-3 px-3 py-3">
-                    ${grip()}
-                    <div class="min-w-0 flex-1">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-semibold">${esc(g.name)}</span>
-                        ${g.code ? `<span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(g.code)}</span>` : badge(t("admin.company.noCode"), "amber")}
-                        ${cos.length ? `<span class="text-sm text-slate-500">: ${cos.map((l) => `<button data-info="${l.company_id}" data-from="${g.id}" class="hover:underline">${esc(coShort.get(l.company_id))}</button>`).join(", ")}</span>` : ""}
-                      </div>
-                      ${g.description ? `<p class="text-xs text-slate-500">${esc(g.description)}</p>` : ""}
-                    </div>
-                    <button data-edit="${g.id}" aria-label="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
-                    <button data-del="${g.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>
-                  </div>`;
-                })
-                .join("")}</div>`
-            : empty(tb("empty"))
-        }
-      </div>`;
-      refreshIcons();
-      sortableCards($("#biz-cards"), "gw_groups", () => toast(t("admin.company.orderSaved")));
-    }
-
-    function dialog(g) {
-      const m = modal(
-        g ? tb("editTitle") : tb("addTitle"),
-        `<form class="space-y-4">
-          <div data-err></div>
-          <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
-            ${field(tb("code"), `<input name="code" required maxlength="20" value="${esc(g ? g.code || "" : "")}" ${g && g.code ? "readonly" : ""} class="${cls.input} font-mono uppercase">`)}
-            ${field(tb("name"), `<input name="name" required value="${esc(g ? g.name : "")}" class="${cls.input}">`)}
-          </div>
-          ${field(tg("descriptionLabel"), `<input name="description" value="${esc(g ? g.description || "" : "")}" class="${cls.input}">`)}
-          <div class="flex justify-end gap-2">
-            <button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button>
-            <button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button>
-          </div>
-        </form>`,
-      );
-      $("[data-cancel]", m.el).onclick = m.close;
-      $("form", m.el).addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const f = e.target;
-        const row = { code: f.code.value.trim().toUpperCase(), name: f.name.value.trim(), description: f.description.value.trim() || null };
-        const { error } = g ? await sb.from("gw_groups").update(row).eq("id", g.id) : await sb.from("gw_groups").insert(row);
-        if (error) return ($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tb("duplicate") : error.code === "23514" ? tb("badCode") : tg("saveFailed")));
-        m.close();
-        businessTab();
-      });
-    }
-
-    view.onclick = async (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      const d = b.dataset;
-      if (b.id === "biz-add") return dialog(null);
-      if (d.info) return companyInfo(d.info, d.from || null);
-      if (d.edit) return dialog(groups.find((x) => x.id === d.edit));
-      if (d.del) {
-        const g = groups.find((x) => x.id === d.del);
-        if (!(await confirmDialog(tb("deleteTitle"), tb("deleteBody", { name: g.name }), tg("delete"), tg("cancel")))) return;
-        const { error } = await sb.from("gw_groups").delete().eq("id", g.id);
-        if (error) setMsg(tg("saveFailed"));
-        return businessTab();
-      }
-    };
-    draw();
-  }
-
   // ---------------------------------------------------------------- Company 资料窗（Company 页、Business 页、群组列表共用）
   /* 永远显示同一组基本资料：名称、代码、说明、注册号码，以及它属于的每个 Business 和面积。
      fromGroupId：从某个 Business 点进来时，那个 Business 当标题、先显示，其他 Business 放后面。 */
@@ -1718,118 +1626,255 @@
   }
   const grip = () => `<span data-grip title="${esc(t("admin.company.dragOrder"))}" class="cursor-grab touch-none rounded p-1 text-slate-300 hover:text-slate-500 active:cursor-grabbing">${icon("grip-vertical", "size-4")}</span>`;
 
-  // ---------------------------------------------------------------- 筛选：小漏斗图示，点开勾选（可多选），Clear all
-  // sections = [{ key, title, items: [{ id, name }] }]；state[key] = Set；变动时 onChange()
-  function filterMenu(sections, state, onChange) {
-    const wrap = document.createElement("div");
-    wrap.className = "relative";
-    let open = false;
-    const total = () => sections.reduce((n, s) => n + state[s.key].size, 0);
-    function paint() {
-      wrap.innerHTML = `<button type="button" data-fbtn aria-label="${esc(t("admin.filter.title"))}" title="${esc(t("admin.filter.title"))}" class="${btn(total() ? "primary" : "secondary", "sm")} relative">${icon("list-filter", "size-4")}${total() ? `<span class="ml-0.5 text-xs">${total()}</span>` : ""}</button>
-        <div data-fpanel class="${open ? "" : "hidden"} absolute right-0 z-30 mt-1 w-72 max-w-[85vw] rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-          <div class="max-h-72 space-y-3 overflow-y-auto">${sections
-            .map(
-              (s) => `<div><p class="mb-1 text-[11px] font-bold tracking-wider text-slate-500 uppercase">${esc(s.title)}</p>
-                ${s.items.length ? s.items.map((x) => `<label class="flex items-center gap-2 py-0.5 text-sm"><input type="checkbox" data-fkey="${s.key}" value="${x.id}" ${state[s.key].has(x.id) ? "checked" : ""} class="size-4 accent-emerald-600"><span class="truncate">${esc(x.name)}</span></label>`).join("") : `<p class="text-xs text-slate-400">—</p>`}
-              </div>`,
-            )
-            .join("")}</div>
-          <button type="button" data-fclear class="${btn("ghost", "sm")} mt-2 w-full">${esc(t("admin.filter.clear"))}</button>
-        </div>`;
-      refreshIcons();
-    }
-    wrap.addEventListener("click", (e) => {
-      if (e.target.closest("[data-fbtn]")) return ((open = !open), paint());
-      if (e.target.closest("[data-fclear]")) {
-        sections.forEach((s) => state[s.key].clear());
-        paint();
-        onChange();
-      }
-    });
-    wrap.addEventListener("change", (e) => {
-      const el = e.target.closest("[data-fkey]");
-      if (!el) return;
-      const set = state[el.dataset.fkey];
-      el.checked ? set.add(el.value) : set.delete(el.value);
-      paint();
-      onChange();
-    });
-    const outside = (e) => {
-      if (!wrap.isConnected) return document.removeEventListener("click", outside);
-      if (open && !e.composedPath().includes(wrap)) ((open = false), paint());
-    };
-    document.addEventListener("click", outside);
-    paint();
-    return wrap;
-  }
-
-  // ================================================================ Company（Master Manage；独立主资料，可以属于多个 Business，对应到现有系统）
-  async function companyTab() {
+  // ================================================================ Business & Module（Master Manage；一页看完 Business → Company → Sector → 模块）
+  /* 每个 Business 一个直栏方块：标题列（名称、代码、改名、删除），底下一排 Company 短名（点开改资料；「+」加 Company），
+     再底下是 Sector 直栏（每个 Sector 一栏，最后一栏「No sector」），模块图示＋名称放在所属的 Sector 栏里；
+     方块最底「Other modules」是还没放进这个 Business 的模块。把模块拖进某一栏 = 加进这个 Business / 换 Sector；
+     拖回「Other modules」= 从这个 Business 拿掉。模块不显示说明文字；点模块图示才开编辑窗。 */
+  async function structureTab() {
     const seq = routeSeq;
+    const ts = (k, v) => t("admin.structure." + k, v);
+    const tb = (k, v) => t("admin.business." + k, v);
     const tc = (k, v) => t("admin.company." + k, v);
+    const tmod = (k, v) => t("admin.modules." + k, v);
+    const tsec = (k, v) => t("admin.sector." + k, v);
     const tg = (k, v) => t("admin.groups." + k, v);
-    const [companies, groups, links, mappings, modules] = await Promise.all([
+    // Sector / 负责人两栏要数据库更新过才有；还没更新时照常显示，只是少了 Sector 直栏
+    const sectorRes = await sb.from("gw_sectors").select("*").order("sort_order").order("name");
+    const sectorsReady = !sectorRes.error;
+    const sectors = sectorsReady ? sectorRes.data || [] : [];
+    const [groups, companies, links, mappings, modules, bizTags, coTags, people] = await Promise.all([
+      sb.from("gw_groups").select("*").order("sort_order").order("name"),
       sb.from("gw_companies").select("*").order("sort_order").order("name"),
-      sb.from("gw_groups").select("id, name").order("sort_order").order("name"),
       sb.from("gw_business_companies").select("group_id, company_id, area, area_unit"),
       sb.from("gw_company_mappings").select("*").order("created_at"),
-      sb.from("gw_modules").select("id, code, name, kind").order("sort_order").order("name"),
+      sb.from("gw_modules").select("*").eq("kind", "system").order("sort_order").order("name"),
+      sb.from("gw_group_modules").select(sectorsReady ? "group_id, module_id, sector_id, lead_user_id" : "group_id, module_id"),
+      sb.from("gw_module_companies").select("module_id, company_id"),
+      sb.from("gw_profiles").select("id, full_name").eq("status", "active").order("full_name"),
     ]).then((r) => r.map((x) => x.data || []));
     if (stale(seq)) return;
+
     const modById = new Map(modules.map((m) => [m.id, m]));
+    const coById = new Map(companies.map((c) => [c.id, c]));
+    const personName = new Map(people.map((x) => [x.id, x.full_name]));
+    const coShort = (c) => c.short_name || c.code || c.name;
     const linksOf = (cid) => links.filter((l) => l.company_id === cid);
-    const gName = new Map(groups.map((g) => [g.id, g.name]));
-    const state = { biz: new Set() };
-    let query = "";
-    let sorter = null;
+    const companiesIn = (gid) =>
+      links
+        .filter((l) => l.group_id === gid && coById.has(l.company_id))
+        .map((l) => coById.get(l.company_id))
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name));
+    const tagOf = (gid, mid) => bizTags.find((x) => x.group_id === gid && x.module_id === mid);
+    const canRename = (mid) => isSuper || (C.can_edit_module_name && (me.roleModules || []).includes(mid));
+    const logo = (m, size) =>
+      m.image_url
+        ? `<img src="${esc(m.image_url)}" alt="" class="${size} shrink-0 rounded-xl object-cover">`
+        : `<span class="flex ${size} shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-700/20 dark:text-brand-100">${moduleIcon(m.icon, "size-5")}</span>`;
+    const openPools = new Set(); // 哪些 Business 的「Other modules」是打开的（重画时保留）
+    const sorters = [];
+    const POOL = "__pool";
 
-    view.innerHTML = `<div class="space-y-4">
-      <div class="flex items-center gap-2">
-        <div class="flex-1"></div>
-        <input id="co-q" type="search" placeholder="${esc(tc("search"))}" class="${cls.input} h-9 min-w-0 sm:w-56">
-        <span id="co-filter"></span>
-        <button id="co-add" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tc("add"))}</button>
-      </div>
-      <div id="co-list"></div>
-    </div>`;
-    refreshIcons();
-    $("#co-filter").replaceWith(filterMenu([{ key: "biz", title: t("admin.tabs.business"), items: groups }], state, drawList));
-    $("#co-q").addEventListener("input", (e) => ((query = e.target.value), drawList()));
-
-    // 一行：拖拉图示、代码、公司名称 : Business
-    function drawList() {
-      if (sorter) sorter.destroy();
-      sorter = null;
-      const q = query.trim().toLowerCase();
-      const list = companies.filter(
-        (c) =>
-          (!q || [c.code, c.name, c.short_name, c.registration_no].filter(Boolean).join(" ").toLowerCase().includes(q)) &&
-          (!state.biz.size || linksOf(c.id).some((l) => state.biz.has(l.group_id))),
-      );
-      $("#co-list").innerHTML = list.length
-        ? `<div id="co-cards" class="${cls.card} divide-y divide-slate-100 dark:divide-slate-800">${list
-            .map((c) => {
-              const bs = linksOf(c.id).filter((l) => gName.has(l.group_id));
-              return `<div data-card="${c.id}" class="flex items-center gap-3 px-3 py-3">
-                ${q || state.biz.size ? "" : grip()}
-                ${c.code ? `<span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(c.code)}</span>` : badge(tc("noCode"), "amber")}
-                <div class="min-w-0 flex-1 truncate">
-                  <button data-info="${c.id}" class="font-semibold hover:underline">${esc(c.name)}</button>${bs.length ? `<span class="text-sm text-slate-500"> : ${bs.map((l) => `<button data-info="${c.id}" data-from="${l.group_id}" class="hover:underline">${esc(gName.get(l.group_id))}</button>`).join(", ")}</span>` : ""}
+    // ---- 一个模块图示（拖拉用；点一下开编辑窗）
+    function tile(g, m) {
+      const tag = g ? tagOf(g.id, m.id) : null;
+      const lead = tag && tag.lead_user_id ? personName.get(tag.lead_user_id) : "";
+      const title = [m.name, lead ? ts("lead", { name: lead }) : ""].filter(Boolean).join(" · ");
+      return `<div data-mod="${m.id}" title="${esc(title)}" class="st-tile group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left select-none dark:border-slate-700 dark:bg-slate-900 ${
+        isSuper ? "cursor-grab active:cursor-grabbing" : ""
+      } ${m.is_active ? "" : "opacity-60"}">
+        ${logo(m, "size-8")}
+        <span class="min-w-0 flex-1 text-xs leading-tight font-medium">${esc(m.name)}</span>
+        ${canRename(m.id) ? `<button data-edit-mod="${m.id}" aria-label="${esc(tmod("edit"))}" title="${esc(tmod("edit"))}" class="shrink-0 rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10">${icon("pencil", "size-3.5")}</button>` : ""}
+      </div>`;
+    }
+    // ---- 一个 Sector 直栏（sid 为空 = No sector）
+    function column(g, sid, label) {
+      const mods = modules.filter((m) => {
+        const tag = tagOf(g.id, m.id);
+        return tag && (sectorsReady ? (tag.sector_id || null) === (sid || null) : true);
+      });
+      return `<div class="flex min-w-0 flex-col rounded-xl bg-slate-50 p-1.5 dark:bg-white/5">
+        <p class="truncate px-1 pb-1.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase" title="${esc(label)}">${esc(label)}</p>
+        <div data-drop="${g.id}" data-sector="${sid || ""}" class="st-drop flex min-h-14 flex-1 flex-col gap-1.5 rounded-lg">${mods.map((m) => tile(g, m)).join("")}</div>
+      </div>`;
+    }
+    // ---- 一个 Business 方块
+    function bizBox(g) {
+      const cos = companiesIn(g.id);
+      const pool = modules.filter((m) => !tagOf(g.id, m.id));
+      const cols = sectorsReady ? [...sectors.map((s) => [s.id, s.name]), ["", ts("noSector")]] : [["", t("admin.tabs.modules")]];
+      return `<section data-card="${g.id}" data-biz="${g.id}" class="st-biz flex shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" style="--st-cols:${cols.length}">
+        <header class="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
+          ${isSuper ? grip() : ""}
+          ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
+          <h3 class="min-w-0 flex-1 truncate font-semibold">${esc(g.name)}</h3>
+          ${g.code ? `<span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(g.code)}</span>` : ""}
+          ${
+            isSuper
+              ? `<button data-edit-biz="${g.id}" aria-label="${esc(tg("edit"))}" title="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
+                 <button data-del-biz="${g.id}" aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>`
+              : ""
+          }
+        </header>
+        <div class="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+          ${icon("building-2", "size-3.5 shrink-0 text-slate-400")}
+          ${cos
+            .map(
+              (c) =>
+                `<button data-co="${c.id}" data-from="${g.id}" title="${esc(c.name)}" class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:bg-white/5 dark:hover:bg-white/10 ${c.is_active ? "" : "line-through opacity-60"}">${esc(coShort(c))}</button>`,
+            )
+            .join("")}
+          ${cos.length ? "" : `<span class="text-xs text-slate-400">${esc(ts("noCompany"))}</span>`}
+          ${isSuper ? `<button data-add-co="${g.id}" aria-label="${esc(ts("addCompany"))}" title="${esc(ts("addCompany"))}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>` : ""}
+        </div>
+        <div class="st-sectors grid flex-1 gap-2 p-3">${cols.map(([sid, label]) => column(g, sid, label)).join("")}</div>
+        ${
+          isSuper
+            ? `<details data-pool="${g.id}" ${openPools.has(g.id) ? "open" : ""} class="border-t border-slate-100 dark:border-slate-800">
+                <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 select-none hover:text-slate-800 dark:hover:text-slate-200">${icon("chevron-right", "st-chev size-3.5 shrink-0 transition-transform")}${esc(ts("pool"))} <span class="text-slate-400">(${pool.length})</span></summary>
+                <div class="px-3 pb-3">
+                  <p class="mb-2 text-[11px] text-slate-400">${esc(ts("poolHint"))}</p>
+                  <div data-drop="${g.id}" data-sector="${POOL}" class="st-drop grid min-h-10 grid-cols-2 gap-1.5 rounded-lg sm:grid-cols-3">${pool.map((m) => tile(null, m)).join("")}</div>
                 </div>
-                <button data-edit="${c.id}" aria-label="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
-              </div>`;
-            })
-            .join("")}</div>`
-        : empty(tc(companies.length ? "noMatch" : "empty"));
-      refreshIcons();
-      if (!q && !state.biz.size) sorter = sortableCards($("#co-cards"), "gw_companies", () => toast(tc("orderSaved")));
+              </details>`
+            : ""
+        }
+      </section>`;
     }
 
-    function dialog(c) {
+    function draw() {
+      sorters.splice(0).forEach((s) => s.destroy());
+      view.innerHTML = `<div class="space-y-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="min-w-0 flex-1 basis-64 text-sm text-slate-500">${esc(isSuper ? ts("hint") : ts("hintReadOnly"))}</p>
+          ${isSuper && sectorsReady ? `<button id="st-sectors" class="${btn("secondary")}">${icon("layers")} ${esc(ts("sectors"))}${sectors.length ? ` <span class="text-slate-400">(${sectors.length})</span>` : ""}</button>` : ""}
+          ${isSuper ? `<button id="st-add-biz" class="${btn("primary")}">${icon("plus")} ${esc(ts("addBusiness"))}</button>` : ""}
+        </div>
+        ${groups.length ? `<div id="st-board" class="st-board flex snap-x gap-4 overflow-x-auto pb-3">${groups.map(bizBox).join("")}</div>` : empty(tb("empty"))}
+        ${!sectorsReady ? `<p class="text-xs text-amber-600">${esc(tsec("notReady"))}</p>` : ""}
+      </div>`;
+      refreshIcons();
+      $$("[data-pool]").forEach((el) => el.addEventListener("toggle", () => (el.open ? openPools.add(el.dataset.pool) : openPools.delete(el.dataset.pool))));
+      if (!isSuper || !window.Sortable) return;
+      // Business 方块左右拖拉排顺序
+      sorters.push(sortableCards($("#st-board"), "gw_groups", () => toast(t("admin.company.orderSaved"))));
+      // 模块只能在同一个 Business 里的栏位之间拖（Sector 栏 ↔ No sector ↔ Other modules）
+      $$("[data-drop]").forEach((list) => {
+        sorters.push(
+          window.Sortable.create(list, {
+            group: "st-" + list.dataset.drop,
+            animation: 150,
+            delay: 120,
+            delayOnTouchOnly: true,
+            filter: "[data-edit-mod]",
+            preventOnFilter: false,
+            ghostClass: "sortable-ghost",
+            onEnd: (evt) => evt.from !== evt.to && moved(evt),
+          }),
+        );
+      });
+    }
+
+    // 模块拖到别的栏位：存进 gw_group_modules
+    async function moved(evt) {
+      const mid = evt.item.dataset.mod;
+      const gid = evt.to.dataset.drop;
+      const from = evt.from.dataset.sector;
+      const to = evt.to.dataset.sector;
+      const g = groups.find((x) => x.id === gid);
+      const m = modById.get(mid);
+      if (!g || !m) return draw();
+      const tag = tagOf(gid, mid);
+      let res;
+      if (to === POOL) {
+        if (!(await confirmDialog(ts("removeTitle"), ts("removeBody", { module: m.name, business: g.name }), ts("remove"), tg("cancel")))) return draw();
+        res = await sb.from("gw_group_modules").delete().eq("group_id", gid).eq("module_id", mid);
+        if (!res.error) bizTags.splice(bizTags.indexOf(tag), 1);
+      } else if (from === POOL || !tag) {
+        const row = { group_id: gid, module_id: mid, ...(sectorsReady ? { sector_id: to || null } : {}) };
+        res = await sb.from("gw_group_modules").insert(row);
+        if (!res.error) bizTags.push(row);
+      } else {
+        res = await sb.from("gw_group_modules").update({ sector_id: to || null }).eq("group_id", gid).eq("module_id", mid);
+        if (!res.error) tag.sector_id = to || null;
+      }
+      if (res.error) setMsg(tg("saveFailed"));
+      else toast(ts("saved"));
+      draw();
+    }
+
+    // ---------------------------------------------------------- Business 新增 / 修改
+    function bizDialog(g) {
+      const m = modal(
+        g ? tb("editTitle") : tb("addTitle"),
+        `<form class="space-y-4">
+          <div data-err></div>
+          <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
+            ${field(tb("code"), `<input name="code" required maxlength="20" value="${esc(g ? g.code || "" : "")}" ${g && g.code ? "readonly" : ""} class="${cls.input} font-mono uppercase">`)}
+            ${field(tb("name"), `<input name="name" required value="${esc(g ? g.name : "")}" class="${cls.input}">`)}
+          </div>
+          ${field(tg("descriptionLabel"), `<input name="description" value="${esc(g ? g.description || "" : "")}" class="${cls.input}">`)}
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button>
+          </div>
+        </form>`,
+      );
+      $("[data-cancel]", m.el).onclick = m.close;
+      $(`[name=${g && g.code ? "name" : "code"}]`, m.el).focus();
+      $("form", m.el).addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const row = { code: f.code.value.trim().toUpperCase(), name: f.name.value.trim(), description: f.description.value.trim() || null };
+        const { error } = g ? await sb.from("gw_groups").update(row).eq("id", g.id) : await sb.from("gw_groups").insert({ ...row, sort_order: groups.length });
+        if (error) return ($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tb("duplicate") : error.code === "23514" ? tb("badCode") : tg("saveFailed")));
+        m.close();
+        structureTab();
+      });
+    }
+
+    // ---------------------------------------------------------- 「+」加 Company 到这个 Business：选现有的，或新增一家
+    function addCompanyDialog(g) {
+      const free = companies.filter((c) => !links.some((l) => l.group_id === g.id && l.company_id === c.id));
+      const m = modal(
+        ts("addCompanyTitle", { name: g.name }),
+        `<div class="space-y-4"><div data-err></div>
+          ${
+            free.length
+              ? `<div class="space-y-1.5"><span class="${cls.label}">${esc(ts("pickCompany"))}</span>
+                  <div class="flex gap-2">${select("pick", free.map((c) => [c.id, (c.code ? c.code + " · " : "") + c.name]), free[0].id)}<button data-pick-add class="${btn("primary")} shrink-0">${esc(ts("add"))}</button></div>
+                </div>
+                <div class="flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span>${esc(ts("or"))}<span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span></div>`
+              : `<p class="text-sm text-slate-500">${esc(ts("noneToAdd"))}</p>`
+          }
+          <button data-new-co class="${btn("secondary")} w-full">${icon("plus")} ${esc(ts("newCompany"))}</button>
+        </div>`,
+      );
+      refreshIcons();
+      const pickBtn = $("[data-pick-add]", m.el);
+      if (pickBtn)
+        pickBtn.onclick = async () => {
+          pickBtn.disabled = true;
+          const cid = $("[name=pick]", m.el).value;
+          const { error } = await sb.from("gw_business_companies").insert({ group_id: g.id, company_id: cid });
+          if (error) return (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), (pickBtn.disabled = false));
+          m.close();
+          toast(ts("saved"));
+          structureTab();
+        };
+      $("[data-new-co]", m.el).onclick = () => {
+        m.close();
+        companyDialog(null, g.id);
+      };
+    }
+
+    // ---------------------------------------------------------- Company 新增 / 修改（含属于哪些 Business、面积、对应到现有系统）
+    function companyDialog(c, presetGroupId) {
       const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "" };
       const mine = c ? linksOf(c.id) : [];
       const link = (gid) => mine.find((l) => l.group_id === gid);
+      const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
       const m = modal(
         c ? tc("editTitle") : tc("addTitle"),
         `<form class="space-y-4"><div data-err></div>
@@ -1847,9 +1892,10 @@
                 ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${groups
                     .map((g) => {
                       const l = link(g.id);
+                      const on = ticked(g.id);
                       return `<div class="flex flex-wrap items-center gap-3 px-3 py-2">
-                        <label class="flex min-w-0 flex-1 items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${l ? "checked" : ""} class="size-4 accent-emerald-600"><span class="truncate font-medium">${esc(g.name)}</span></label>
-                        <span data-area-box="${g.id}" class="${l ? "flex" : "hidden"} items-center gap-1.5">
+                        <label class="flex min-w-0 flex-1 items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${on ? "checked" : ""} class="size-4 accent-emerald-600"><span class="truncate font-medium">${esc(g.name)}</span></label>
+                        <span data-area-box="${g.id}" class="${on ? "flex" : "hidden"} items-center gap-1.5">
                           <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="${esc(tc("area"))}" aria-label="${esc(tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 w-32">
                           <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
                         </span>
@@ -1869,6 +1915,7 @@
       );
       refreshIcons();
       $("[data-cancel]", m.el).onclick = m.close;
+      $(`[name=${c && c.code ? "name" : "code"}]`, m.el).focus();
       // 勾了 Business 才出现面积栏
       m.el.addEventListener("change", (e) => {
         const b = e.target.closest("input[data-biz]");
@@ -1939,7 +1986,7 @@
           const { error } = await sb.from("gw_companies").delete().eq("id", c.id);
           if (error) return ($("[data-err]", m.el).innerHTML = alertBox(tc("inUse")));
           m.close();
-          companyTab();
+          structureTab();
         };
       }
 
@@ -1963,7 +2010,6 @@
         // Business 连结 + 面积：勾的新增 / 更新，没勾的拿掉（拿掉前先确认有没有人放在里面）
         const want = $$("[data-biz]", m.el).filter((x) => x.checked).map((x) => x.dataset.biz);
         const drop = mine.filter((l) => !want.includes(l.group_id)).map((l) => l.group_id);
-        // 只写有变动的：新勾的、面积改了的、取消勾的
         const rows = want
           .map((gid) => {
             const a = $(`[data-area="${gid}"]`, m.el).value;
@@ -1983,114 +2029,14 @@
         ]);
         if (r1.error || r2.error) return fail(r1.error || r2.error);
         m.close();
-        companyTab();
+        structureTab();
       });
     }
 
-    view.onclick = (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      const d = b.dataset;
-      if (b.id === "co-add") return dialog(null);
-      if (d.info) return companyInfo(d.info, d.from || null);
-      if (d.edit) return dialog(companies.find((x) => x.id === d.edit));
-    };
-    drawList();
-  }
-
-  // ================================================================ Module（Master Manage；只列 MJM Intranet 旗下的系统模块）
-  /* 系统模块由开发时登录（例如 Diesel），这里不输入网址。
-     可以改：名称、说明、照片、Business 标签（勾了 Business 才出现它的 Company 标签）。
-     外部网站的连结图示改由用户自己在主画面「Add Icon」加。 */
-  async function modulesTab() {
-    const seq = routeSeq;
-    const tmod = (k, v) => t("admin.modules." + k, v);
-    // Sector / 负责人两栏要数据库更新过才有；还没更新时照常显示，只是没有这两项
-    const [sectorRes, tagRes] = await Promise.all([sb.from("gw_sectors").select("id, name").order("sort_order").order("name"), sb.from("gw_group_modules").select("group_id, module_id, sector_id, lead_user_id")]);
-    const sectorsReady = !sectorRes.error && !tagRes.error;
-    const sectors = sectorsReady ? sectorRes.data || [] : [];
-    const [modules, groups, companies, bizTags, coTags, bizCo, people] = await Promise.all([
-      sb.from("gw_modules").select("*").eq("kind", "system").order("sort_order").order("name").then((r) => r.data || []),
-      sb.from("gw_groups").select("id, name").order("sort_order").order("name").then((r) => r.data || []),
-      sb.from("gw_companies").select("id, code, name").order("sort_order").order("name").then((r) => r.data || []),
-      sectorsReady ? Promise.resolve(tagRes.data || []) : sb.from("gw_group_modules").select("group_id, module_id").then((r) => r.data || []),
-      sb.from("gw_module_companies").select("module_id, company_id").then((r) => r.data || []),
-      sb.from("gw_business_companies").select("group_id, company_id").then((r) => r.data || []),
-      sb.from("gw_profiles").select("id, full_name").eq("status", "active").order("full_name").then((r) => r.data || []),
-    ]);
-    if (stale(seq)) return;
-    const sectorName = new Map(sectors.map((x) => [x.id, x.name]));
-    const personName = new Map(people.map((x) => [x.id, x.full_name]));
-    const groupName = new Map(groups.map((g) => [g.id, g.name]));
-    const companyName = new Map(companies.map((c) => [c.id, c.code || c.name]));
-    const companiesIn = (gid) => companies.filter((c) => bizCo.some((l) => l.group_id === gid && l.company_id === c.id));
-    const canRename = (mid) => isSuper || (C.can_edit_module_name && (me.roleModules || []).includes(mid));
-    const tagsOf = (mid) => [
-      ...bizTags.filter((x) => x.module_id === mid).map((x) => badge(groupName.get(x.group_id) || "—", "blue")),
-      ...coTags.filter((x) => x.module_id === mid).map((x) => badge(companyName.get(x.company_id) || "—")),
-    ];
-    const logo = (m, size) =>
-      m.image_url
-        ? `<img src="${esc(m.image_url)}" alt="" class="${size} shrink-0 rounded-xl object-cover">`
-        : `<span class="flex ${size} shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-700/20 dark:text-brand-100">${moduleIcon(m.icon, "size-5")}</span>`;
-
-    const state = { biz: new Set(), co: new Set(), sector: new Set() };
-    view.innerHTML = `<div class="space-y-4">
-      <div class="flex items-center justify-end"><span id="mod-filter"></span></div>
-      <div id="mod-list"></div>
-    </div>`;
-    $("#mod-filter").replaceWith(
-      filterMenu(
-        [
-          { key: "biz", title: t("admin.tabs.business"), items: groups },
-          { key: "co", title: t("admin.tabs.company"), items: companies.map((c) => ({ id: c.id, name: (c.code ? c.code + " · " : "") + c.name })) },
-          ...(sectorsReady ? [{ key: "sector", title: t("admin.tabs.sectors"), items: sectors }] : []),
-        ],
-        state,
-        drawList,
-      ),
-    );
-    // 一行 = 一个 Business × 一个模块：最左边 Business 标签，然后模块名称，右边是 Sector，再来是主要负责人
-    function drawList() {
-      const rows = [];
-      groups.forEach((g) =>
-        modules.forEach((m) => {
-          const bt = bizTags.find((x) => x.group_id === g.id && x.module_id === m.id);
-          if (bt) rows.push({ g, m, bt });
-        }),
-      );
-      modules.filter((m) => !bizTags.some((x) => x.module_id === m.id)).forEach((m) => rows.push({ g: null, m, bt: null }));
-      const list = rows.filter(
-        ({ g, m, bt }) =>
-          (!state.biz.size || (g && state.biz.has(g.id))) &&
-          (!state.co.size || coTags.some((x) => x.module_id === m.id && state.co.has(x.company_id))) &&
-          (!state.sector.size || (bt && bt.sector_id && state.sector.has(bt.sector_id))),
-      );
-      $("#mod-list").innerHTML = list.length
-        ? `<div class="${cls.card} divide-y divide-slate-200 dark:divide-slate-800">${list
-            .map(({ g, m, bt }) => {
-              const sec = bt && bt.sector_id ? sectorName.get(bt.sector_id) : "";
-              const lead = bt && bt.lead_user_id ? personName.get(bt.lead_user_id) : "";
-              return `<div data-row class="flex flex-wrap items-center gap-x-3 gap-y-1.5 p-3 ${m.is_active ? "" : "opacity-60"}">
-                <span class="w-32 shrink-0">${g ? badge(g.name, "blue") : badge(tmod("noBusiness"), "amber")}</span>
-                ${logo(m, "size-10")}
-                <div class="min-w-0 flex-1 basis-40">
-                  <p class="truncate"><span class="font-medium">${esc(m.name)}</span>${m.description ? `<span class="text-sm text-slate-500"> : ${esc(m.description)}</span>` : ""}</p>
-                </div>
-                <span class="w-28 shrink-0">${sec ? badge(sec, "amber") : `<span class="text-xs text-slate-400">—</span>`}</span>
-                <span class="flex w-36 shrink-0 items-center gap-1 truncate text-sm ${lead ? "" : "text-slate-400"}" title="${esc(tmod("lead"))}">${icon("user-round", "size-3.5 shrink-0")}<span class="truncate">${esc(lead || "—")}</span></span>
-                ${canRename(m.id) ? `<button data-edit="${m.id}" aria-label="${esc(tmod("edit"))}" title="${esc(tmod("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>` : ""}
-              </div>`;
-            })
-            .join("")}</div>`
-        : empty(tmod(modules.length ? "noMatch" : "empty"));
-      refreshIcons();
-    }
-    drawList();
-
-    function dialog(mod) {
+    // ---------------------------------------------------------- 模块编辑窗（名称、说明、照片、停用、Business 标签 + Sector + 负责人、Company 标签）
+    function moduleDialog(mod) {
       const bizOn = new Set(bizTags.filter((x) => x.module_id === mod.id).map((x) => x.group_id));
-      const tagOf = (gid) => bizTags.find((x) => x.module_id === mod.id && x.group_id === gid) || {};
+      const tagIn = (gid) => tagOf(gid, mod.id) || {};
       const opt = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur || "") ? "selected" : ""}>${esc(l)}</option>`).join("");
       const coOn = new Set(coTags.filter((x) => x.module_id === mod.id).map((x) => x.company_id));
       let photo = null; // 新选的照片
@@ -2127,8 +2073,8 @@
                               ${
                                 sectorsReady
                                   ? `<div data-meta="${g.id}" class="mt-2 ml-6 grid gap-2 sm:grid-cols-2 ${bizOn.has(g.id) ? "" : "hidden"}">
-                                      <label class="block space-y-1"><span class="text-xs text-slate-500">${esc(tmod("sector"))}</span><select data-sector="${g.id}" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], tagOf(g.id).sector_id)}</select></label>
-                                      <label class="block space-y-1"><span class="text-xs text-slate-500">${esc(tmod("lead"))}</span><select data-lead="${g.id}" class="${cls.input}">${opt([["", "—"], ...people.map((x) => [x.id, x.full_name])], tagOf(g.id).lead_user_id)}</select></label>
+                                      <label class="block space-y-1"><span class="text-xs text-slate-500">${esc(tmod("sector"))}</span><select data-sector="${g.id}" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], tagIn(g.id).sector_id)}</select></label>
+                                      <label class="block space-y-1"><span class="text-xs text-slate-500">${esc(tmod("lead"))}</span><select data-lead="${g.id}" class="${cls.input}">${opt([["", "—"], ...people.map((x) => [x.id, x.full_name])], tagIn(g.id).lead_user_id)}</select></label>
                                     </div>`
                                   : ""
                               }
@@ -2227,7 +2173,7 @@
           if (sectorsReady)
             for (const gid of [...want].filter((x) => bizOn.has(x))) {
               const now = metaOf(gid);
-              const was = tagOf(gid);
+              const was = tagIn(gid);
               if ((was.sector_id || null) === now.sector_id && (was.lead_user_id || null) === now.lead_user_id) continue;
               const { error } = await sb.from("gw_group_modules").update(now).eq("module_id", mod.id).eq("group_id", gid);
               if (error) return err("saveFailed");
@@ -2236,86 +2182,113 @@
           if (tagError) return err("saveFailed");
         }
         m.close();
-        modulesTab();
+        structureTab();
       });
     }
 
-    view.onclick = (e) => {
-      const b = e.target.closest("[data-edit]");
-      if (b) dialog(modules.find((x) => x.id === b.dataset.edit));
-    };
-    refreshIcons();
-  }
-
-  // ================================================================ Sector（Master Manage；预设清单，例如 Operation、Admin、Account）
-  async function sectorsTab() {
-    const seq = routeSeq;
-    const ts = (k, v) => t("admin.sector." + k, v);
-    const tg = (k, v) => t("admin.groups." + k, v);
-    const res = await sb.from("gw_sectors").select("*").order("sort_order").order("name");
-    if (stale(seq)) return;
-    if (res.error) return (view.innerHTML = empty(ts("notReady")));
-    const list = res.data || [];
-    const used = await sb.from("gw_group_modules").select("sector_id").not("sector_id", "is", null);
-    const countOf = (id) => (used.data || []).filter((x) => x.sector_id === id).length;
-
-    view.innerHTML = `<div class="space-y-4">
-      <div class="flex items-center justify-end"><button id="sec-add" class="${btn("primary")}">${icon("plus")} ${esc(ts("add"))}</button></div>
-      ${
-        list.length
-          ? `<div id="sec-cards" class="${cls.card} divide-y divide-slate-100 dark:divide-slate-800">${list
+    // ---------------------------------------------------------- Sector 管理窗：一列一个（拖拉排顺序、改名、删除），底下新增
+    function sectorsDialog() {
+      const list = sectors.slice();
+      const usedCount = (sid) => bizTags.filter((x) => x.sector_id === sid).length;
+      let changed = false;
+      const m = modal(
+        ts("sectorsTitle"),
+        `<div class="space-y-4">
+          <p class="text-sm text-slate-500">${esc(ts("sectorsHint"))}</p>
+          <div data-err></div>
+          <div data-sec-list class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800"></div>
+          <form data-sec-add class="flex gap-2">
+            <input name="name" required maxlength="40" placeholder="${esc(tsec("placeholder"))}" class="${cls.input} min-w-0 flex-1">
+            <button type="submit" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tsec("add"))}</button>
+          </form>
+          <div class="flex justify-end"><button data-done class="${btn("secondary")}">${esc(t("admin.users.done"))}</button></div>
+        </div>`,
+        { onClose: () => changed && structureTab() },
+      );
+      const box = $("[data-sec-list]", m.el);
+      let sorter = null;
+      const paint = () => {
+        if (sorter) sorter.destroy();
+        box.innerHTML = list.length
+          ? list
               .map(
-                (x) => `<div data-card="${x.id}" class="flex items-center gap-3 px-3 py-3">
+                (x) => `<div data-card="${x.id}" class="flex items-center gap-2 px-2 py-1.5">
                   ${grip()}
-                  <span class="min-w-0 flex-1 truncate font-semibold">${esc(x.name)}</span>
-                  <span class="text-xs text-slate-400">${esc(ts("used", { count: countOf(x.id) }))}</span>
-                  <button data-edit="${x.id}" aria-label="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
-                  <button data-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>
+                  <input data-sec-name="${x.id}" value="${esc(x.name)}" maxlength="40" aria-label="${esc(tsec("name"))}" class="${cls.input} h-9 min-w-0 flex-1">
+                  <span class="w-20 shrink-0 text-right text-xs text-slate-400">${esc(tsec("used", { count: usedCount(x.id) }))}</span>
+                  <button data-sec-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>
                 </div>`,
               )
-              .join("")}</div>`
-          : empty(ts("empty"))
-      }
-    </div>`;
-    refreshIcons();
-    sortableCards($("#sec-cards"), "gw_sectors", () => toast(t("admin.company.orderSaved")));
-
-    function dialog(x) {
-      const m = modal(
-        x ? ts("editTitle") : ts("addTitle"),
-        `<form class="space-y-4">
-          <div data-err></div>
-          ${field(ts("name"), `<input name="name" required maxlength="40" value="${esc(x ? x.name : "")}" placeholder="${esc(ts("placeholder"))}" class="${cls.input}">`)}
-          <div class="flex justify-end gap-2">
-            <button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button>
-            <button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button>
-          </div>
-        </form>`,
-      );
-      $("[data-cancel]", m.el).onclick = m.close;
-      $("[name=name]", m.el).focus();
-      $("form", m.el).addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const name = e.target.name.value.trim();
-        const { error } = x ? await sb.from("gw_sectors").update({ name }).eq("id", x.id) : await sb.from("gw_sectors").insert({ name, sort_order: list.length });
-        if (error) return ($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? ts("duplicate") : tg("saveFailed")));
-        m.close();
-        sectorsTab();
+              .join("")
+          : `<p class="px-3 py-4 text-center text-sm text-slate-400">${esc(tsec("empty"))}</p>`;
+        refreshIcons();
+        sorter = sortableCards(box, "gw_sectors", () => ((changed = true), toast(t("admin.company.orderSaved"))));
+      };
+      paint();
+      const showErr = (error) => ($("[data-err]", m.el).innerHTML = error ? alertBox(error.code === "23505" ? tsec("duplicate") : tg("saveFailed")) : "");
+      // 改名：离开栏位或按 Enter 就存
+      const rename = async (input) => {
+        const x = list.find((y) => y.id === input.dataset.secName);
+        const name = input.value.trim();
+        if (!x || !name || name === x.name) return (input.value = x ? x.name : "");
+        const { error } = await sb.from("gw_sectors").update({ name }).eq("id", x.id);
+        if (error) return (showErr(error), (input.value = x.name));
+        x.name = name;
+        changed = true;
+        showErr(null);
+        toast(ts("saved"));
+      };
+      box.addEventListener("focusout", (e) => e.target.matches("[data-sec-name]") && rename(e.target));
+      box.addEventListener("keydown", (e) => e.key === "Enter" && e.target.matches("[data-sec-name]") && (e.preventDefault(), e.target.blur()));
+      box.addEventListener("click", async (e) => {
+        const b = e.target.closest("[data-sec-del]");
+        if (!b) return;
+        const x = list.find((y) => y.id === b.dataset.secDel);
+        if (!(await confirmDialog(tsec("deleteTitle"), tsec("deleteBody", { name: x.name }), tg("delete"), tg("cancel")))) return;
+        const { error } = await sb.from("gw_sectors").delete().eq("id", x.id);
+        if (error) return showErr(error);
+        list.splice(list.indexOf(x), 1);
+        changed = true;
+        paint();
       });
+      $("[data-sec-add]", m.el).addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = e.target.name;
+        const name = input.value.trim();
+        if (!name) return;
+        const { data, error } = await sb.from("gw_sectors").insert({ name, sort_order: list.length }).select().single();
+        if (error) return showErr(error);
+        list.push(data);
+        changed = true;
+        input.value = "";
+        showErr(null);
+        paint();
+        input.focus();
+      });
+      $("[data-done]", m.el).onclick = m.close;
+      $("[name=name]", $("[data-sec-add]", m.el)).focus();
     }
 
     view.onclick = async (e) => {
-      const b = e.target.closest("button");
+      const b = e.target.closest("button, [data-mod]");
       if (!b) return;
-      if (b.id === "sec-add") return dialog(null);
-      const x = list.find((y) => y.id === (b.dataset.edit || b.dataset.del));
-      if (!x) return;
-      if (b.dataset.edit) return dialog(x);
-      if (!(await confirmDialog(ts("deleteTitle"), ts("deleteBody", { name: x.name }), tg("delete"), tg("cancel")))) return;
-      const { error } = await sb.from("gw_sectors").delete().eq("id", x.id);
-      if (error) setMsg(tg("saveFailed"));
-      sectorsTab();
+      const d = b.dataset;
+      if (b.id === "st-add-biz") return bizDialog(null);
+      if (b.id === "st-sectors") return sectorsDialog();
+      if (d.editBiz) return bizDialog(groups.find((x) => x.id === d.editBiz));
+      if (d.delBiz) {
+        const g = groups.find((x) => x.id === d.delBiz);
+        if (!(await confirmDialog(tb("deleteTitle"), tb("deleteBody", { name: g.name }), tg("delete"), tg("cancel")))) return;
+        const { error } = await sb.from("gw_groups").delete().eq("id", g.id);
+        if (error) setMsg(tg("saveFailed"));
+        return structureTab();
+      }
+      if (d.addCo) return addCompanyDialog(groups.find((x) => x.id === d.addCo));
+      if (d.co) return isSuper ? companyDialog(coById.get(d.co)) : companyInfo(d.co, d.from || null);
+      if (d.editMod) return canRename(d.editMod) && moduleDialog(modById.get(d.editMod));
+      if (d.mod) return canRename(d.mod) && moduleDialog(modById.get(d.mod));
     };
+    draw();
   }
 
   // ================================================================ AI Connector（Master）：全站开关 + 全部链接
@@ -2501,7 +2474,9 @@
 
   // ================================================================ 以此人身份预览（只读）
   // ---------------------------------------------------------------- 分页切换（#users、#groups …）
-  const HANDLERS = { users: usersScreen, roles: rolesTab, business: businessTab, company: companyTab, sectors: sectorsTab, modules: modulesTab, connector: connectorTab, audit: auditTab };
+  const HANDLERS = { users: usersScreen, roles: rolesTab, structure: structureTab, connector: connectorTab, audit: auditTab };
+  // 旧书签（#business、#company、#sectors、#modules）都进同一页
+  const LEGACY_HASH = { business: "structure", company: "structure", sectors: "structure", modules: "structure" };
   /* 上面的大按钮（User & Group Manage / Master Manage / Audit Log）：永远一排、位置固定不换。
        当前的大而深色，其他的小而淡；点别的就互换样式（CSS 过渡）。手机上小的只显示图示。 */
   function paintSections(activeKey) {
@@ -2525,7 +2500,7 @@
     view.onchange = null;
     view.oninput = null;
     setMsg("");
-    const name0 = hash.split("=")[0];
+    const name0 = LEGACY_HASH[hash.split("=")[0]] || hash.split("=")[0];
     // #groups / #access 是 Users 画面里的切换
     const name = VIEW_OF_HASH[name0] ? "users" : name0;
     const active = HANDLERS[name] && TABS.includes(name) ? name : TABS[0];

@@ -369,6 +369,30 @@ window.GW_LANG["en"] = {
       "badCode": "Invalid code. Use 2–20 capital letters, numbers, - or _.",
       "name": "Business Name"
     },
+    "structure": {
+      "hint": "One box per business: its companies on top, its modules sorted into sector columns below. Drag a module between columns to change its sector, or into “Other modules” to take it out of the business.",
+      "hintReadOnly": "One box per business: its companies on top, its modules sorted into sector columns below.",
+      "addBusiness": "Add business",
+      "sectors": "Sectors",
+      "noSector": "No sector",
+      "pool": "Other modules",
+      "poolHint": "Drag a module up into a sector column to add it to this business.",
+      "noCompany": "No company yet",
+      "addCompany": "Add company",
+      "addCompanyTitle": "Add company to {name}",
+      "pickCompany": "Existing company",
+      "add": "Add",
+      "or": "or",
+      "newCompany": "New company…",
+      "noneToAdd": "Every company is already in this business.",
+      "removeTitle": "Remove module from business",
+      "removeBody": "Take “{module}” out of {business}? People in this business can no longer be given access to it.",
+      "remove": "Remove",
+      "saved": "Saved",
+      "lead": "Lead: {name}",
+      "sectorsTitle": "Sectors",
+      "sectorsHint": "Sectors are the columns inside every business box. Drag to reorder, type to rename."
+    },
     "sector": {
       "add": "Add sector",
       "addTitle": "Add New Sector",
@@ -478,6 +502,7 @@ window.GW_LANG["en"] = {
       "access": "Modules",
       "roles": "Role",
       "sectors": "Sector",
+      "structure": "Business & Module",
       "connector": "AI Connector"
     },
     "users": {

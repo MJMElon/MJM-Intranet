@@ -245,7 +245,7 @@
         (me.adminModuleIds || []).some((mid) => (gxRows || []).some((g) => mems.includes(g.group_id) && g.module_id === mid)));
     const canEditProfile = isSuper; // 改名字 / Super Admin
     const canRolesFor = (gid) => isSuper || me.bizCan(gid, "can_add_business_user");
-    const canPlace = (gid) => canRolesFor(gid) && !superU() && u.id !== me.id; // 改这个 Business 的成员 / Company / 角色
+    const canPlace = (gid) => isSuper || (canRolesFor(gid) && !superU() && u.id !== me.id); // 改这个 Business 的成员 / Company / 角色（规则同数据库）
     const canRolesAny = () => isSuper || (groups || []).some((g) => canRolesFor(g.id));
     const addableBiz = () => (groups || []).filter((g) => !mems.includes(g.id) && canPlace(g.id));
     let ctx = null; // loadAccess()：权限规则 + 模块 × Company 标签
@@ -347,23 +347,25 @@
       const bl = bizList();
       const superPart = editing
         ? isSuper
-          ? `<label class="flex shrink-0 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium dark:border-slate-700 ${u.id === me.id ? "opacity-60" : "cursor-pointer"}">
+          ? `<label class="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium dark:border-slate-700 ${u.id === me.id ? "opacity-60" : "cursor-pointer"}">
               <input type="checkbox" data-draft-super ${draft.super ? "checked" : ""} ${u.id === me.id ? "disabled" : ""} class="size-4 accent-red-600">${esc(t("admin.users.roles.super_admin"))}
             </label>`
           : ""
         : superU()
           ? `<span class="shrink-0">${badge(t("admin.users.roles.super_admin"), "red")}</span>`
           : "";
-      const head = `<div class="flex flex-wrap items-start gap-3">
+      const head = `<div class="flex items-start gap-3">
           <span class="flex size-14 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xl font-semibold dark:bg-slate-700">${esc(((editing && draft.full_name) || u.full_name).slice(0, 1))}</span>
-          <div class="min-w-0 flex-1 basis-48 space-y-2">
-            ${editing && canEditProfile ? field(t("admin.users.name"), `<input data-draft-name value="${esc(draft.full_name)}" required class="${cls.input}">`) : ""}
-            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
-              <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
-              <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
-            </dl>
+          <div class="min-w-0 flex-1 space-y-2">
+            ${editing && canEditProfile ? `<div class="flex items-end gap-2"><div class="min-w-0 flex-1">${field(t("admin.users.name"), `<input data-draft-name value="${esc(draft.full_name)}" required class="${cls.input}">`)}</div>${superPart}</div>` : ""}
+            <div class="flex items-start gap-3">
+              <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+                <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
+                <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
+              </dl>
+              ${editing ? "" : superPart}
+            </div>
           </div>
-          ${superPart}
         </div>`;
       const buttons = editing
         ? `<div class="flex justify-end gap-2">
@@ -412,13 +414,14 @@
       draw();
     }
 
-    const fail = () => toast(t("admin.groups.saveFailed"));
+    const fail = (error) => toast(t("admin.groups.saveFailed") + (error && error.message ? " (" + error.message + ")" : ""));
+    // 回传 null = 已经是（或刚加进）这个 Business 的成员；否则回传错误
     const ensureMember = async (gid) => {
-      if (mems.includes(gid)) return true;
+      if (mems.includes(gid)) return null;
       const { error } = await sb.from("gw_group_members").insert({ group_id: gid, user_id: uid });
-      if (error) return false;
+      if (error) return error;
       mems.push(gid);
-      return true;
+      return null;
     };
 
     // + Add business：列还没加进去、而且我能加人的 Business
@@ -441,7 +444,8 @@
         const b = e.target.closest("[data-pick-biz]");
         if (!b) return;
         b.disabled = true;
-        if (!(await ensureMember(b.dataset.pickBiz))) return ((b.disabled = false), fail());
+        const e1 = await ensureMember(b.dataset.pickBiz);
+        if (e1) return ((b.disabled = false), fail(e1));
         pm.close();
         draw();
       });
@@ -486,20 +490,21 @@
         if (el.dataset.coIn && !el.checked) {
           if (cur) {
             const { error } = await sb.from("gw_member_companies").delete().eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
-            if (error) return (fail(), paint());
+            if (error) return (fail(error), paint());
             mcs.splice(mcs.indexOf(cur), 1);
           }
         } else if (el.dataset.coIn) {
-          if (!(await ensureMember(gid))) return (fail(), paint());
+          const e1 = await ensureMember(gid);
+          if (e1) return (fail(e1), paint());
           if (!cur) {
             const { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
-            if (error) return (fail(), paint());
+            if (error) return (fail(error), paint());
             mcs.push({ group_id: gid, company_id: cid, role_id: null });
           }
         } else if (cur) {
           const role_id = el.value === "user" ? null : el.value;
           const { error } = await sb.from("gw_member_companies").update({ role_id }).eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
-          if (error) return (fail(), paint());
+          if (error) return (fail(error), paint());
           cur.role_id = role_id;
         }
         openMod.delete(gid);
@@ -543,10 +548,10 @@
       if (!(await confirmDialog(t("admin.userGroups.removeMember"), tu("removeBusinessBody", { name: u.full_name, business: g.name }), t("admin.userGroups.removeMember"), t("admin.users.cancel")))) return;
       if (mcs.some((x) => x.group_id === g.id)) {
         const { error } = await sb.from("gw_member_companies").delete().eq("group_id", g.id).eq("user_id", uid);
-        if (error) return fail();
+        if (error) return fail(error);
       }
       const { error } = await sb.from("gw_group_members").delete().eq("group_id", g.id).eq("user_id", uid);
-      if (error) return fail();
+      if (error) return fail(error);
       for (let i = mcs.length - 1; i >= 0; i--) if (mcs[i].group_id === g.id) mcs.splice(i, 1);
       mems.splice(mems.indexOf(g.id), 1);
       openMod.delete(g.id);
@@ -803,7 +808,6 @@
     const groupName = new Map(groups.map((g) => [g.id, g.name]));
     const NOTICE = ["can_post_notice", "can_delete_notice"];
     const UG = ["can_grant_module", "can_revoke_module", "can_set_module_admin", "can_add_business_user", "can_remove_business_user", "can_view_users"];
-    const GLOBAL_MOD = ["can_manage_module_access", "can_edit_module_name"];
     const bizRows = (rid) => rb.filter((x) => x.role_id === rid);
     const hasAny = (row, keys) => keys.some((k) => row[k]);
     const th = (text, extra) => `<th class="px-4 py-3 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase ${extra || ""}">${esc(text)}</th>`;
@@ -847,7 +851,6 @@
       const row = (gid) => rows.find((x) => x.group_id === gid) || {};
       const dis = readOnly ? "disabled" : "";
       const box = (name, gid, checked) => `<input type="checkbox" name="${name}" data-g="${gid || ""}" ${checked ? "checked" : ""} ${dis} class="size-4 shrink-0 accent-emerald-600">`;
-      const ugOn = r ? r.can_view_user_group || rows.some((x) => hasAny(x, UG)) : false;
       return `<div class="space-y-4">
         ${
           readOnly
@@ -855,8 +858,11 @@
             : `${field(tr("name"), `<input name="name" required maxlength="60" value="${esc(r ? r.name : "")}" placeholder="${esc(tr("namePlaceholder"))}" class="${cls.input}">`)}
                ${field(tg("descriptionLabel"), `<input name="description" value="${esc(r ? r.description || "" : "")}" class="${cls.input}">`)}`
         }
-        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <p class="mb-2 text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(tr("groups.noticeBoard"))}</p>
+        <div data-sec="notice" class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <p class="text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(tr("groups.noticeBoard"))}</p>
+            ${readOnly || !groups.length ? "" : `<label class="flex items-center gap-1.5 text-xs text-slate-500"><input type="checkbox" data-all class="size-3.5 accent-emerald-600">${esc(t("admin.modules.tickAll"))}</label>`}
+          </div>
           ${
             groups.length
               ? `<div class="divide-y divide-slate-100 dark:divide-slate-800">${groups
@@ -870,28 +876,20 @@
               : `<p class="text-sm text-slate-400">${esc(tr("noBusinessYet"))}</p>`
           }
         </div>
-        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <p class="mb-2 text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(tr("groups.module"))}</p>
-          <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">${GLOBAL_MOD.map((k) => `<label class="flex items-center gap-2 text-sm">${box(k, "", r && r[k])}${esc(tr("funcs." + k))}</label>`).join("")}</div>
-        </div>
-        <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          <label class="flex items-center gap-2 text-sm font-semibold">${box("can_view_user_group", "", ugOn)}${esc(tr("funcs.can_view_user_group"))}</label>
-          <div data-ug class="mt-3 ${ugOn ? "" : "hidden"}">
-            ${
-              groups.length
-                ? `<div class="divide-y divide-slate-100 dark:divide-slate-800">${groups
-                    .map(
-                      (g) => `<div class="py-2">
-                        <p class="mb-1 text-sm font-medium">${esc(g.name)}</p>
-                        <div class="grid gap-x-4 gap-y-1 sm:grid-cols-2">${UG.map((k) => `<label class="flex items-center gap-1.5 text-sm">${box(k, g.id, row(g.id)[k])}${esc(tr("funcs." + k))}</label>`).join("")}</div>
-                      </div>`,
-                    )
-                    .join("")}</div>`
-                : `<p class="text-sm text-slate-400">${esc(tr("noBusinessYet"))}</p>`
-            }
+        <div data-sec="access" class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <p class="text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(tr("manageAccess"))}</p>
+            ${readOnly || !groups.length ? "" : `<label class="flex items-center gap-1.5 text-xs text-slate-500"><input type="checkbox" data-all class="size-3.5 accent-emerald-600">${esc(t("admin.modules.tickAll"))}</label>`}
           </div>
+          <p class="mb-2 text-xs text-slate-500">${esc(tr("manageAccessHint"))}</p>
+          ${
+            groups.length
+              ? `<div class="divide-y divide-slate-100 dark:divide-slate-800">${groups
+                  .map((g) => `<label class="flex items-center gap-2.5 py-1.5 text-sm font-medium ${readOnly ? "" : "cursor-pointer"}">${box("manage_access", g.id, hasAny(row(g.id), UG))}${esc(g.name)}</label>`)
+                  .join("")}</div>`
+              : `<p class="text-sm text-slate-400">${esc(tr("noBusinessYet"))}</p>`
+          }
         </div>
-        <label class="flex items-center gap-2 text-sm font-semibold">${box("can_view_audit", "", r && r.can_view_audit)}${esc(tr("funcs.can_view_audit"))}</label>
       </div>`;
     }
 
@@ -923,12 +921,18 @@
       refreshIcons();
       const f = $("form", m.el);
       $("[data-cancel]", m.el).onclick = m.close;
-      const ugBox = $("[name=can_view_user_group]", f);
+      // 每一区右上角「Tick all」：勾 / 取消这一区全部；个别勾选变动时同步「Tick all」
+      const syncAll = (sec) => {
+        const all = $("[data-all]", sec);
+        if (all) all.checked = $$("input[data-g]", sec).every((x) => x.checked);
+      };
+      $$("[data-sec]", f).forEach(syncAll);
       f.addEventListener("change", (e) => {
         const el = e.target;
-        if (el === ugBox) return $("[data-ug]", f).classList.toggle("hidden", !el.checked);
-        // 勾了任何 Business 动作 → 自动勾 User & Group Manage
-        if (UG.includes(el.name) && el.checked) ((ugBox.checked = true), $("[data-ug]", f).classList.remove("hidden"));
+        const sec = el.closest("[data-sec]");
+        if (!sec) return;
+        if (el.matches("[data-all]")) $$("input[data-g]", sec).forEach((x) => (x.checked = el.checked));
+        else syncAll(sec);
       });
       f.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -937,17 +941,20 @@
         const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error && error.code === "23505" ? tr("duplicate") : tg("saveFailed"))), (submit.disabled = false));
         const perBiz = {};
         groups.forEach((g) => (perBiz[g.id] = {}));
+        // 「Manage user access」一个勾 = 这个 Business 的全部用户权限功能（加 / 移除模块、设模块 Admin、加 / 移出 Business、看名单）
         $$("input[data-g]", f).forEach((x) => {
-          if (x.dataset.g) perBiz[x.dataset.g][x.name] = x.checked;
+          if (!x.dataset.g) return;
+          if (x.name === "manage_access") UG.forEach((k) => (perBiz[x.dataset.g][k] = x.checked));
+          else perBiz[x.dataset.g][x.name] = x.checked;
         });
         const anyUg = Object.values(perBiz).some((p) => hasAny(p, UG));
         const row = {
           name: f.name.value.trim(),
           description: f.description.value.trim() || null,
-          can_view_user_group: ugBox.checked || anyUg,
-          can_view_audit: f.can_view_audit.checked,
-          can_manage_module_access: f.can_manage_module_access.checked,
-          can_edit_module_name: f.can_edit_module_name.checked,
+          can_view_user_group: anyUg,
+          can_view_audit: false,
+          can_manage_module_access: false,
+          can_edit_module_name: false,
         };
         const saved = r ? await sb.from("gw_roles").update(row).eq("id", r.id).select().single() : await sb.from("gw_roles").insert(row).select().single();
         if (saved.error) return fail(saved.error);
@@ -1218,6 +1225,7 @@
     }
 
     // ---------------------------------------------------------- 「+ Add module」：列出还没加进这个 Business 的模块，点一下加进「No sector」
+    // 「+ Add module」：列还没加进这个 Business 的模块；按 Add 马上写入、原地显示「Added」，窗不关，可以继续加别的
     function addModuleDialog(g) {
       const free = modules.filter((m) => !tagOf(g.id, m.id));
       const m = modal(
@@ -1225,7 +1233,8 @@
         `<div class="space-y-3">
           <p class="text-sm text-slate-500">${esc(ts("addModuleHint"))}</p>
           <div data-err></div>
-          <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${free
+          ${free.length ? "" : `<p class="text-sm text-slate-400">${esc(ts("allModulesAdded"))}</p>`}
+          <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800 ${free.length ? "" : "hidden"}">${free
             .map(
               (x) => `<div class="flex items-center gap-3 px-3 py-2">
                 ${logo(x, "size-9")}
@@ -1241,12 +1250,14 @@
         const b = e.target.closest("[data-pick-mod]");
         if (!b) return;
         b.disabled = true;
-        const row = { group_id: g.id, module_id: b.dataset.pickMod, ...(sectorsReady ? { sector_id: null } : {}) };
+        // 一个模块只有一个 Sector：别的 Business 已经有设定就沿用
+        const sid = sectorsReady ? (bizTags.find((x) => x.module_id === b.dataset.pickMod && x.sector_id) || {}).sector_id || null : undefined;
+        const row = { group_id: g.id, module_id: b.dataset.pickMod, ...(sectorsReady ? { sector_id: sid } : {}) };
         const { error } = await sb.from("gw_group_modules").insert(row);
         if (error) return (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), (b.disabled = false));
         bizTags.push(row);
-        m.close();
-        toast(ts("saved"));
+        b.outerHTML = `<span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">${icon("check", "size-4")}${esc(ts("added"))}</span>`;
+        refreshIcons();
         draw();
       });
     }
@@ -1485,14 +1496,23 @@
     }
 
     // ---------------------------------------------------------- 模块编辑窗（名称、说明、照片、停用、Business 标签 + Sector + 负责人、Company 标签）
+    // ---------------------------------------------------------- 模块编辑窗：标题 = 模块名
+    /* 上面：图示、种类 / 代码、名称、说明、Sector（一个模块只有一个 Sector，写到它每个 Business 的标签上）、启用
+       底下一个 Business 一个方块（这个模块有开的 Business）：Company 徽章（没有 = 这个 Business 全部 Company 都能用）、
+         「+」勾 Company、负责人；最底下「+ Add business」开给别的 Business
+       Business / Company 的改动先记在画面上，按 Save 一次写入 */
     function moduleDialog(mod) {
-      const bizOn = new Set(bizTags.filter((x) => x.module_id === mod.id).map((x) => x.group_id));
+      const bizOn0 = new Set(bizTags.filter((x) => x.module_id === mod.id).map((x) => x.group_id));
+      const coOn0 = new Set(coTags.filter((x) => x.module_id === mod.id).map((x) => x.company_id));
+      const bizOn = new Set(bizOn0);
+      const coOn = new Set(coOn0);
       const tagIn = (gid) => tagOf(gid, mod.id) || {};
+      const leadOf = new Map([...bizOn].map((gid) => [gid, tagIn(gid).lead_user_id || ""]));
+      const sector0 = sectorsReady ? [...bizOn].map((gid) => tagIn(gid).sector_id).find(Boolean) || "" : "";
       const opt = (list, cur) => list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur || "") ? "selected" : ""}>${esc(l)}</option>`).join("");
-      const coOn = new Set(coTags.filter((x) => x.module_id === mod.id).map((x) => x.company_id));
       let photo = null; // 新选的照片
       const m = modal(
-        tmod("editTitle"),
+        mod.name,
         `<form class="space-y-4">
           <div data-err></div>
           <div class="flex items-start gap-4">
@@ -1507,44 +1527,11 @@
               </div>
               ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
+              ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`, tmod("sectorHint")) : ""}
               ${isSuper ? `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : ""}
             </div>
           </div>
-          ${
-            isSuper
-              ? `<div>
-                  <p class="mb-1.5 ${cls.label}">${esc(tmod("businessTags"))}</p>
-                  ${
-                    groups.length
-                      ? `<div class="space-y-2">${groups
-                          .map((g) => {
-                            const cos = companiesIn(g.id);
-                            return `<div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-                              <label class="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="biz" value="${g.id}" ${bizOn.has(g.id) ? "checked" : ""} class="size-4 accent-emerald-600">${icon("briefcase-business", "size-4 text-brand-600")}${esc(g.name)}</label>
-                              ${
-                                sectorsReady
-                                  ? `<div data-meta="${g.id}" class="mt-2 ml-6 grid gap-2 sm:grid-cols-2 ${bizOn.has(g.id) ? "" : "hidden"}">
-                                      <label class="block space-y-1"><span class="text-xs text-slate-500">${esc(tmod("sector"))}</span><select data-sector="${g.id}" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], tagIn(g.id).sector_id)}</select></label>
-                                      <label class="block space-y-1"><span class="text-xs text-slate-500">${esc(tmod("lead"))}</span><select data-lead="${g.id}" class="${cls.input}">${opt([["", "—"], ...people.map((x) => [x.id, x.full_name])], tagIn(g.id).lead_user_id)}</select></label>
-                                    </div>`
-                                  : ""
-                              }
-                              <div data-cos="${g.id}" class="mt-2 ml-6 ${bizOn.has(g.id) ? "" : "hidden"}">
-                                ${
-                                  cos.length
-                                    ? `<label class="mb-1 flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" data-all="${g.id}" class="size-3.5 accent-emerald-600">${esc(tmod("tickAll"))}</label>
-                                       <div class="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">${cos.map((c) => `<label class="flex items-center gap-1.5 text-sm"><input type="checkbox" name="co" data-g="${g.id}" value="${c.id}" ${coOn.has(c.id) ? "checked" : ""} class="size-4 accent-emerald-600">${esc((c.code ? c.code + " · " : "") + c.name)}</label>`).join("")}</div>`
-                                    : `<span class="text-xs text-slate-400">${esc(tmod("noCompanies"))}</span>`
-                                }
-                              </div>
-                            </div>`;
-                          })
-                          .join("")}</div>`
-                      : `<p class="text-xs text-slate-400">${esc(tmod("noOptions"))}</p>`
-                  }
-                </div>`
-              : ""
-          }
+          ${isSuper ? `<div><p class="mb-1.5 ${cls.label}">${esc(tmod("businessTags"))}</p><div data-biz-area class="space-y-3"></div></div>` : ""}
           <div class="flex justify-between gap-2">
             ${canDelMod ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
             <div class="flex gap-2">
@@ -1555,8 +1542,102 @@
         </form>`,
         { wide: true },
       );
-      refreshIcons();
       const f = $("form", m.el);
+      const bizArea = $("[data-biz-area]", m.el);
+      const plusBtn = (attrs, label) =>
+        `<button type="button" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>`;
+      function paintBiz() {
+        if (!bizArea) return;
+        const on = groups.filter((g) => bizOn.has(g.id));
+        const free = groups.filter((g) => !bizOn.has(g.id));
+        const chip = (c) => `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-1.5 pl-2.5 text-xs font-medium dark:border-slate-700 dark:bg-white/5" title="${esc(c.name)}"><span class="truncate">${esc(c.name)}</span><button type="button" data-co-off="${c.id}" aria-label="${esc(tg("delete"))}" class="rounded-full p-0.5 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("x", "size-3")}</button></span>`;
+        bizArea.innerHTML = `${on
+          .map((g) => {
+            const cos = companiesIn(g.id);
+            const mine = cos.filter((c) => coOn.has(c.id));
+            return `<section data-biz-box="${g.id}" class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+              <header class="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
+                ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
+                <h3 class="min-w-0 flex-1 truncate font-semibold">${esc(g.name)}</h3>
+                <button type="button" data-biz-off="${g.id}" aria-label="${esc(tmod("removeBusiness"))}" title="${esc(tmod("removeBusiness"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>
+              </header>
+              <div class="flex flex-wrap items-center gap-1.5 px-3 py-2">
+                ${icon("building-2", "size-3.5 shrink-0 text-slate-400")}
+                ${mine.map(chip).join("")}
+                ${mine.length ? "" : `<span class="text-xs text-slate-400">${esc(cos.length ? tmod("allCompanies") : tmod("noCompanies"))}</span>`}
+                ${cos.some((c) => !coOn.has(c.id)) ? plusBtn(`data-co-add="${g.id}"`, ts("addCompany")) : ""}
+              </div>
+              ${
+                sectorsReady
+                  ? `<div class="flex items-center gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
+                      <span class="w-24 shrink-0 text-xs text-slate-500">${esc(tmod("lead"))}</span>
+                      <select data-lead="${g.id}" class="${cls.input} h-9 min-w-0 flex-1">${opt([["", "—"], ...people.map((x) => [x.id, x.full_name])], leadOf.get(g.id))}</select>
+                    </div>`
+                  : ""
+              }
+            </section>`;
+          })
+          .join("")}
+          ${
+            free.length
+              ? `<button type="button" data-biz-add class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 px-2 py-2 text-xs font-medium text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:text-white">${icon("plus", "size-3.5")}${esc(ts("addBusiness"))}</button>`
+              : on.length
+                ? ""
+                : `<p class="text-xs text-slate-400">${esc(tmod("noOptions"))}</p>`
+          }`;
+        refreshIcons();
+      }
+      paintBiz();
+      // 「+」：勾这个 Business 的 Company（勾 = 这个模块开给这个 Company；一个都不勾 = 全部 Company）
+      function companyPick(g) {
+        const cos = companiesIn(g.id);
+        const pm = modal(
+          t("admin.userWindow.companies", { business: g.name }),
+          `<div class="space-y-2">
+            <p class="text-xs text-slate-500">${esc(tmod("companyPickHint"))}</p>
+            <label class="flex items-center gap-2 px-1 text-xs text-slate-500"><input type="checkbox" data-all class="size-3.5 accent-emerald-600" ${cos.every((c) => coOn.has(c.id)) ? "checked" : ""}>${esc(tmod("tickAll"))}</label>
+            <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${cos
+              .map((c) => `<label class="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm"><input type="checkbox" data-co="${c.id}" ${coOn.has(c.id) ? "checked" : ""} class="size-4 accent-emerald-600"><span class="min-w-0 flex-1 truncate font-medium">${esc(c.name)}</span></label>`)
+              .join("")}</div>
+          </div>`,
+          { onClose: paintBiz },
+        );
+        pm.el.addEventListener("change", (e) => {
+          const el = e.target;
+          if (el.matches("[data-all]")) {
+            $$("[data-co]", pm.el).forEach((x) => ((x.checked = el.checked), el.checked ? coOn.add(x.dataset.co) : coOn.delete(x.dataset.co)));
+          } else if (el.dataset.co) {
+            el.checked ? coOn.add(el.dataset.co) : coOn.delete(el.dataset.co);
+            $("[data-all]", pm.el).checked = cos.every((c) => coOn.has(c.id));
+          }
+        });
+      }
+      // 「+ Add business」：列还没开的 Business
+      function bizPick() {
+        const free = groups.filter((g) => !bizOn.has(g.id));
+        const pm = modal(
+          ts("addBusiness"),
+          `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${free
+            .map(
+              (g) => `<div class="flex items-center gap-3 px-3 py-2">
+                ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
+                <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(g.name)}</span>
+                <button type="button" data-pick-biz="${g.id}" class="${btn("secondary", "sm")}">${icon("plus", "size-4")} ${esc(ts("add"))}</button>
+              </div>`,
+            )
+            .join("")}</div>`,
+        );
+        refreshIcons();
+        pm.el.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-pick-biz]");
+          if (!b) return;
+          bizOn.add(b.dataset.pickBiz);
+          leadOf.set(b.dataset.pickBiz, "");
+          pm.close();
+          paintBiz();
+        });
+      }
+      refreshIcons();
       $("[data-cancel]", m.el).onclick = m.close;
       if ($("[data-del]", m.el))
         $("[data-del]", m.el).onclick = async () => {
@@ -1566,20 +1647,24 @@
           m.close();
           structureTab();
         };
+      m.el.addEventListener("click", (e) => {
+        const b = e.target.closest("button[type=button]");
+        if (!b || !bizArea || !bizArea.contains(b)) return;
+        const d = b.dataset;
+        if ("bizAdd" in d) return bizPick();
+        if (d.coAdd) return companyPick(groups.find((g) => g.id === d.coAdd));
+        if (d.coOff) coOn.delete(d.coOff);
+        if (d.bizOff) {
+          bizOn.delete(d.bizOff);
+          // 这个 Business 的 Company 标签也拿掉（别的还开着的 Business 也有的 Company 留着）
+          companiesIn(d.bizOff).forEach((c) => [...bizOn].some((gid) => companiesIn(gid).some((x) => x.id === c.id)) || coOn.delete(c.id));
+        }
+        paintBiz();
+      });
       m.el.addEventListener("change", (e) => {
         const el = e.target;
-        if (el.name === "biz") {
-          const box = $(`[data-cos="${el.value}"]`, m.el);
-          box.classList.toggle("hidden", !el.checked);
-          if (!el.checked) $$("input", box).forEach((x) => (x.checked = false));
-          const meta = $(`[data-meta="${el.value}"]`, m.el);
-          if (meta) {
-            meta.classList.toggle("hidden", !el.checked);
-            if (!el.checked) $$("select", meta).forEach((x) => (x.value = ""));
-          }
-        } else if (el.dataset.all) {
-          $$(`input[name=co][data-g="${el.dataset.all}"]`, m.el).forEach((x) => (x.checked = el.checked));
-        } else if (el.name === "photo" && el.files[0]) {
+        if (el.dataset.lead) leadOf.set(el.dataset.lead, el.value);
+        else if (el.name === "photo" && el.files[0]) {
           photo = el.files[0];
           $("[data-preview]", m.el).innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" class="size-20 rounded-xl object-cover">`;
         }
@@ -1606,24 +1691,11 @@
             const { error: e3 } = await sb.from("gw_modules").update({ is_active: f.is_active.checked }).eq("id", mod.id);
             if (e3) return err("saveFailed");
           }
-          const picked = (name) => new Set($$(`input[name=${name}]:checked`, f).map((x) => x.value));
-          const sync = async (table, col, before, after) => {
-            const add = [...after].filter((x) => !before.has(x));
-            const drop = [...before].filter((x) => !after.has(x));
-            if (add.length) {
-              const { error } = await sb.from(table).insert(add.map((x) => ({ module_id: mod.id, [col]: x })));
-              if (error) return error;
-            }
-            if (drop.length) {
-              const { error } = await sb.from(table).delete().eq("module_id", mod.id).in(col, drop);
-              if (error) return error;
-            }
-          };
-          // Business：新增 / 拿掉；留着的看 Sector 和负责人有没有改
-          const want = picked("biz");
-          const metaOf = (gid) => (sectorsReady ? { sector_id: $(`[data-sector="${gid}"]`, f).value || null, lead_user_id: $(`[data-lead="${gid}"]`, f).value || null } : {});
-          const addBiz = [...want].filter((x) => !bizOn.has(x));
-          const dropBiz = [...bizOn].filter((x) => !want.has(x));
+          // Business：新增 / 拿掉；留着的看 Sector 和负责人有没有改（Sector 是整个模块一个）
+          const sector = sectorsReady && f.sector ? f.sector.value || null : null;
+          const metaOf = (gid) => (sectorsReady ? { sector_id: sector, lead_user_id: leadOf.get(gid) || null } : {});
+          const addBiz = [...bizOn].filter((x) => !bizOn0.has(x));
+          const dropBiz = [...bizOn0].filter((x) => !bizOn.has(x));
           if (addBiz.length) {
             const { error } = await sb.from("gw_group_modules").insert(addBiz.map((gid) => ({ module_id: mod.id, group_id: gid, ...metaOf(gid) })));
             if (error) return err("saveFailed");
@@ -1633,15 +1705,24 @@
             if (error) return err("saveFailed");
           }
           if (sectorsReady)
-            for (const gid of [...want].filter((x) => bizOn.has(x))) {
+            for (const gid of [...bizOn].filter((x) => bizOn0.has(x))) {
               const now = metaOf(gid);
               const was = tagIn(gid);
               if ((was.sector_id || null) === now.sector_id && (was.lead_user_id || null) === now.lead_user_id) continue;
               const { error } = await sb.from("gw_group_modules").update(now).eq("module_id", mod.id).eq("group_id", gid);
               if (error) return err("saveFailed");
             }
-          const tagError = await sync("gw_module_companies", "company_id", coOn, picked("co"));
-          if (tagError) return err("saveFailed");
+          // Company 标签：新增 / 拿掉
+          const addCo = [...coOn].filter((x) => !coOn0.has(x));
+          const dropCo = [...coOn0].filter((x) => !coOn.has(x));
+          if (addCo.length) {
+            const { error } = await sb.from("gw_module_companies").insert(addCo.map((x) => ({ module_id: mod.id, company_id: x })));
+            if (error) return err("saveFailed");
+          }
+          if (dropCo.length) {
+            const { error } = await sb.from("gw_module_companies").delete().eq("module_id", mod.id).in("company_id", dropCo);
+            if (error) return err("saveFailed");
+          }
         }
         m.close();
         structureTab();

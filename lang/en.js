@@ -370,10 +370,12 @@ window.GW_LANG["en"] = {
       "name": "Business Name"
     },
     "structure": {
+      "added": "Added",
+      "allModulesAdded": "Every module is already in this business.",
       "codeAuto": "System running number. Cannot be edited.",
       "addModule": "Add module",
       "addModuleTitle": "Add module to {name}",
-      "addModuleHint": "Only modules not yet in this business are listed. It goes into “No sector”; drag it into a sector column afterwards.",
+      "addModuleHint": "Only modules not yet in this business are listed. Click Add on each one you want; the window stays open so you can keep adding.",
       "addBusiness": "Add business",
       "noSector": "No sector",
       "noCompany": "No company yet",
@@ -599,6 +601,10 @@ window.GW_LANG["en"] = {
       "save": "Save"
     },
     "modules": {
+      "removeBusiness": "Remove from business",
+      "allCompanies": "All companies in this business",
+      "sectorHint": "A module belongs to one sector; it shows in that column in every business it is open to.",
+      "companyPickHint": "Tick the companies this module is for. Leave all unticked to open it to every company in the business.",
       "deleteTitle": "Delete module",
       "deleteBody": "Delete “{name}”? Everyone loses access to it and it disappears from the Intranet. The other system itself is not touched.",
       "noMatch": "No modules match the filter.",
@@ -775,6 +781,8 @@ window.GW_LANG["en"] = {
       "outsiderAdded": "{name} now has access to {module}."
     },
     "roles": {
+      "manageAccess": "Manage user access",
+      "manageAccessHint": "People with this role can add users of the ticked business to its companies and modules, remove them, and set module admins.",
       "description": "A role is a set of functions, limited to the businesses and modules you tick for it. Give the role to people in the user list.",
       "add": "Add role",
       "addTitle": "Add New Role",

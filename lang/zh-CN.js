@@ -370,10 +370,12 @@ window.GW_LANG["zh-CN"] = {
       "name": "Business 名称"
     },
     "structure": {
+      "added": "已新增",
+      "allModulesAdded": "所有模块都已经在这个 Business 里了。",
       "codeAuto": "系统流水号，不能改。",
       "addModule": "加模块",
       "addModuleTitle": "把模块加进 {name}",
-      "addModuleHint": "只列还没加进这个 Business 的模块。加进去后在「No sector」，再拖到某个 Sector 栏。",
+      "addModuleHint": "只列还没加进这个 Business 的模块。要哪个就按它的新增；视窗不会关，可以继续加。",
       "addBusiness": "新增 Business",
       "noSector": "没有 Sector",
       "noCompany": "还没有 Company",
@@ -599,6 +601,10 @@ window.GW_LANG["zh-CN"] = {
       "save": "保存"
     },
     "modules": {
+      "removeBusiness": "从这个 Business 移除",
+      "allCompanies": "这个 Business 的全部 Company",
+      "sectorHint": "一个模块只属于一个 Sector；它开给的每个 Business 都显示在那一栏。",
+      "companyPickHint": "勾这个模块开给哪些 Company。全部不勾 = 这个 Business 的每个 Company 都能用。",
       "deleteTitle": "删除模块",
       "deleteBody": "删除「{name}」？所有人都会失去它的权限，它也会从 Intranet 消失。另一个系统本身不受影响。",
       "noMatch": "没有符合筛选的模块。",
@@ -775,6 +781,8 @@ window.GW_LANG["zh-CN"] = {
       "outsiderAdded": "{name} 现在可以用 {module}。"
     },
     "roles": {
+      "manageAccess": "管理用户权限",
+      "manageAccessHint": "有这个角色的人可以把勾选的 Business 的用户加进 Company 和模块、移除，以及设定模块管理员。",
       "description": "角色 = 一组功能，只在你勾选的 Business 和模块内有效。在用户名单把角色给人。",
       "add": "新增角色",
       "addTitle": "新增角色",

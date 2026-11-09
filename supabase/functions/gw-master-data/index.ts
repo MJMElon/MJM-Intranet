@@ -1,7 +1,8 @@
 // 给接入的系统（例如 CMMS 2）同步主资料：Business、Company、两者的连结，
 // 以及哪些 Company 标签了这个 Icon。
 // Header：x-gw-api-key（这个 Icon 的 API Key，和 gw-check-access 一样）
-// 请求：POST {}      回应：{ module_code, businesses, companies, links, module_company_ids, module_business_ids, exported_at }
+// 请求：POST {}      回应：{ module_code, module_users, businesses, companies, links, module_company_ids, module_business_ids, exported_at }
+// module_users = 目前可以用这个 Icon 的人（id、email、full_name、is_admin），接入系统用来预先建立帐号 / 显示名单
 // 只读；资料库一律用 service_role 读取（API Key 已经证明来源）。
 import { corsHeaders, json, serviceClient, sha256Hex } from "../_shared/gw.ts";
 
@@ -21,7 +22,7 @@ Deno.serve(async (req) => {
   if (!keyRow) return json({ error: "invalid_api_key" }, 401);
   const module = keyRow.gw_modules as unknown as { id: string; code: string };
 
-  const [businesses, companies, links, tagged, taggedBiz] = await Promise.all([
+  const [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles] = await Promise.all([
     supabase.from("gw_groups").select("id, name, description, sort_order").order("sort_order").order("name"),
     supabase
       .from("gw_companies")
@@ -31,12 +32,26 @@ Deno.serve(async (req) => {
     supabase.from("gw_business_companies").select("group_id, company_id"),
     supabase.from("gw_module_companies").select("company_id").eq("module_id", module.id),
     supabase.from("gw_group_modules").select("group_id").eq("module_id", module.id),
+    supabase.from("gw_module_members").select("user_id, is_admin").eq("module_id", module.id),
+    supabase.from("gw_group_members").select("user_id, group_id"),
+    supabase.from("gw_profiles").select("id, email, full_name, role, status").eq("status", "active"),
   ]);
-  const failed = [businesses, companies, links, tagged, taggedBiz].find((r) => r.error);
+  const failed = [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles].find((r) => r.error);
   if (failed?.error) return json({ error: "query_failed", detail: failed.error.message }, 500);
+
+  // Who may use this Icon right now — the same rule as gw__effective_module_ids:
+  // active super admins always; others need the Icon opened for them AND a
+  // Business that carries the Icon.
+  const taggedGroups = new Set((taggedBiz.data ?? []).map((r) => r.group_id));
+  const inTaggedBusiness = new Set((groupMembers.data ?? []).filter((r) => taggedGroups.has(r.group_id)).map((r) => r.user_id));
+  const memberOf = new Map((members.data ?? []).map((r) => [r.user_id, r.is_admin]));
+  const moduleUsers = (profiles.data ?? [])
+    .filter((p) => p.role === "super_admin" || (memberOf.has(p.id) && inTaggedBusiness.has(p.id)))
+    .map((p) => ({ id: p.id, email: p.email, full_name: p.full_name, is_admin: p.role === "super_admin" || memberOf.get(p.id) === true }));
 
   return json({
     module_code: module.code,
+    module_users: moduleUsers,
     businesses: businesses.data ?? [],
     companies: companies.data ?? [],
     links: links.data ?? [],

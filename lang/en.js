@@ -607,6 +607,7 @@ window.GW_LANG["en"] = {
       "save": "Save"
     },
     "modules": {
+      "searchName": "Search name…",
       "editTitleNamed": "Edit “{name}” module",
       "removeBusiness": "Remove from business",
       "allCompanies": "All companies in this business",

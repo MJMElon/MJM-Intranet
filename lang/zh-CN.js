@@ -607,6 +607,7 @@ window.GW_LANG["zh-CN"] = {
       "save": "保存"
     },
     "modules": {
+      "searchName": "搜寻姓名…",
       "editTitleNamed": "编辑「{name}」模块",
       "removeBusiness": "从这个 Business 移除",
       "allCompanies": "这个 Business 的全部 Company",

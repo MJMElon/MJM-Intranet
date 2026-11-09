@@ -147,20 +147,7 @@
       <input type="checkbox" ${attrs} ${on ? "checked" : ""} ${enabled ? "" : "disabled"} class="size-4 accent-emerald-600">${esc(label)}
     </label>`;
 
-  // 勾选事件（两个画面共用）：勾 Admin → Access 一定勾上；取消 Access → Admin 也取消
-  async function onTick(ctx, e, redraw) {
-    const box = e.target.closest("input[data-acc]");
-    if (!box) return;
-    const [uid, mid, kind] = box.dataset.acc.split(":");
-    const row = ctx.rows.get(uid + ":" + mid);
-    let access = !!row;
-    let admin = !!(row && row.is_admin);
-    if (kind === "admin") ((admin = box.checked), admin && (access = true));
-    else ((access = box.checked), !access && (admin = false));
-    box.disabled = true;
-    await saveAccess(ctx, uid, mid, access, admin);
-    redraw();
-  }
+
 
   // ---------------------------------------------------------------- 进阶搜寻的选择记在 localStorage
   const ugRemember = (k, v) => {
@@ -206,7 +193,7 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) });
+    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) || !!(pending && ctx && (pending.access !== !!rowOf(pending.mid) || pending.admin !== !!(rowOf(pending.mid) || {}).is_admin)) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -281,18 +268,32 @@
       `<button type="button" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>`;
 
     // 点开的模块：Access / Admin 勾选（规则同 By Module）
+    // 点开的模块：Access / Admin 勾选先记在 pending，按 Save 才写入（规则同 By Module）
+    let pending = null; // { gid, mid, access, admin }
+    const openPanel = (gid, mid) => {
+      const row = rowOf(mid);
+      pending = { gid, mid, access: !!row, admin: !!(row && row.is_admin) };
+      openMod.set(gid, mid);
+    };
+    const closePanel = (gid) => ((pending = null), openMod.delete(gid));
     function panel(gid, mod) {
       const row = rowOf(mod.id);
+      if (!pending || pending.mid !== mod.id) openPanel(gid, mod.id);
       const canAdm = !superU() && ctx.canAdmin(u, gid, mod.id) && !!row;
       const canAcc = !superU() && ctx.canAccess(u, gid, mod.id) && !(row && row.is_admin && !ctx.canAdmin(u, gid, mod.id));
+      const changed = pending.access !== !!row || pending.admin !== !!(row && row.is_admin);
       return `<div data-panel="${mod.id}" class="mt-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/60">
         <div class="flex flex-wrap items-center gap-3">
           ${modLogo(mod, "size-10")}
           <p class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(mod.name)}</p>
           <span class="flex gap-4">
-            ${tick(`data-acc="${u.id}:${mod.id}:access"`, !!row, canAcc, ta("access"))}
-            ${tick(`data-acc="${u.id}:${mod.id}:admin"`, row && row.is_admin, canAdm, ta("admin"))}
+            ${tick(`data-pend="access"`, pending.access, canAcc, ta("access"))}
+            ${tick(`data-pend="admin"`, pending.admin, canAdm, ta("admin"))}
           </span>
+        </div>
+        <div class="mt-3 flex justify-end gap-2">
+          <button type="button" data-panel-cancel="${gid}" class="${btn("secondary", "sm")}">${esc(t("admin.users.cancel"))}</button>
+          <button type="button" data-panel-save="${gid}" ${changed && !saving ? "" : "disabled"} class="${btn("primary", "sm")}">${esc(t("admin.users.save"))}</button>
         </div>
       </div>`;
     }
@@ -318,7 +319,7 @@
         return `<button type="button" data-co-dlg="${g.id}" title="${esc(c.name)}" ${place ? "" : "disabled"} class="inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${place ? "" : "cursor-default"} ${
           r && r.role_id
             ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
-            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
         }"><span class="truncate">${esc(coLabel(c))}</span><span class="text-slate-400">·</span><span class="truncate">${esc(roleOf(g.id, c.id))}</span></button>`;
       };
       const cos = cosIn(g.id);
@@ -337,8 +338,8 @@
         <div class="p-3">
           <p class="mb-1.5 px-0.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">${esc(tu("withAccess"))} <span class="font-normal text-slate-400">(${mine.length})</span></p>
           ${!list ? GW.spinner() : mine.length ? `<div class="flex flex-wrap gap-1.5">${mine.map(tile).join("")}</div>` : `<p class="px-0.5 text-xs text-slate-400">${esc(list.length ? tu("noModules") : tu("noModulesHere"))}</p>`}
-          ${addable.length ? `<div class="mt-2">${dashedBtn(`data-add-mod="${g.id}"`, ts("addModule"))}</div>` : ""}
           ${openMod.has(g.id) && list && list.some((x) => x.id === openMod.get(g.id)) ? panel(g.id, modById.get(openMod.get(g.id))) : ""}
+          ${addable.length ? `<div class="mt-2">${dashedBtn(`data-add-mod="${g.id}"`, ts("addModule"))}</div>` : ""}
         </div>
       </section>`;
     }
@@ -455,62 +456,90 @@
     // Company 小窗：这个 Business 底下每个 Company 一个勾（勾了 = 在这个 Company，预设一般用户），右边下拉可以换角色
     //   → 立刻写 gw_member_companies(role_id)
     function companyDialog(g) {
-      const pm = modal(tu("companies", { business: g.name }), "", { wide: true });
+      const cos = cosOfBiz(g.id);
+      // 先记在画面上（in = 在这个 Company，role_id = 角色，null = 一般用户），按 Save 一次写入
+      const snap = () => new Map(cos.map((c) => { const r = mcRow(g.id, c.id); return [c.id, { in: !!r, role_id: r ? r.role_id || null : null }]; }));
+      const orig = snap();
+      const st = snap();
+      const dirty = () => cos.some((c) => st.get(c.id).in !== orig.get(c.id).in || (st.get(c.id).in && st.get(c.id).role_id !== orig.get(c.id).role_id));
+      let busy = false;
+      const pm = modal(tu("companies", { business: g.name }), "", { wide: true, guard: dirty });
       const paint = () => {
-        const cos = cosOfBiz(g.id);
-        pm.el.innerHTML = cos.length
-          ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${cos
-              .map((c) => {
-                const r = mcRow(g.id, c.id);
-                return `<div class="flex items-center gap-3 px-3 py-2">
-                  <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
-                    <input type="checkbox" data-co-in="${g.id}:${c.id}" ${r ? "checked" : ""} class="size-4 accent-emerald-600">
-                    <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(c.name)}</span>
-                  </label>
-                  ${
-                    r
-                      ? `<select data-role-sel="${g.id}:${c.id}" aria-label="${esc(t("admin.users.role"))}" class="h-9 w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 text-sm sm:w-44 dark:border-slate-700 dark:bg-slate-900">
-                          <option value="user" ${!r.role_id ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
-                          ${(roles || []).map((x) => `<option value="${x.id}" ${r.role_id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}
-                        </select>`
-                      : `<span aria-hidden="true" class="w-36 shrink-0 sm:w-44"></span>`
-                  }
-                </div>`;
-              })
-              .join("")}</div>`
-          : `<p class="text-sm text-slate-400">${esc(t("admin.users.noCompanies"))}</p>`;
+        pm.el.innerHTML = `<div class="space-y-4">
+          ${
+            cos.length
+              ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${cos
+                  .map((c) => {
+                    const v = st.get(c.id);
+                    return `<div class="flex items-center gap-3 px-3 py-2">
+                      <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+                        <input type="checkbox" data-co-in="${c.id}" ${v.in ? "checked" : ""} class="size-4 accent-emerald-600">
+                        <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(c.name)}</span>
+                      </label>
+                      ${
+                        v.in
+                          ? `<select data-role-sel="${c.id}" aria-label="${esc(t("admin.users.role"))}" class="h-9 w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 text-sm sm:w-44 dark:border-slate-700 dark:bg-slate-900">
+                              <option value="user" ${!v.role_id ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
+                              ${(roles || []).map((x) => `<option value="${x.id}" ${v.role_id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}
+                            </select>`
+                          : `<span aria-hidden="true" class="w-36 shrink-0 sm:w-44"></span>`
+                      }
+                    </div>`;
+                  })
+                  .join("")}</div>`
+              : `<p class="text-sm text-slate-400">${esc(t("admin.users.noCompanies"))}</p>`
+          }
+          <div class="flex justify-end gap-2">
+            <button type="button" data-co-cancel class="${btn("secondary")}" ${busy ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
+            <button type="button" data-co-save class="${btn("primary")}" ${dirty() && !busy ? "" : "disabled"}>${esc(t("admin.users.save"))}</button>
+          </div>
+        </div>`;
       };
       paint();
-      pm.el.addEventListener("change", async (e) => {
+      pm.el.addEventListener("change", (e) => {
         const el = e.target;
-        const key = el.dataset.coIn || el.dataset.roleSel;
-        if (!key) return;
-        el.disabled = true;
-        const [gid, cid] = key.split(":");
-        const cur = mcRow(gid, cid);
-        if (el.dataset.coIn && !el.checked) {
-          if (cur) {
-            const { error } = await sb.from("gw_member_companies").delete().eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
-            if (error) return (fail(error), paint());
-            mcs.splice(mcs.indexOf(cur), 1);
-          }
-        } else if (el.dataset.coIn) {
-          const e1 = await ensureMember(gid);
-          if (e1) return (fail(e1), paint());
-          if (!cur) {
-            let { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
-            if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid })); // 没有 role_id 栏的旧资料库
-            if (error) return (fail(error), paint());
-            mcs.push({ group_id: gid, company_id: cid, role_id: null });
-          }
-        } else if (cur) {
-          const role_id = el.value === "user" ? null : el.value;
-          const { error } = await sb.from("gw_member_companies").update({ role_id }).eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
-          if (error) return (fail(error), paint());
-          cur.role_id = role_id;
-        }
-        openMod.delete(gid);
+        if (el.dataset.coIn) {
+          const v = st.get(el.dataset.coIn);
+          v.in = el.checked;
+          if (!v.in) v.role_id = null;
+        } else if (el.dataset.roleSel) st.get(el.dataset.roleSel).role_id = el.value === "user" ? null : el.value;
+        else return;
         paint();
+      });
+      pm.el.addEventListener("click", async (e) => {
+        const b = e.target.closest("button");
+        if (!b || b.disabled) return;
+        if ("coCancel" in b.dataset) return pm.close();
+        if (!("coSave" in b.dataset)) return;
+        busy = true;
+        paint();
+        const stop = (error) => ((busy = false), fail(error), paint(), draw());
+        for (const c of cos) {
+          const was = orig.get(c.id), now = st.get(c.id);
+          const cur = mcRow(g.id, c.id);
+          if (now.in && !was.in) {
+            const e1 = await ensureMember(g.id);
+            if (e1) return stop(e1);
+            let { error } = await sb.from("gw_member_companies").insert({ group_id: g.id, user_id: uid, company_id: c.id, role_id: now.role_id });
+            if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: g.id, user_id: uid, company_id: c.id })); // 没有 role_id 栏的旧资料库
+            if (error) return stop(error);
+            mcs.push({ group_id: g.id, company_id: c.id, role_id: now.role_id });
+          } else if (!now.in && was.in) {
+            if (cur) {
+              const { error } = await sb.from("gw_member_companies").delete().eq("group_id", g.id).eq("user_id", uid).eq("company_id", c.id);
+              if (error) return stop(error);
+              mcs.splice(mcs.indexOf(cur), 1);
+            }
+          } else if (now.in && cur && (cur.role_id || null) !== now.role_id) {
+            const { error } = await sb.from("gw_member_companies").update({ role_id: now.role_id }).eq("group_id", g.id).eq("user_id", uid).eq("company_id", c.id);
+            if (error) return stop(error);
+            cur.role_id = now.role_id;
+          }
+          orig.set(c.id, { ...now });
+        }
+        closePanel(g.id);
+        toast(t("admin.users.savedOk"));
+        pm.close();
         draw();
       });
     }
@@ -577,19 +606,36 @@
       if (g && d.coDlg) return companyDialog(g);
       if (g && d.addMod) return ctx && addModuleDialog(g);
       if (g && d.rmBiz) return removeBusiness(g);
+      if (d.panelCancel) return (closePanel(d.panelCancel), draw());
+      if (d.panelSave) return savePanel();
       if (d.tile) {
         const [gid, mid] = d.tile.split(":");
-        openMod.get(gid) === mid ? openMod.delete(gid) : openMod.set(gid, mid);
+        openMod.get(gid) === mid ? closePanel(gid) : openPanel(gid, mid);
         return draw();
       }
     });
+    // 模块面板 Save：写 gw_module_members（勾 Admin 一定同时有 Access；取消 Access 也取消 Admin）
+    async function savePanel() {
+      if (!pending || saving) return;
+      const { gid, mid, access, admin } = pending;
+      saving = true;
+      draw();
+      const ok = await saveAccess(ctx, uid, mid, access, admin);
+      saving = false;
+      if (ok) ((closePanel(gid)), toast(t("admin.users.savedOk")));
+      draw();
+    }
     m.el.addEventListener("input", (e) => {
       if (e.target.matches("[data-draft-name]") && draft) draft.full_name = e.target.value;
     });
-    m.el.addEventListener("change", async (e) => {
+    m.el.addEventListener("change", (e) => {
       const box = e.target;
       if (box.matches("[data-draft-super]") && draft) return ((draft.super = box.checked), draw());
-      await onTick(ctx, e, draw);
+      if (box.matches("[data-pend]") && pending) {
+        if (box.dataset.pend === "admin") ((pending.admin = box.checked), pending.admin && (pending.access = true));
+        else ((pending.access = box.checked), !pending.access && (pending.admin = false));
+        return draw();
+      }
     });
     draw();
     ctx = await loadAccess();
@@ -639,7 +685,10 @@
         .sort(byModName);
     const hasMod = (u, mid) => isSuperUser(u) || mm.some((r) => r.user_id === u.id && r.module_id === mid);
     const roleName = new Map(roles.map((r) => [r.id, r.name]));
-    const roleBadge = (u) => (u.role === "super_admin" ? badge(tu("roles.super_admin"), "red") : u.role_id ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
+    const roleBadge = (u) => (u.role_id && !isSuperUser(u) ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
+    const superMark = (u) => (isSuperUser(u) ? `<span title="${esc(tu("roles.super_admin"))}" aria-label="${esc(tu("roles.super_admin"))}" class="flex size-5 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">${icon("shield-check", "size-3.5")}</span>` : "");
+    // Super Admin 排最上面（名字 A→Z），其他人接着 A→Z
+    const byRank = (a, b) => (isSuperUser(b) ? 1 : 0) - (isSuperUser(a) ? 1 : 0) || (a.full_name || "").localeCompare(b.full_name || "");
     const canEdit = isSuper || C.can_add_business_user; // 编辑钮：开资料窗的编辑模式
     const statusW = "w-24 shrink-0"; // 停用 / 启用钮固定宽度，每一行的动作才会对齐
     // 进阶搜寻：开没开、选了哪个 Business / Company / 模块（记住上次）
@@ -702,13 +751,14 @@
     };
 
     function drawList() {
-      const list = users.filter(match);
+      const list = users.filter(match).sort(byRank);
       const active = list.filter((u) => u.status !== "disabled");
       const off = list.filter((u) => u.status === "disabled");
       const row = (u) => `<div data-user="${u.id}" class="flex items-center gap-3 p-3 sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
           <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              ${superMark(u)}
               <button data-window="${u.id}" class="truncate font-medium hover:underline">${esc(u.full_name)}</button>
               ${u.user_code ? `<span class="font-mono text-xs text-slate-400">${esc(u.user_code)}</span>` : ""}
               ${roleBadge(u)}
@@ -1522,6 +1572,7 @@
               ${isSuper ? `<label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(tmod("uploadPhoto"))}<input type="file" name="photo" accept="image/*" class="hidden"></label>` : ""}
             </div>
             <div class="min-w-0 flex-1 space-y-3">
+              ${isSuper ? `<label class="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : ""}
               <div class="grid gap-3 sm:grid-cols-[8rem_1fr]">
                 ${field(tmod("kind"), `<input value="${esc(tmod("kinds." + mod.kind))}" readonly class="${cls.input} bg-slate-50 dark:bg-slate-800">`)}
                 ${field(tmod("code"), `<input value="${esc(mod.code)}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
@@ -1529,7 +1580,6 @@
               ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
               ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`) : ""}
-              ${isSuper ? `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : ""}
             </div>
           </div>
           ${isSuper ? `<div><p class="mb-1.5 ${cls.label}">${esc(tmod("businessTags"))}</p><div data-biz-area class="space-y-3"></div></div>` : ""}
@@ -1547,6 +1597,13 @@
       const bizArea = $("[data-biz-area]", m.el);
       const plusBtn = (attrs, label) =>
         `<button type="button" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>`;
+      // 负责人下拉：搜寻框筛名字（现在选的人永远留在选项里）
+      const leadOptions = (gid, q) => {
+        const cur = leadOf.get(gid) || "";
+        const s = q.trim().toLowerCase();
+        const list = people.filter((x) => x.id === cur || !s || (x.full_name || "").toLowerCase().includes(s));
+        return opt([["", "—"], ...list.map((x) => [x.id, x.full_name])], cur);
+      };
       function paintBiz() {
         if (!bizArea) return;
         const on = groups.filter((g) => bizOn.has(g.id));
@@ -1570,9 +1627,10 @@
               </div>
               ${
                 sectorsReady
-                  ? `<div class="flex items-center gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
+                  ? `<div class="flex flex-col gap-2 border-t border-slate-100 px-3 py-2 sm:flex-row sm:items-center dark:border-slate-800">
                       <span class="w-24 shrink-0 text-xs text-slate-500">${esc(tmod("lead"))}</span>
-                      <select data-lead="${g.id}" class="${cls.input} h-9 min-w-0 flex-1">${opt([["", "—"], ...people.map((x) => [x.id, x.full_name])], leadOf.get(g.id))}</select>
+                      <input type="search" data-lead-q="${g.id}" placeholder="${esc(tmod("searchName"))}" class="${cls.input} h-9 sm:w-44">
+                      <select data-lead="${g.id}" class="${cls.input} h-9 min-w-0 flex-1">${leadOptions(g.id, "")}</select>
                     </div>`
                   : ""
               }
@@ -1667,6 +1725,11 @@
           companiesIn(d.bizOff).forEach((c) => [...bizOn].some((gid) => companiesIn(gid).some((x) => x.id === c.id)) || coOn.delete(c.id));
         }
         paintBiz();
+      });
+      m.el.addEventListener("input", (e) => {
+        const el = e.target;
+        if (!el.dataset.leadQ) return;
+        $(`[data-lead="${el.dataset.leadQ}"]`, m.el).innerHTML = leadOptions(el.dataset.leadQ, el.value);
       });
       m.el.addEventListener("change", (e) => {
         const el = e.target;

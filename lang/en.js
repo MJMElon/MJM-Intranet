@@ -495,11 +495,6 @@ window.GW_LANG["en"] = {
       "connector": "AI Connector"
     },
     "users": {
-      "deleteRights": "Can delete",
-      "deleteBusiness": "Business",
-      "deleteCompany": "Company",
-      "deleteModule": "Module",
-      "deleteRightsHint": "Lets this person delete these in Master Manage. Super admins always can.",
       "search": "Search name or email…",
       "allStatus": "All statuses",
       "status": {
@@ -583,9 +578,7 @@ window.GW_LANG["en"] = {
       "allRoles": "All roles",
       "roleHint": "Roles are set up under Master Manage → Roles. A User has no management rights.",
       "allModules": "All modules",
-      "details": "View",
-      "becomeSuper": "Become super admin",
-      "becomeSuperHint": "A super admin can open every module and can give any user access to modules."
+      "details": "View"
     },
     "groups": {
       "description": "Groups decide which modules a set of people can use.",
@@ -844,10 +837,11 @@ window.GW_LANG["en"] = {
       "clickModule": "Click a module to set its access.",
       "companies": "Companies in {business}",
       "adminOf": "This user is an admin of this module",
-      "rolesBtn": "Roles & companies",
-      "rolesTitle": "Roles & companies of {name}",
-      "inBusiness": "In this business",
       "notInCompany": "— Not in this company —",
+      "addBusinessTitle": "Add {name} to a business",
+      "addModuleTitle": "Add module — {business}",
+      "addModuleHint": "Only modules this person can have here are listed: linked to this business and, if limited to certain companies, one of their companies. Add is immediate.",
+      "removeBusinessBody": "Remove {name} from {business}? Their companies and roles there are removed too.",
       "userNoRole": "User (no role)"
     },
     "connector": {

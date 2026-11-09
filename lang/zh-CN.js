@@ -495,11 +495,6 @@ window.GW_LANG["zh-CN"] = {
       "connector": "AI Connector"
     },
     "users": {
-      "deleteRights": "可以删除",
-      "deleteBusiness": "Business",
-      "deleteCompany": "Company",
-      "deleteModule": "模块",
-      "deleteRightsHint": "让这个人可以在主资料管理里删除这些。Super admin 永远可以。",
       "search": "搜索姓名或 Email…",
       "allStatus": "全部状态",
       "status": {
@@ -583,9 +578,7 @@ window.GW_LANG["zh-CN"] = {
       "allRoles": "全部角色",
       "roleHint": "角色在 Master Manage → 角色 设定。一般用户没有管理权。",
       "allModules": "全部模块",
-      "details": "查看",
-      "becomeSuper": "设为超级管理员",
-      "becomeSuperHint": "超级管理员可以打开所有模块，并能为任何用户开放模块权限。"
+      "details": "查看"
     },
     "groups": {
       "description": "群组决定一群人能用哪些模块。",
@@ -844,10 +837,11 @@ window.GW_LANG["zh-CN"] = {
       "clickModule": "点模块就可以设定权限。",
       "companies": "{business} 的公司",
       "adminOf": "此用户是这个模块的管理员",
-      "rolesBtn": "角色与公司",
-      "rolesTitle": "{name} 的角色与公司",
-      "inBusiness": "在这个 Business",
       "notInCompany": "— 不在这个 Company —",
+      "addBusinessTitle": "把 {name} 加进 Business",
+      "addModuleTitle": "新增模块 — {business}",
+      "addModuleHint": "只列这个人在这里可以有的模块：已标到这个 Business，而且（如果模块有限定 Company）他在其中一个 Company。按新增立刻生效。",
+      "removeBusinessBody": "把 {name} 移出 {business}？他在这里的 Company 和角色也会一起移除。",
       "userNoRole": "一般用户（没有角色）"
     },
     "connector": {

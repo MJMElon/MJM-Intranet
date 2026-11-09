@@ -437,3 +437,6 @@ verify_jwt = false
 
 [functions.gw-ai-chat]
 verify_jwt = false
+
+[functions.gw-master-data]
+verify_jwt = false

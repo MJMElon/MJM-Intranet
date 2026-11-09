@@ -34,8 +34,10 @@ where email = 'you@example.com';
 
 ## 3. Edge Functions
 
+GitHub → Actions → **Deploy Edge Functions**（需要 repo secret `SUPABASE_ACCESS_TOKEN`；改到 `supabase/functions/` 推到 main 也会自动跑）。或用终端：
+
 ```bash
-npx supabase functions deploy gw-auth gw-admin gw-issue-token gw-check-access gw-jwks --project-ref briqzyxfxsvulyizzbiu
+npx supabase functions deploy gw-auth gw-admin gw-issue-token gw-check-access gw-jwks gw-master-data --project-ref briqzyxfxsvulyizzbiu --no-verify-jwt --yes
 ```
 
 第 2 级 Token 需要签名私钥：

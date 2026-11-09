@@ -385,7 +385,7 @@ window.GW_LANG["en"] = {
       "newCompany": "New company…",
       "noneToAdd": "Every company is already in this business.",
       "saved": "Saved",
-      "lead": "Lead: {name}",
+      "lead": "Lead: {name}"
     },
     "sector": {
       "add": "Add sector",
@@ -495,8 +495,9 @@ window.GW_LANG["en"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "advancedSearch": "Advanced search",
+      "noCompanies": "This business has no companies yet.",
       "search": "Search name or email…",
-      "allStatus": "All statuses",
       "status": {
         "active": "Active",
         "disabled": "Disabled"
@@ -575,9 +576,7 @@ window.GW_LANG["en"] = {
           "too_many": "You can import up to 500 users at a time."
         }
       },
-      "allRoles": "All roles",
       "roleHint": "Roles are set up under Master Manage → Roles. A User has no management rights.",
-      "allModules": "All modules",
       "details": "View"
     },
     "groups": {
@@ -837,12 +836,10 @@ window.GW_LANG["en"] = {
       "clickModule": "Click a module to set its access.",
       "companies": "Companies in {business}",
       "adminOf": "This user is an admin of this module",
-      "notInCompany": "— Not in this company —",
       "addBusinessTitle": "Add {name} to a business",
       "addModuleTitle": "Add module — {business}",
       "addModuleHint": "Only modules this person can have here are listed: linked to this business and, if limited to certain companies, one of their companies. Add is immediate.",
-      "removeBusinessBody": "Remove {name} from {business}? Their companies and roles there are removed too.",
-      "userNoRole": "User (no role)"
+      "removeBusinessBody": "Remove {name} from {business}? Their companies and roles there are removed too."
     },
     "connector": {
       "switchTitle": "AI Connector",

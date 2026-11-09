@@ -385,7 +385,7 @@ window.GW_LANG["zh-CN"] = {
       "newCompany": "新增 Company…",
       "noneToAdd": "所有 Company 都已经在这个 Business 里了。",
       "saved": "已储存",
-      "lead": "负责人：{name}",
+      "lead": "负责人：{name}"
     },
     "sector": {
       "add": "新增 Sector",
@@ -495,8 +495,9 @@ window.GW_LANG["zh-CN"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "advancedSearch": "进阶搜寻",
+      "noCompanies": "这个 Business 还没有 Company。",
       "search": "搜索姓名或 Email…",
-      "allStatus": "全部状态",
       "status": {
         "active": "启用",
         "disabled": "已停用"
@@ -575,9 +576,7 @@ window.GW_LANG["zh-CN"] = {
           "too_many": "一次最多导入 500 人。"
         }
       },
-      "allRoles": "全部角色",
       "roleHint": "角色在 Master Manage → 角色 设定。一般用户没有管理权。",
-      "allModules": "全部模块",
       "details": "查看"
     },
     "groups": {
@@ -837,12 +836,10 @@ window.GW_LANG["zh-CN"] = {
       "clickModule": "点模块就可以设定权限。",
       "companies": "{business} 的公司",
       "adminOf": "此用户是这个模块的管理员",
-      "notInCompany": "— 不在这个 Company —",
       "addBusinessTitle": "把 {name} 加进 Business",
       "addModuleTitle": "新增模块 — {business}",
       "addModuleHint": "只列这个人在这里可以有的模块：已标到这个 Business，而且（如果模块有限定 Company）他在其中一个 Company。按新增立刻生效。",
-      "removeBusinessBody": "把 {name} 移出 {business}？他在这里的 Company 和角色也会一起移除。",
-      "userNoRole": "一般用户（没有角色）"
+      "removeBusinessBody": "把 {name} 移出 {business}？他在这里的 Company 和角色也会一起移除。"
     },
     "connector": {
       "switchTitle": "AI Connector",

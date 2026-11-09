@@ -29,7 +29,7 @@
       ]
     : [
         ["userGroup", "users-round", canGroupsPage || canUsersPage || canAccessPage ? ["users"] : []],
-        ...(C.can_edit_module_name ? [["master", "database", ["structure"]]] : []),
+        ...(C.can_edit_module_name || me.can_delete_business || me.can_delete_company || me.can_delete_module ? [["master", "database", ["structure"]]] : []),
         ...(C.can_view_audit ? [["audit", "scroll-text", ["audit"]]] : []),
       ].filter(([, , tabs]) => tabs.length);
   const TABS = SECTIONS.flatMap(([, , tabs]) => tabs);
@@ -180,9 +180,10 @@
   };
   const coShort = (c) => c.short_name || c.code || c.name;
   // 读回上次的选择；Company 不在这个 Business 里就选第一个 Company（allowBlank：没有 Company 时 "" 也算合法）
-  function ugState(groups, companiesOf, allowBlank) {
+  function ugState(groups, companiesOf, allowBlank, allowAll) {
     let gid = ugRecall("gw_ug_business");
-    if (!groups.some((g) => g.id === gid)) gid = groups.length ? groups[0].id : null;
+    if (allowAll && (gid === null || gid === "")) gid = ""; // "" = 全部 Business
+    else if (!groups.some((g) => g.id === gid)) gid = groups.length ? groups[0].id : null;
     const comps = gid ? companiesOf(gid) : [];
     let cid = ugRecall("gw_ug_company");
     if (!comps.some((c) => c.id === cid) && !(allowBlank && cid === "")) cid = comps.length ? comps[0].id : "";
@@ -190,9 +191,18 @@
   }
   /* 横条：Business 下拉 → Company 下拉；只有一个 Company 时直接显示名字（有 pending 选项就变成两格切换）；
      pendingLabel 有给才会多一个「待分配」选项（By Group），没有就是 By Module 的用法（没有 Company 时显示「全部 Company」） */
-  function ugBar({ groups, gid, comps, cid, pendingLabel }) {
+  function ugBar({ groups, gid, comps, cid, pendingLabel, allLabel }) {
     const sel = `h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 sm:w-56 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100`;
-    const bizSel = `<select id="ug-biz" aria-label="${esc(t("admin.tabs.business"))}" class="${sel}">${groups.map((x) => `<option value="${x.id}" ${x.id === gid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
+    const bizSel = `<select id="ug-biz" aria-label="${esc(t("admin.tabs.business"))}" class="${sel}">${allLabel ? `<option value="" ${gid === "" ? "selected" : ""}>${esc(allLabel)}</option>` : ""}${groups.map((x) => `<option value="${x.id}" ${x.id === gid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
+    // 用户名单：Business 可以选「全部」；选了 Business 后 Company 也可以「全部」
+    if (allLabel) {
+      const coPart = gid
+        ? `<select id="ug-co" aria-label="${esc(t("admin.tabs.company"))}" class="${sel}"><option value="" ${cid === "" ? "selected" : ""}>${esc(t("admin.access.allCompanies"))}</option>${comps.map((c) => `<option value="${c.id}" ${c.id === cid ? "selected" : ""} title="${esc(c.name)}">${esc(coShort(c))}</option>`).join("")}</select>`
+        : "";
+      return `<div class="flex flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-center">
+        ${bizSel}${coPart ? `<span class="hidden sm:inline">${icon("chevron-right", "size-4 shrink-0 text-slate-400")}</span>${coPart}` : ""}
+      </div>`;
+    }
     const pill = (text) => `<span class="inline-flex h-10 w-full items-center gap-1.5 rounded-xl sm:w-56 border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">${icon("building-2", "size-4 shrink-0 text-slate-400")}<span class="truncate">${esc(text)}</span></span>`;
     let coPart;
     if (comps.length > 1)
@@ -232,11 +242,7 @@
   // Super Admin 自动拥有所有模块（资料库 gw__effective_module_ids 也是这样算），画面上一律显示成有权限 + Admin
   const isSuperUser = (u) => !!u && u.role === "super_admin";
   const SUPER_ROW = Object.freeze({ is_admin: true, auto: true });
-  // 模块图示上的小标记：右下绿勾 = 有权限；右上蓝盾 = 这个模块的 Admin
-  const accessMark = `<span class="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-emerald-500 text-white ring-2 ring-white dark:ring-slate-800">${icon("check", "size-2.5")}</span>`;
   const adminMark = () => `<span data-admin-mark title="${esc(t("admin.userWindow.adminOf"))}" class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-sky-500 text-white ring-2 ring-white dark:ring-slate-800">${icon("shield-check", "size-2.5")}</span>`;
-  // 图示下面的名字：最多两行、不在字中间断开
-  const tileName = (name, extra) => `<span class="line-clamp-2 w-full text-center text-xs leading-tight font-medium [overflow-wrap:normal] [word-break:normal] ${extra || ""}">${esc(name)}</span>`;
   // 这个 Business（+ Company）里能用的模块：标到 Business、启用中；模块有标 Company 的话，选的 Company 要在里面（"" = 只看没标 Company 的）
   const modulesForLine = (ctx, gid, cid) =>
     ctx.gm
@@ -489,12 +495,15 @@
        Roles & companies（super_admin 或在那个 Business 能加人的角色）→ 盖在上面的小窗：每个 Business 勾「在这个 Business」，
          每个 Company 一个下拉：不在 / 一般用户 / 角色 → 立刻写 gw_group_members / gw_member_companies(role_id)
        能不能改模块权限看角色：super_admin、角色有加 / 移除 / 设定 Admin 的 Business、或是模块 Admin；自己和 Super Admin 只能看。 */
-  async function userWindow(uid, onClose) {
+  const PROFILE_COLS = "id, full_name, email, status, role, role_id, user_code, can_delete_business, can_delete_company, can_delete_module";
+  const DEL_KEYS = ["business", "company", "module"];
+  // opts.edit：一开就是编辑模式（名单上的铅笔）
+  async function userWindow(uid, onClose, opts) {
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const m = modal("", GW.spinner(), { wide: true, onClose });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
-      sb.from("gw_profiles").select("id, full_name, email, status, role, role_id, user_code").eq("id", uid).maybeSingle(),
+      sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
       sb.from("gw_groups").select("id, name").order("sort_order").order("name"),
       sb.from("gw_companies").select("id, name, short_name, code").order("sort_order").order("name"),
@@ -537,8 +546,10 @@
     const selCo = new Map(bizList().map((g) => [g.id, (cosIn(g.id)[0] || {}).id || ""]));
     const openMod = new Map();
     let editing = false;
-    let draft = null; // { full_name, super }
+    let draft = null; // { full_name, super, del: { business, company, module } }
     let saving = false;
+    const mkDraft = () => ({ full_name: u.full_name, super: u.role === "super_admin", del: Object.fromEntries(DEL_KEYS.map((k) => [k, !!u["can_delete_" + k]])) });
+    if (opts && opts.edit && (canEditProfile || canRolesAny())) ((editing = true), (draft = mkDraft()));
 
     function modulesFor(gid) {
       const cid = selCo.get(gid);
@@ -600,24 +611,36 @@
     function bizBar(g) {
       const on = expanded.has(g.id);
       const list = ctx ? modulesFor(g.id) : null;
+      // 模块小卡：图示 + 名字（右边）；有权限的实线、没权限的虚线淡色；点开 = Access / Admin 勾选面板
       const tile = (mod) => {
         const row = rowOf(mod.id);
         const active = openMod.get(g.id) === mod.id;
-        return `<button type="button" data-tile="${g.id}:${mod.id}" title="${esc(mod.name)}" class="relative flex w-28 min-w-[6rem] flex-col items-center gap-1.5 rounded-xl p-2 text-center transition-colors ${
-          active ? "bg-white shadow-sm ring-2 ring-brand-500 dark:bg-slate-900" : "hover:bg-white/70 dark:hover:bg-white/5"
+        return `<button type="button" data-tile="${g.id}:${mod.id}" title="${esc(mod.name)}" class="relative flex max-w-full items-center gap-2 rounded-xl border px-2 py-1.5 text-left transition-colors ${
+          active
+            ? "border-brand-500 bg-white ring-2 ring-brand-500 dark:bg-slate-900"
+            : row
+              ? "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+              : "border-dashed border-slate-300 opacity-60 hover:opacity-100 dark:border-slate-600"
         }">
-          <span class="relative">${modLogo(mod, "size-12")}${row ? accessMark : ""}${row && row.is_admin ? adminMark() : ""}</span>
-          ${tileName(mod.name, row ? "text-slate-800 dark:text-slate-100" : "text-slate-500")}
+          <span class="relative shrink-0">${modLogo(mod, "size-9")}${row && row.is_admin ? adminMark() : ""}</span>
+          <span class="min-w-0 text-xs leading-tight font-medium [overflow-wrap:normal] [word-break:normal] ${row ? "text-slate-800 dark:text-slate-100" : "text-slate-500"}">${esc(mod.name)}</span>
         </button>`;
       };
+      const groupBox = (key, label, arr) => `<div data-group="${g.id}:${key}">
+        <p class="mb-1 px-0.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">${esc(label)} <span class="font-normal text-slate-400">(${arr.length})</span></p>
+        ${arr.length ? `<div class="flex flex-wrap gap-1.5">${arr.map(tile).join("")}</div>` : `<p class="px-0.5 text-xs text-slate-400">—</p>`}
+      </div>`;
       const body = !on
         ? ""
         : `<div class="border-t border-slate-200/80 px-3 pt-2 pb-3 dark:border-slate-700">${
             !list
               ? GW.spinner()
               : list.length
-                ? `<div class="flex flex-wrap gap-1">${list.map(tile).join("")}</div>
-                   ${openMod.has(g.id) && list.some((x) => x.id === openMod.get(g.id)) ? panel(g.id, modById.get(openMod.get(g.id))) : `<p class="mt-1 px-1 text-xs text-slate-400">${esc(tu("clickModule"))}</p>`}`
+                ? `<div class="space-y-3">
+                     ${groupBox("with", tu("withAccess"), list.filter((x) => rowOf(x.id)))}
+                     ${superU() ? "" : groupBox("without", tu("noAccessYet"), list.filter((x) => !rowOf(x.id)))}
+                   </div>
+                   ${openMod.has(g.id) && list.some((x) => x.id === openMod.get(g.id)) ? panel(g.id, modById.get(openMod.get(g.id))) : `<p class="mt-2 px-1 text-xs text-slate-400">${esc(tu("clickModule"))}</p>`}`
                 : `<p class="py-3 text-center text-sm text-slate-400">${esc(tu("noModulesHere"))}</p>`
           }</div>`;
       return `<div data-biz="${g.id}" class="rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-700 dark:bg-slate-800/40">
@@ -648,7 +671,14 @@
                   ? `<label class="flex items-start gap-2.5 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-700 ${u.id === me.id ? "opacity-60" : "cursor-pointer"}">
                       <input type="checkbox" data-draft-super ${draft.super ? "checked" : ""} ${u.id === me.id ? "disabled" : ""} class="mt-0.5 size-4 accent-red-600">
                       <span class="min-w-0"><span class="block text-sm font-medium">${esc(t("admin.users.becomeSuper"))}</span><span class="block text-xs text-slate-500">${esc(t("admin.users.becomeSuperHint"))}</span></span>
-                    </label>`
+                    </label>
+                    <div data-del-rights class="rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-700">
+                      <p class="text-sm font-medium">${esc(t("admin.users.deleteRights"))}</p>
+                      <div class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5">${DEL_KEYS.map(
+                        (k) => `<label class="flex items-center gap-2 text-sm ${draft.super ? "opacity-60" : "cursor-pointer"}"><input type="checkbox" data-draft-del="${k}" ${draft.super || draft.del[k] ? "checked" : ""} ${draft.super ? "disabled" : ""} class="size-4 accent-emerald-600">${esc(t("admin.users.delete" + k[0].toUpperCase() + k.slice(1)))}</label>`,
+                      ).join("")}</div>
+                      <p class="mt-1 text-xs text-slate-500">${esc(t("admin.users.deleteRightsHint"))}</p>
+                    </div>`
                   : ""
               }
             </div>
@@ -689,10 +719,12 @@
         if (draft.super && u.role !== "super_admin") ((patch.role = "super_admin"), (patch.role_id = null));
         if (!draft.super && u.role === "super_admin") ((patch.role = "user"), (patch.role_id = null));
       }
+      // 可以删除 Business / Company / 模块：super admin 自己永远可以，不用存
+      if (isSuper && !draft.super) DEL_KEYS.forEach((k) => draft.del[k] !== !!u["can_delete_" + k] && (patch["can_delete_" + k] = draft.del[k]));
       saving = true;
       draw();
       if (Object.keys(patch).length) {
-        const { data, error } = await sb.from("gw_profiles").update(patch).eq("id", uid).select("id, full_name, email, status, role, role_id, user_code");
+        const { data, error } = await sb.from("gw_profiles").update(patch).eq("id", uid).select(PROFILE_COLS);
         saving = false;
         if (error || !data || !data.length) {
           setMsg(t("admin.users.errors.forbidden"));
@@ -815,7 +847,7 @@
       if ("done" in d) return m.close();
       if ("edit" in d) {
         editing = true;
-        draft = { full_name: u.full_name, super: u.role === "super_admin" };
+        draft = mkDraft();
         return draw();
       }
       if ("cancel" in d) return ((editing = false), (draft = null), draw());
@@ -836,7 +868,8 @@
     });
     m.el.addEventListener("change", async (e) => {
       const box = e.target;
-      if (box.matches("[data-draft-super]") && draft) return void (draft.super = box.checked);
+      if (box.matches("[data-draft-super]") && draft) return ((draft.super = box.checked), draw());
+      if (box.matches("[data-draft-del]") && draft) return void (draft.del[box.dataset.draftDel] = box.checked);
       if (box.dataset.coPick) {
         selCo.set(box.dataset.coPick, box.value);
         openMod.delete(box.dataset.coPick);
@@ -849,37 +882,51 @@
     draw();
   }
 
-  // ================================================================ 用户名单（super_admin 可以管理；角色有「看名单」只能看，而且只看得到它负责的 Business 的人）
-  async function allUsersView(host, shared) {
+  // ================================================================ 用户名单（User Manage；super_admin 可以管理，角色有「看名单」只能看）
+  /* 一行一个人：头像、名字（底下 Email）、他能用的模块小图示（滑鼠移上去看名字；蓝盾 = 该模块 Admin；Super Admin = 全部模块）、
+     动作：查看（放大镜）/ 编辑（铅笔，直接开编辑模式）/ 停用。上面横条可以选 Business → Company 只看那里的人（预设全部）。 */
+  async function usersListView(host, shared) {
     const seq = routeSeq;
     const tu = (k, v) => t("admin.users." + k, v);
-    const [users, groups, members, roles, mods, mm, companies, bizCo] = await Promise.all([
+    const [users, members, memberCos, roles, mods, mm] = await Promise.all([
       sb.from("gw_profiles").select("*").order("full_name"),
-      sb.from("gw_groups").select("*").order("sort_order").order("name"),
       sb.from("gw_group_members").select("group_id, user_id"),
+      sb.from("gw_member_companies").select("group_id, user_id, company_id"),
       sb.from("gw_roles").select("id, name").order("sort_order").order("name"),
-      sb.from("gw_modules").select("id, code, name, icon, image_url").order("sort_order").order("name"),
+      sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
       sb.from("gw_module_members").select("user_id, module_id, is_admin"),
-      sb.from("gw_companies").select("id, name").order("sort_order").order("name"),
-      sb.from("gw_business_companies").select("group_id, company_id"),
     ]).then((r) => r.map((x) => x.data || []));
-    const groupName = new Map(groups.map((g) => [g.id, g.name]));
     const modById = new Map(mods.map((x) => [x.id, x]));
-    const modsOf = (uid) => mm.filter((r) => r.user_id === uid && modById.has(r.module_id));
+    const activeMods = mods.filter((m) => m.is_active !== false).sort(byModName);
+    const modsOf = (u) =>
+      isSuperUser(u)
+        ? activeMods.map((mod) => ({ mod, is_admin: true }))
+        : mm
+            .filter((r) => r.user_id === u.id && modById.has(r.module_id))
+            .map((r) => ({ mod: modById.get(r.module_id), is_admin: !!r.is_admin }))
+            .sort((a, b) => byModName(a.mod, b.mod));
+    const logos = (u) =>
+      modsOf(u)
+        .map(
+          ({ mod, is_admin }) =>
+            `<span data-logo="${mod.id}" class="relative inline-flex" title="${esc(mod.name)}${is_admin ? " · " + esc(t("admin.userWindow.adminOf")) : ""}">${modLogo(mod, "size-7")}${
+              is_admin ? `<span data-admin-mark class="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-sky-500 text-white ring-1 ring-white dark:ring-slate-800">${icon("shield-check", "size-2")}</span>` : ""
+            }</span>`,
+        )
+        .join("");
     const roleName = new Map(roles.map((r) => [r.id, r.name]));
-    const groupsOf = (id) => members.filter((m) => m.user_id === id).map((m) => m.group_id);
-    // 角色下拉：一般用户 / 各自订角色 / Super Admin（值 = "user" | 角色 id | "super_admin"）
     const roleValue = (u) => (u.role === "super_admin" ? "super_admin" : u.role_id || "user");
-    const roleBadge = (u) => (u.role === "super_admin" ? badge(tu("roles.super_admin"), "red") : u.role_id ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : badge(tu("roles.user")));
+    const roleBadge = (u) => (u.role === "super_admin" ? badge(tu("roles.super_admin"), "red") : u.role_id ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
     const roleOptions = [["user", tu("roles.user")], ...roles.map((r) => [r.id, r.name]), ["super_admin", tu("roles.super_admin")]];
     const filter = { q: shared.q || "", role: "", status: "", module: "" };
+    const canEdit = isSuper || C.can_add_business_user; // 编辑钮：改名字 / 角色与 Company
 
     if (stale(seq)) return;
     host.innerHTML = `<div class="space-y-4">
       <div class="flex flex-col gap-2 lg:flex-row">
         ${searchBox("q", tu("search"))}
         <div class="grid grid-cols-2 gap-2 lg:flex">
-          <select id="module-filter" class="${cls.input} lg:w-44"><option value="">${esc(tu("allModules"))}</option>${mods.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
+          <select id="module-filter" class="${cls.input} lg:w-44"><option value="">${esc(tu("allModules"))}</option>${activeMods.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
           <select id="role-filter" class="${cls.input} lg:w-40"><option value="">${esc(tu("allRoles"))}</option>${roleOptions.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("")}</select>
           <select id="status" class="${cls.input} lg:w-32">
             <option value="">${esc(tu("allStatus"))}</option>
@@ -894,35 +941,34 @@
 
     function drawList() {
       const q = filter.q.trim().toLowerCase();
+      const { gid, cid } = shared.state;
       const list = users.filter(
         (u) =>
           (!q || u.full_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.user_code || "").toLowerCase().includes(q)) &&
+          (!gid || members.some((m) => m.group_id === gid && m.user_id === u.id)) &&
+          (!gid || !cid || memberCos.some((m) => m.group_id === gid && m.user_id === u.id && m.company_id === cid)) &&
           (!filter.role || roleValue(u) === filter.role) &&
           (!filter.status || u.status === filter.status) &&
-          (!filter.module || isSuperUser(u) || modsOf(u.id).some((r) => r.module_id === filter.module)),
+          (!filter.module || isSuperUser(u) || modsOf(u).some((x) => x.mod.id === filter.module)),
       );
       $("#list").innerHTML = list.length
         ? `<div class="${cls.card} divide-y divide-slate-200 dark:divide-slate-800">${list
             .map(
-              (u) => `<div class="flex flex-col gap-3 p-4 md:flex-row md:items-center">
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
+              (u) => `<div data-user="${u.id}" class="flex flex-wrap items-center gap-x-3 gap-y-2 p-3 sm:flex-nowrap sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
+                <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
+                <div class="min-w-0 flex-1 basis-40">
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <button data-window="${u.id}" class="truncate font-medium hover:underline">${esc(u.full_name)}</button>
+                    ${u.user_code ? `<span class="font-mono text-xs text-slate-400">${esc(u.user_code)}</span>` : ""}
                     ${roleBadge(u)}
-                    <button data-window="${u.id}" class="font-medium hover:underline">${esc(u.full_name)}</button>
-                    <span class="font-mono text-xs text-slate-400">${esc(u.user_code || "")}</span>
                     ${u.status === "disabled" ? badge(tu("status.disabled"), "red") : ""}
-                    ${u.must_change_password ? badge(tu("mustChange")) : ""}
                   </div>
-                  ${
-                    isSuperUser(u)
-                      ? `<div class="mt-1.5">${badge(tu("allModules"), "green")}</div>`
-                      : modsOf(u.id).length
-                        ? `<div class="mt-1.5 flex flex-wrap gap-1">${modsOf(u.id).map((r) => modLogo(modById.get(r.module_id), "size-5")).join("")}</div>`
-                        : ""
-                  }
+                  <p class="truncate text-xs text-slate-500">${esc(u.email)}</p>
                 </div>
-                <div class="flex flex-wrap gap-1.5">
-                  <button data-window="${u.id}" class="${btn("ghost", "sm")}">${icon("search")} ${esc(tu("details"))}</button>
+                <div data-logos class="order-last flex w-full flex-wrap gap-1.5 sm:order-none sm:w-auto sm:max-w-[40%] sm:justify-end">${logos(u) || `<span class="text-xs text-slate-400">—</span>`}</div>
+                <div class="ml-auto flex shrink-0 items-center gap-1">
+                  <button data-window="${u.id}" aria-label="${esc(tu("details"))}" title="${esc(tu("details"))}" class="${btn("ghost", "sm")}">${icon("search")}</button>
+                  ${canEdit ? `<button data-edit-user="${u.id}" aria-label="${esc(tu("edit"))}" title="${esc(tu("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>` : ""}
                   ${
                     isSuper && u.id !== me.id
                       ? `<button data-status="${u.id}" class="${btn(u.status === "active" ? "ghost" : "secondary", "sm")} ${u.status === "active" ? "text-red-600 dark:text-red-400" : ""}">${esc(u.status === "active" ? tu("disable") : tu("enable"))}</button>`
@@ -937,8 +983,9 @@
     }
 
     async function drawListFresh() {
-      const { data } = await sb.from("gw_profiles").select("*").order("full_name");
-      if (data) users.splice(0, users.length, ...data);
+      const [p, m] = await Promise.all([sb.from("gw_profiles").select("*").order("full_name"), sb.from("gw_module_members").select("user_id, module_id, is_admin")]);
+      if (p.data) users.splice(0, users.length, ...p.data);
+      if (m.data) mm.splice(0, mm.length, ...m.data);
       if (!stale(seq)) drawList();
     }
     if (filter.q) $("#q").value = filter.q;
@@ -949,8 +996,9 @@
     $("#list").addEventListener("click", async (e) => {
       const b = e.target.closest("button");
       if (!b) return;
-      // 「查看」：开用户资料窗（跟 By Group 点名字一样）；里面的 Edit 改完资料会重画名单
-      if (b.dataset.window) return userWindow(b.dataset.window, () => (location.hash.replace("#", "") === "users" || !location.hash) && drawListFresh());
+      const back = () => !stale(seq) && drawListFresh();
+      if (b.dataset.window) return userWindow(b.dataset.window, back);
+      if (b.dataset.editUser) return userWindow(b.dataset.editUser, back, { edit: true });
       const user = users.find((u) => u.id === b.dataset.status);
       if (!user) return;
       b.disabled = true;
@@ -960,336 +1008,15 @@
       else setMsg(tu("errors." + ((r && r.error) || "forbidden")));
       drawListFresh();
     });
-    shared.refresh = () => {};
+    shared.refresh = drawList; // 横条换 Business / Company → 重新筛
     drawList();
   }
 
-  /* User Group Manage（只限 super_admin）
-     左边：还没有任何群组的人（Pending assignment），拖到右边的群组卡片就加入；手机可点名字选群组。
-     右边：每个群组一张卡片：成员（× 移出）＋ Group Access（这个群组能看到哪些 App）。 */
-  // ================================================================ 群组列表（User & Group Manage）
-  // Business（gw_groups）→ Company（gw_companies，经由 gw_business_companies 连结）；把左边的人拖进某个 Business 底下的某个 Company
-  async function peopleView(host, shared) {
-    const seq = routeSeq;
-    const tg = (k, v) => t("admin.groups." + k, v);
-    const tu2 = (k, v) => t("admin.userGroups." + k, v);
-    const [allGroups, users, members, memberCos, companies, grantRows, links, mods, ctx, hiddenSetting] = await Promise.all([
-      sb.from("gw_groups").select("*").order("sort_order").order("name"),
-      sb.from("gw_profiles").select("id, full_name, email, status, role").order("full_name"),
-      sb.from("gw_group_members").select("group_id, user_id"),
-      sb.from("gw_member_companies").select("group_id, user_id, company_id"),
-      sb.from("gw_companies").select("*").eq("is_active", true).order("sort_order").order("name"),
-      sb.from("gw_group_modules").select("group_id, module_id"),
-      sb.from("gw_business_companies").select("group_id, company_id"),
-      sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
-      loadAccess(), // 模块权限的规则和现况（拖模块到人名上开权限用）
-      sb.from("gw_settings").select("value").eq("key", "hidden_users").maybeSingle(), // 从待分配名单隐藏的帐号（全站设定，super_admin 才能改）
-    ]).then((r) => r.map((x) => (Array.isArray(x) || !("data" in x) ? x : x.data || [])));
-    if (stale(seq)) return;
-    const hidden = new Set(Array.isArray(hiddenSetting && hiddenSetting.value && hiddenSetting.value.ids) ? hiddenSetting.value.ids : []);
-    let showHidden = false;
-    const modById = new Map(mods.map((x) => [x.id, x]));
-    // 这个人在这个 Business 里可以用的模块（小图示）
-    const logosIn = (uid, gid) =>
-      (isSuperUser(userById.get(uid))
-        ? grantRows.filter((g) => g.group_id === gid && modById.has(g.module_id) && modById.get(g.module_id).is_active !== false).map((g) => ({ user_id: uid, module_id: g.module_id, is_admin: true }))
-        : [...ctx.rows.values()].filter((r) => r.user_id === uid && modById.has(r.module_id) && grantRows.some((g) => g.group_id === gid && g.module_id === r.module_id))
-      )
-        .map((r) => ({ r, mod: modById.get(r.module_id) }))
-        .sort((a, b) => byModName(a.mod, b.mod))
-        .map(({ r, mod }) =>
-          r.is_admin
-            ? `<span class="relative inline-flex" title="${esc(mod.name)} · ${esc(t("admin.userWindow.adminOf"))}">${modLogo(mod, "size-5")}<span data-admin-mark class="absolute -top-1 -right-1 flex size-3 items-center justify-center rounded-full bg-sky-500 text-white ring-1 ring-white dark:ring-slate-800">${icon("shield-check", "size-2")}</span></span>`
-            : modLogo(mod, "size-5"),
-        )
-        .join("");
-
-    // 角色功能：加人（拖拉、点名字）、移出、模块权限
-    const canAdd = isSuper || C.can_add_business_user; // 任一 Business 可以加人 → 显示左边名单
-    const canAddTo = (gid) => me.bizCan(gid, "can_add_business_user");
-    const canRemoveFrom = (gid) => me.bizCan(gid, "can_remove_business_user");
-    const { state, groups, companiesOf } = shared;
-    const userById = new Map(users.map((u) => [u.id, u]));
-    const memberSet = new Set(members.map((m) => m.group_id + ":" + m.user_id));
-    // "Business:用户" → 这个人在这个 Business 里的 Company（可以有好几个；一个都没有 = 还没分到 Company）
-    const coMap = new Map();
-    memberCos.forEach((x) => {
-      const k = x.group_id + ":" + x.user_id;
-      if (!coMap.has(k)) coMap.set(k, new Set());
-      coMap.get(k).add(x.company_id);
-    });
-    const cosOf = (gid, uid) => coMap.get(gid + ":" + uid) || new Set();
-    let query = shared.q || "";
-    const groupsOf = (uid) => allGroups.filter((g) => memberSet.has(g.id + ":" + uid));
-    // 我在这个 Business 能不能开这个模块的权限（给谁再看 ctx.canGrant）
-    const canGrantMod = (gid, mid) => isSuper || ctx.managedPairs.some((p) => p.group_id === gid && p.module_id === mid);
-    let sortables = [];
-
-    // 左边待分配名单的名片（名字 + Email）；super_admin 可以把帐号从待分配隐藏（eye-off）/ 放回去（eye）
-    const eyeBtn = (u, unhide) =>
-      isSuper
-        ? `<button type="button" data-${unhide ? "unhide" : "hide"}="${u.id}" title="${esc(tu2(unhide ? "unhide" : "hide"))}" aria-label="${esc(tu2(unhide ? "unhide" : "hide"))}" class="no-drag rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700">${icon(unhide ? "eye" : "eye-off", "size-4")}</button>`
-        : "";
-    const chip = (u, unhide) => `<div data-user="${u.id}" class="gw-user flex ${canAdd && !unhide ? "cursor-grab" : "cursor-pointer"} items-center gap-2 rounded-xl border border-white/70 bg-white/80 px-2.5 py-1.5 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-800 ${u.status === "disabled" ? "opacity-50" : ""}">
-        <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
-        <span class="min-w-0 flex-1"><span class="block truncate font-medium">${esc(u.full_name)}</span><span class="block truncate text-xs text-slate-500">${esc(u.email)}</span></span>
-        ${eyeBtn(u, unhide)}
-      </div>`;
-    // 右边名单的一行：名字、Email、他在这个 Business 可以用的模块小图示、拿掉的 ✕
-    function row(u, g, c) {
-      // ✕ = 从这个 Business（和它底下的 Company）拿掉 → 没有别的 Business 的话就回到待分配名单
-      const x = canRemoveFrom(g.id)
-        ? `<button data-out-biz="${g.id}:${u.id}" aria-label="${esc(tu2("removeMember"))}" title="${esc(tu2("removeMember"))}" class="no-drag rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600">${icon("x")}</button>`
-        : "";
-      return `<div data-user="${u.id}" data-drop-user="${u.id}" class="gw-user flex cursor-pointer items-center gap-3 rounded-xl border border-white/70 bg-white/80 px-3 py-2 text-sm shadow-sm hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700/80 ${u.status === "disabled" ? "opacity-50" : ""}">
-        <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
-        <span class="min-w-0 flex-1"><span class="block truncate font-medium">${esc(u.full_name)}</span><span class="block truncate text-xs text-slate-500">${esc(u.email)}</span></span>
-        <span class="flex shrink-0 flex-wrap justify-end gap-1.5">${logosIn(u.id, g.id)}</span>
-        ${x}
-      </div>`;
-    }
-
-    // 模块列：这个 Business ＋ Company 能用的模块（拖到人名上 = 开权限；人也可以拖到模块上）
-    function moduleBar(g, c) {
-      const list = modulesForLine(ctx, g.id, c ? c.id : "");
-      if (!list.length) return `<div class="mb-3 rounded-xl border border-dashed border-slate-200 px-3 py-3 text-center text-xs text-slate-400 dark:border-slate-700">${esc(tu2("noModulesHere"))}</div>`;
-      const tile = (mod) => {
-        const can = canGrantMod(g.id, mod.id);
-        return `<div data-mod="${mod.id}" ${can ? `data-drop-mod="${mod.id}"` : ""} title="${esc(mod.name)}" class="gw-mod flex w-28 min-w-[6rem] shrink-0 ${can ? "cursor-grab active:cursor-grabbing" : "opacity-60"} flex-col items-center gap-1.5 rounded-xl p-2 text-center select-none hover:bg-white/70 dark:hover:bg-white/5">
-          ${modLogo(mod, "size-10")}${tileName(mod.name, "text-slate-700 dark:text-slate-200")}
-        </div>`;
-      };
-      return `<div class="mb-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-2 dark:border-slate-700 dark:bg-slate-800/40">
-        <div id="ug-mods" class="flex flex-wrap gap-1">${list.map(tile).join("")}</div>
-        ${list.some((mod) => canGrantMod(g.id, mod.id)) ? `<p class="mt-1 px-1 text-[11px] text-slate-400">${esc(tu2("dragHint"))}</p>` : ""}
-      </div>`;
-    }
-
-    function draw() {
-      sortables.forEach((x) => x.destroy());
-      sortables = [];
-      const unplaced = users.filter((u) => u.status === "active" && u.role !== "super_admin" && groupsOf(u.id).length === 0);
-      const pending = unplaced.filter((u) => !hidden.has(u.id));
-      const hiddenUsers = users.filter((u) => hidden.has(u.id));
-      const q = query.trim().toLowerCase();
-      const hit = (u) => !q || (u.full_name + " " + u.email).toLowerCase().includes(q);
-      const leftList = (showHidden ? hiddenUsers : pending).filter(hit);
-      const g = groups.find((x) => x.id === state.gid);
-      const comps = g ? companiesOf(g.id) : [];
-      const c = comps.find((x) => x.id === state.cid) || null;
-      const members = g ? users.filter((u) => memberSet.has(g.id + ":" + u.id)).sort((a, b) => a.full_name.localeCompare(b.full_name)) : [];
-      const shown = members.filter((u) => (c ? cosOf(g.id, u.id).has(c.id) : cosOf(g.id, u.id).size === 0));
-      shared.pendingN = members.filter((u) => cosOf(g.id, u.id).size === 0).length;
-
-      host.innerHTML = `<div class="flex flex-col gap-4 lg:flex-row">
-        ${
-          canAdd
-            ? `<aside class="w-full shrink-0 self-start lg:sticky lg:top-20 lg:w-64">
-                <div class="${cls.card} p-3">
-                  <p class="mb-2 text-xs font-bold tracking-wider ${showHidden ? "text-slate-500" : "text-amber-600"} uppercase">${esc(tu2(showHidden ? "hiddenList" : "pending"))}</p>
-                  <input id="ug-q" type="search" value="${esc(query)}" placeholder="${esc(t("admin.users.search"))}" class="${cls.input} mb-2 h-9">
-                  <div id="ug-left" data-mode="${showHidden ? "hidden" : "pending"}" class="max-h-[45vh] space-y-1.5 overflow-y-auto">${
-                    leftList.length ? leftList.map((u) => chip(u, showHidden)).join("") : `<p class="py-6 text-center text-sm text-slate-400">${esc(tu2(showHidden ? "noHidden" : "pendingEmpty"))}</p>`
-                  }</div>
-                  ${
-                    showHidden
-                      ? `<button type="button" data-hidden-toggle class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">${icon("arrow-left", "size-3.5")}${esc(tu2("backToPending"))}</button>`
-                      : hiddenUsers.length || isSuper
-                        ? `<button type="button" data-hidden-toggle class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">${icon("eye-off", "size-3.5")}${esc(tu2("hiddenList"))} (${hiddenUsers.length})</button>`
-                        : ""
-                  }
-                </div>
-              </aside>`
-            : ""
-        }
-        <section class="${cls.card} min-w-0 flex-1 p-3">
-          ${
-            g
-              ? `${moduleBar(g, c)}
-                 <div id="ug-list" ${canAddTo(g.id) ? `data-drop="${g.id}"` : ""} data-company="${c ? c.id : ""}" class="${canAddTo(g.id) ? "gw-drop" : ""} max-h-[70vh] min-h-24 space-y-1.5 overflow-y-auto rounded-xl border-2 border-dashed border-slate-200/80 p-1.5 dark:border-slate-700">${
-                   shown.map((u) => row(u, g, c)).join("") || `<p class="py-6 text-center text-sm text-slate-400">${esc(tu2("dropHere"))}</p>`
-                 }</div>
-                 ${comps.length ? "" : `<p class="mt-2 text-xs text-slate-400">${esc(tu2("noCompanies"))} <a href="#company" class="underline">${esc(t("admin.tabs.company"))}</a></p>`}`
-              : `<div class="${cls.empty}">${esc(tu2("noBusiness"))} <a href="#business" class="font-medium underline">${esc(t("admin.sections.master"))} → ${esc(t("admin.tabs.business"))}</a></div>`
-          }
-        </section>
-      </div>`;
-      refreshIcons();
-
-      // 放开时指标下面是什么（原生拖拉和触控的 fallback 都适用）
-      const dropTarget = (evt, sel) => {
-        const oe = evt.originalEvent || {};
-        const pt = oe.changedTouches && oe.changedTouches[0] ? oe.changedTouches[0] : oe;
-        if (typeof pt.clientX !== "number") return null;
-        const el = document.elementFromPoint(pt.clientX, pt.clientY);
-        return el ? el.closest(sel) : null;
-      };
-      const dragOpts = { sort: false, delay: 200, delayOnTouchOnly: true, animation: 150 };
-      // 模块 → 人名：开权限
-      const modsEl = $("#ug-mods");
-      if (modsEl && g)
-        sortables.push(
-          window.Sortable.create(modsEl, {
-            ...dragOpts,
-            group: { name: "ugmod", pull: "clone", put: false },
-            draggable: "[data-drop-mod]",
-            onEnd: (evt) => {
-              const target = dropTarget(evt, "[data-drop-user]");
-              if (target) grant(target.dataset.dropUser, evt.item.dataset.mod);
-            },
-          }),
-        );
-      // 人名 → 模块：也是开权限；左边待分配的人拖进名单 = 加进这个 Business 和选的 Company（选「待分配」就只加进 Business）
-      const el = $("#ug-list");
-      if (el && g)
-        sortables.push(
-          window.Sortable.create(el, {
-            ...dragOpts,
-            group: { name: "ug", pull: "clone", put: (to, from) => from.el.id === "ug-left" && !!el.dataset.drop },
-            draggable: "[data-user]",
-            filter: ".no-drag",
-            preventOnFilter: false,
-            onAdd: (evt) => {
-              const uid = evt.item.dataset.user;
-              evt.item.remove();
-              place(el.dataset.drop, el.dataset.company || null, uid, null);
-            },
-            onEnd: (evt) => {
-              if (evt.from !== el) return;
-              if (evt.clone && evt.clone.parentNode && evt.clone !== evt.item) evt.clone.remove();
-              const target = dropTarget(evt, "[data-drop-mod]");
-              if (target) grant(evt.item.dataset.user, target.dataset.dropMod);
-            },
-          }),
-        );
-      if (!canAdd) return;
-      if ($("#ug-left") && !showHidden)
-        sortables.push(window.Sortable.create($("#ug-left"), { ...dragOpts, group: { name: "ug", pull: "clone", put: false }, filter: ".no-drag" }));
-      $("#ug-q")?.addEventListener("input", (e) => {
-        query = shared.q = e.target.value;
-        const pos = e.target.selectionStart;
-        draw();
-        const input = $("#ug-q");
-        input.focus();
-        input.setSelectionRange(pos, pos);
-      });
-    }
-
-    // 开某个人某个模块的 Access（拖拉用）：已经有就提示；不能开就说原因
-    async function grant(uid, mid) {
-      const u = userById.get(uid), mod = modById.get(mid), gid = state.gid;
-      if (!u || !mod) return;
-      if (ctx.rows.has(uid + ":" + mid)) return toast(tu2("alreadyHasAccess", { module: mod.name }));
-      if (!ctx.canGrant(u, gid, mid)) return setMsg(t("admin.access." + (u.id === me.id || u.role === "super_admin" ? "lockedReason" : "noGrantReason")));
-      if (!(await saveAccess(ctx, uid, mid, true, false))) return draw();
-      toast(tu2("accessGiven", { name: u.full_name, module: mod.name }));
-      draw();
-    }
-
-    // 隐藏 / 放回待分配：整份名单存在 gw_settings.hidden_users
-    async function saveHidden() {
-      const { error } = await sb.from("gw_settings").upsert({ key: "hidden_users", value: { ids: [...hidden] }, updated_at: new Date().toISOString(), updated_by: me.id });
-      if (error) setMsg(tg("saveFailed"));
-      return !error;
-    }
-    // 从 Business 拿掉：先删他在这个 Business 的 Company，再删 Business 成员
-    async function removeFromBiz(gid, uid) {
-      const key = gid + ":" + uid;
-      if (cosOf(gid, uid).size) {
-        const { error } = await sb.from("gw_member_companies").delete().eq("group_id", gid).eq("user_id", uid);
-        if (error) return setMsg(tg("saveFailed"));
-      }
-      const { error } = await sb.from("gw_group_members").delete().eq("group_id", gid).eq("user_id", uid);
-      if (error) return setMsg(tg("saveFailed"));
-      memberSet.delete(key);
-      coMap.delete(key);
-      draw();
-    }
-
-    // 放进某个 Business 的某个 Company：还不是 Business 成员就先加进 Business；拖到「Pending allocation」栏 = 从原来的 Company 拿掉
-    async function place(gid, cid, uid, fromCo) {
-      const key = gid + ":" + uid;
-      const g = groups.find((x) => x.id === gid);
-      const c = companies.find((x) => x.id === cid);
-      if (!cid && fromCo) return removeCompany(gid, uid, fromCo);
-      if (!memberSet.has(key)) {
-        const { error } = await sb.from("gw_group_members").insert({ group_id: gid, user_id: uid });
-        if (error) return draw(), setMsg(tg("saveFailed"));
-        memberSet.add(key);
-      }
-      if (cid) {
-        if (cosOf(gid, uid).has(cid)) return draw(), toast(tu2("alreadyMember"));
-        const { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid });
-        if (error) return draw(), setMsg(tg("saveFailed"));
-        if (!coMap.has(key)) coMap.set(key, new Set());
-        coMap.get(key).add(cid);
-      }
-      toast(tu2("added", { name: userById.get(uid).email, group: c ? g.name + " · " + c.name : g.name }));
-      draw();
-    }
-    // 从某个 Company 拿掉（人还在 Business 里；一个 Company 都没有就回到「Pending allocation to company」）
-    async function removeCompany(gid, uid, cid) {
-      const { error } = await sb.from("gw_member_companies").delete().eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
-      if (error) return draw(), setMsg(tg("saveFailed"));
-      cosOf(gid, uid).delete(cid);
-      draw();
-    }
-
-    // 手机：点名字选 Business → Company
-    function pick(uid) {
-      const u = userById.get(uid);
-      const m = modal(
-        tu2("addToGroup", { name: u.email }),
-        groups.filter((g) => canAddTo(g.id)).length
-          ? `<div class="space-y-4">${groups
-              .filter((g) => canAddTo(g.id))
-              .map((g) => {
-                const opts = [...companiesOf(g.id).map((c) => [c.id, c.name]), ...(companiesOf(g.id).length ? [] : [["", tu2("noCompany")]])];
-                return `<div><p class="mb-1.5 text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(g.name)}</p><div class="space-y-1.5">${opts
-                  .map(([cid, label]) => {
-                    const here = cid ? cosOf(g.id, uid).has(cid) : memberSet.has(g.id + ":" + uid);
-                    return `<button data-pick="${g.id}" data-company="${cid}" ${here ? "disabled" : ""} class="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-left text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"><span class="font-medium">${esc(label)}</span>${here ? icon("check", "size-4 text-emerald-600") : icon("plus", "size-4")}</button>`;
-                  })
-                  .join("")}</div></div>`;
-              })
-              .join("")}</div>`
-          : empty(tu2("noBusiness")),
-      );
-      refreshIcons();
-      m.el.addEventListener("click", (e) => {
-        const b = e.target.closest("[data-pick]");
-        if (b) (m.close(), place(b.dataset.pick, b.dataset.company || null, uid));
-      });
-    }
-
-    host.onclick = async (e) => {
-      const b = e.target.closest("button, [data-user]");
-      if (!b) return;
-      const d = b.dataset;
-      if (d.info) return companyInfo(d.info, d.from || null);
-      if (d.outBiz) {
-        const [gid, uid] = d.outBiz.split(":");
-        return removeFromBiz(gid, uid);
-      }
-      if ("hiddenToggle" in d) return ((showHidden = !showHidden), draw());
-      if (d.hide || d.unhide) {
-        b.disabled = true;
-        d.hide ? hidden.add(d.hide) : hidden.delete(d.unhide);
-        if (!(await saveHidden())) d.hide ? hidden.delete(d.hide) : hidden.add(d.unhide);
-        return draw();
-      }
-      // 左边名单点名字：选 Business / Company（手机不方便拖拉时用）；Business 里点名字：看他的资料、所属 Company 和模块权限
-      if (d.user && !e.target.closest(".no-drag")) return b.closest("#ug-left") ? (canAdd && !showHidden ? pick(d.user) : userWindow(d.user, () => shared.reload())) : userWindow(d.user, () => shared.reload());
-    };
-    shared.refresh = draw;
-    draw();
-  }
-
-  /* User & Group Manage 只有一个画面：
-       上面：Business → Company 横条（People / Modules 用；All users 不受它影响）
-       中间：三个切换 People（By Group：模块列 + 名单 + 待分配）/ Modules（模块手风琴）/ All users（全部用户）
-       记住上次看的是哪一个（gw_ug_view）；#groups / #access / #users 深连结各自打开对应的切换 */
-  const VIEW_OF_HASH = { groups: "people", access: "modules", users: "all" };
+  /* User Manage 只有一个画面：
+       上面：Business → Company 横条（Users 可以选「全部」；Modules 一定要选一个 Business）
+       中间：两个切换 Users（全部用户名单）/ Modules（模块手风琴）
+       记住上次看的是哪一个（gw_ug_view）；#users / #groups → Users，#access → Modules */
+  const VIEW_OF_HASH = { groups: "users", access: "modules", users: "users" };
   async function usersScreen(initialView) {
     const seq = routeSeq;
     const [allGroups, companies, links] = await Promise.all([
@@ -1302,14 +1029,14 @@
     const groups = allGroups.filter((g) => isSuper || (me.businessIds || []).includes(g.id));
     const companiesOf = (gid) => companies.filter((c) => links.some((l) => l.group_id === gid && l.company_id === c.id));
     const views = [
-      ...(canGroupsPage ? [["people", "groups", peopleView]] : []),
+      ...(canUsersPage || canGroupsPage ? [["users", "users", usersListView]] : []),
       ...(canAccessPage ? [["modules", "access", modulesView]] : []),
-      ...(canUsersPage ? [["all", "users", allUsersView]] : []),
     ];
     if (!views.length) return (view.innerHTML = empty(t("admin.access.empty")));
     let cur = initialView || ugRecall("gw_ug_view");
+    if (cur === "people" || cur === "all") cur = "users"; // 以前的 People / All users
     if (!views.some(([k]) => k === cur)) cur = views[0][0];
-    const shared = { state: ugState(groups, companiesOf, true), groups, companiesOf, q: "", pendingN: 0, refresh: () => {}, reload: () => show(cur) };
+    const shared = { state: ugState(groups, companiesOf, true, true), groups, companiesOf, q: "", refresh: () => {}, reload: () => show(cur) };
 
     view.innerHTML = `<div class="space-y-3">
       <div class="${cls.card} p-3">
@@ -1322,12 +1049,14 @@
     </div>`;
     const host = $("#ug-host");
     function paintBar() {
+      // Modules 一定要有 Business + Company；Users 可以「全部」
+      if (cur === "modules" && !shared.state.gid && groups.length) shared.state.gid = groups[0].id;
       const comps = shared.state.gid ? companiesOf(shared.state.gid) : [];
-      // People：Company 下拉多一个「待分配」；Modules：没有；All users：横条不影响名单（淡掉）
       if (cur === "modules" && shared.state.cid === "" && comps.length) shared.state.cid = comps[0].id;
+      if (!comps.some((c) => c.id === shared.state.cid)) shared.state.cid = "";
       $("#ug-bar").innerHTML = groups.length
-        ? `<div class="${cur === "all" ? "pointer-events-none opacity-40" : ""}" ${cur === "all" ? 'aria-disabled="true"' : ""}>${ugBar({ groups, gid: shared.state.gid, comps, cid: shared.state.cid, pendingLabel: cur === "people" ? t("admin.userGroups.pendingToggle", { count: shared.pendingN }) : null })}</div>`
-        : `<p class="pb-3 text-sm text-slate-400">${esc(t("admin.userGroups.noBusiness"))} <a href="#business" class="font-medium underline">${esc(t("admin.sections.master"))} → ${esc(t("admin.tabs.business"))}</a></p>`;
+        ? ugBar({ groups, gid: shared.state.gid, comps, cid: shared.state.cid, pendingLabel: null, allLabel: cur === "users" ? t("admin.userGroups.allBusinesses") : null })
+        : `<p class="pb-3 text-sm text-slate-400">${esc(t("admin.userGroups.noBusiness"))} <a href="#structure" class="font-medium underline">${esc(t("admin.sections.master"))} → ${esc(t("admin.tabs.structure"))}</a></p>`;
       $("#ug-views").innerHTML = views
         .map(([k, tab]) => `<button type="button" data-view="${k}" aria-pressed="${k === cur}" class="rounded-lg px-3.5 py-1.5 text-sm font-medium whitespace-nowrap ${
           k === cur ? "bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-white" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -1342,13 +1071,13 @@
       host.innerHTML = GW.spinner();
       paintBar();
       await views.find(([x]) => x === k)[2](host, shared);
-      if (!stale(seq)) paintBar(); // pendingN 现在知道了
     }
     const onBar = (e) => {
       if (e.target.closest("#ug-host")) return;
       const b = e.target.closest("[data-view]");
       if (b) return show(b.dataset.view);
-      if (ugBarEvent(e, shared.state, companiesOf, cur === "people")) {
+      if (ugBarEvent(e, shared.state, companiesOf, cur === "users")) {
+        if (cur === "users" && e.target.id === "ug-biz") ((shared.state.cid = ""), ugRemember("gw_ug_company", "")); // 换 Business → Company 回到「全部」
         paintBar();
         shared.refresh();
       }
@@ -1627,10 +1356,11 @@
   const grip = () => `<span data-grip title="${esc(t("admin.company.dragOrder"))}" class="cursor-grab touch-none rounded p-1 text-slate-300 hover:text-slate-500 active:cursor-grabbing">${icon("grip-vertical", "size-4")}</span>`;
 
   // ================================================================ Business & Module（Master Manage；一页看完 Business → Company → Sector → 模块）
-  /* 每个 Business 一个直栏方块：标题列（名称、代码、改名、删除），底下一排 Company 短名（点开改资料；「+」加 Company），
-     再底下是 Sector 直栏（每个 Sector 一栏，最后一栏「No sector」），模块图示＋名称放在所属的 Sector 栏里；
-     方块最底「Other modules」是还没放进这个 Business 的模块。把模块拖进某一栏 = 加进这个 Business / 换 Sector；
-     拖回「Other modules」= 从这个 Business 拿掉。模块不显示说明文字；点模块图示才开编辑窗。 */
+  /* 每个 Business 一个方块，由上往下排：标题列（名称、代码、改名、删除），底下一排 Company 短名（点开改资料；「+」加 Company），
+     再底下是 Sector 直栏（每个 Sector 一栏，最后一栏「No sector」，标题上的「+」新增 Sector），模块图示＋名称放在所属的 Sector 栏里。
+     「No sector」也放还没加进这个 Business 的模块（淡色虚线框）：拖进某个 Sector 栏 = 加进这个 Business；
+     已加进的拖到别栏 = 换 Sector。要从 Business 拿掉模块：开模块编辑窗取消勾选。模块不显示说明文字；点模块才开编辑窗。
+     Business / Company 的代码是流水号（01、02…）自动给。删除 Business / Company / 模块：super admin，或用户资料里勾了可以删的人。 */
   async function structureTab() {
     const seq = routeSeq;
     const ts = (k, v) => t("admin.structure." + k, v);
@@ -1667,22 +1397,26 @@
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.name.localeCompare(b.name));
     const tagOf = (gid, mid) => bizTags.find((x) => x.group_id === gid && x.module_id === mid);
     const canRename = (mid) => isSuper || (C.can_edit_module_name && (me.roleModules || []).includes(mid));
+    const canDelBiz = isSuper || !!me.can_delete_business;
+    const canDelCo = isSuper || !!me.can_delete_company;
+    const canDelMod = isSuper || !!me.can_delete_module;
+    // 流水号：现有代码里最大的数字 + 1，至少两位（01、02 … 10、11）
+    const nextCode = (list) => String(Math.max(0, ...list.map((x) => (/^\d+$/.test(x.code || "") ? Number(x.code) : 0))) + 1).padStart(2, "0");
     const logo = (m, size) =>
       m.image_url
         ? `<img src="${esc(m.image_url)}" alt="" class="${size} shrink-0 rounded-xl object-cover">`
         : `<span class="flex ${size} shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-700/20 dark:text-brand-100">${moduleIcon(m.icon, "size-5")}</span>`;
-    const openPools = new Set(); // 哪些 Business 的「Other modules」是打开的（重画时保留）
     const sorters = [];
-    const POOL = "__pool";
 
     // ---- 一个模块图示（拖拉用；点一下开编辑窗）
     function tile(g, m) {
       const tag = g ? tagOf(g.id, m.id) : null;
+      const outside = !!g && !tag; // 还没加进这个 Business
       const lead = tag && tag.lead_user_id ? personName.get(tag.lead_user_id) : "";
-      const title = [m.name, lead ? ts("lead", { name: lead }) : ""].filter(Boolean).join(" · ");
-      return `<div data-mod="${m.id}" title="${esc(title)}" class="st-tile group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left select-none dark:border-slate-700 dark:bg-slate-900 ${
-        isSuper ? "cursor-grab active:cursor-grabbing" : ""
-      } ${m.is_active ? "" : "opacity-60"}">
+      const title = outside ? ts("notInBusiness", { name: m.name }) : [m.name, lead ? ts("lead", { name: lead }) : ""].filter(Boolean).join(" · ");
+      return `<div data-mod="${m.id}" ${outside ? "data-outside" : ""} title="${esc(title)}" class="st-tile group flex items-center gap-2 rounded-xl border bg-white px-2 py-1.5 text-left select-none dark:bg-slate-900 ${
+        outside ? "border-dashed border-slate-300 opacity-55 dark:border-slate-600" : "border-slate-200 dark:border-slate-700"
+      } ${isSuper ? "cursor-grab active:cursor-grabbing" : ""} ${m.is_active ? "" : "opacity-60"}">
         ${logo(m, "size-8")}
         <span class="min-w-0 flex-1 text-xs leading-tight font-medium">${esc(m.name)}</span>
         ${canRename(m.id) ? `<button data-edit-mod="${m.id}" aria-label="${esc(tmod("edit"))}" title="${esc(tmod("edit"))}" class="shrink-0 rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10">${icon("pencil", "size-3.5")}</button>` : ""}
@@ -1692,30 +1426,37 @@
     function column(g, sid, label) {
       const mods = modules.filter((m) => {
         const tag = tagOf(g.id, m.id);
-        return tag && (sectorsReady ? (tag.sector_id || null) === (sid || null) : true);
+        if (!tag) return !sid && isSuper; // 还没加进这个 Business 的放「No sector」最后（只有 super admin 看得到，因为只有他能拖进来）
+        return sectorsReady ? (tag.sector_id || null) === (sid || null) : true;
       });
+      const inside = mods.filter((m) => tagOf(g.id, m.id));
+      const outside = mods.filter((m) => !tagOf(g.id, m.id));
       return `<div class="flex min-w-0 flex-col rounded-xl bg-slate-50 p-1.5 dark:bg-white/5">
-        <p class="truncate px-1 pb-1.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase" title="${esc(label)}">${esc(label)}</p>
-        <div data-drop="${g.id}" data-sector="${sid || ""}" class="st-drop flex min-h-14 flex-1 flex-col gap-1.5 rounded-lg">${mods.map((m) => tile(g, m)).join("")}</div>
+        <div class="flex items-center gap-1 px-1 pb-1.5">
+          <p class="min-w-0 flex-1 truncate text-[11px] font-bold tracking-wider text-slate-500 uppercase" title="${esc(label)}">${esc(label)}</p>
+          ${
+            !isSuper || !sectorsReady
+              ? ""
+              : sid
+                ? `<button data-edit-sector="${sid}" aria-label="${esc(tsec("editTitle"))}" title="${esc(tsec("editTitle"))}" class="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-white/10">${icon("pencil", "size-3")}</button>`
+                : `<button data-add-sector aria-label="${esc(tsec("add"))}" title="${esc(tsec("add"))}" class="flex size-5 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3")}</button>`
+          }
+        </div>
+        <div data-drop="${g.id}" data-sector="${sid || ""}" class="st-drop flex min-h-14 flex-1 flex-col gap-1.5 rounded-lg">${[...inside, ...outside].map((m) => tile(g, m)).join("")}</div>
       </div>`;
     }
     // ---- 一个 Business 方块
     function bizBox(g) {
       const cos = companiesIn(g.id);
-      const pool = modules.filter((m) => !tagOf(g.id, m.id));
       const cols = sectorsReady ? [...sectors.map((s) => [s.id, s.name]), ["", ts("noSector")]] : [["", t("admin.tabs.modules")]];
-      return `<section data-card="${g.id}" data-biz="${g.id}" class="st-biz flex shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" style="--st-cols:${cols.length}">
+      return `<section data-card="${g.id}" data-biz="${g.id}" class="st-biz flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" style="--st-cols:${cols.length}">
         <header class="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
           ${isSuper ? grip() : ""}
           ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
           <h3 class="min-w-0 flex-1 truncate font-semibold">${esc(g.name)}</h3>
           ${g.code ? `<span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(g.code)}</span>` : ""}
-          ${
-            isSuper
-              ? `<button data-edit-biz="${g.id}" aria-label="${esc(tg("edit"))}" title="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
-                 <button data-del-biz="${g.id}" aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>`
-              : ""
-          }
+          ${isSuper ? `<button data-edit-biz="${g.id}" aria-label="${esc(tg("edit"))}" title="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>` : ""}
+          ${canDelBiz ? `<button data-del-biz="${g.id}" aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>` : ""}
         </header>
         <div class="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
           ${icon("building-2", "size-3.5 shrink-0 text-slate-400")}
@@ -1729,37 +1470,21 @@
           ${isSuper ? `<button data-add-co="${g.id}" aria-label="${esc(ts("addCompany"))}" title="${esc(ts("addCompany"))}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>` : ""}
         </div>
         <div class="st-sectors grid flex-1 gap-2 p-3">${cols.map(([sid, label]) => column(g, sid, label)).join("")}</div>
-        ${
-          isSuper
-            ? `<details data-pool="${g.id}" ${openPools.has(g.id) ? "open" : ""} class="border-t border-slate-100 dark:border-slate-800">
-                <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-slate-500 select-none hover:text-slate-800 dark:hover:text-slate-200">${icon("chevron-right", "st-chev size-3.5 shrink-0 transition-transform")}${esc(ts("pool"))} <span class="text-slate-400">(${pool.length})</span></summary>
-                <div class="px-3 pb-3">
-                  <p class="mb-2 text-[11px] text-slate-400">${esc(ts("poolHint"))}</p>
-                  <div data-drop="${g.id}" data-sector="${POOL}" class="st-drop grid min-h-10 grid-cols-2 gap-1.5 rounded-lg sm:grid-cols-3">${pool.map((m) => tile(null, m)).join("")}</div>
-                </div>
-              </details>`
-            : ""
-        }
       </section>`;
     }
 
     function draw() {
       sorters.splice(0).forEach((s) => s.destroy());
       view.innerHTML = `<div class="space-y-4">
-        <div class="flex flex-wrap items-center gap-2">
-          <p class="min-w-0 flex-1 basis-64 text-sm text-slate-500">${esc(isSuper ? ts("hint") : ts("hintReadOnly"))}</p>
-          ${isSuper && sectorsReady ? `<button id="st-sectors" class="${btn("secondary")}">${icon("layers")} ${esc(ts("sectors"))}${sectors.length ? ` <span class="text-slate-400">(${sectors.length})</span>` : ""}</button>` : ""}
-          ${isSuper ? `<button id="st-add-biz" class="${btn("primary")}">${icon("plus")} ${esc(ts("addBusiness"))}</button>` : ""}
-        </div>
-        ${groups.length ? `<div id="st-board" class="st-board flex snap-x gap-4 overflow-x-auto pb-3">${groups.map(bizBox).join("")}</div>` : empty(tb("empty"))}
+        ${isSuper ? `<div class="flex justify-end"><button id="st-add-biz" class="${btn("primary")}">${icon("plus")} ${esc(ts("addBusiness"))}</button></div>` : ""}
+        ${groups.length ? `<div id="st-board" class="flex flex-col gap-4">${groups.map(bizBox).join("")}</div>` : empty(tb("empty"))}
         ${!sectorsReady ? `<p class="text-xs text-amber-600">${esc(tsec("notReady"))}</p>` : ""}
       </div>`;
       refreshIcons();
-      $$("[data-pool]").forEach((el) => el.addEventListener("toggle", () => (el.open ? openPools.add(el.dataset.pool) : openPools.delete(el.dataset.pool))));
       if (!isSuper || !window.Sortable) return;
-      // Business 方块左右拖拉排顺序
+      // Business 方块上下拖拉排顺序
       sorters.push(sortableCards($("#st-board"), "gw_groups", () => toast(t("admin.company.orderSaved"))));
-      // 模块只能在同一个 Business 里的栏位之间拖（Sector 栏 ↔ No sector ↔ Other modules）
+      // 模块只能在同一个 Business 里的 Sector 栏之间拖
       $$("[data-drop]").forEach((list) => {
         sorters.push(
           window.Sortable.create(list, {
@@ -1780,18 +1505,14 @@
     async function moved(evt) {
       const mid = evt.item.dataset.mod;
       const gid = evt.to.dataset.drop;
-      const from = evt.from.dataset.sector;
       const to = evt.to.dataset.sector;
       const g = groups.find((x) => x.id === gid);
       const m = modById.get(mid);
       if (!g || !m) return draw();
       const tag = tagOf(gid, mid);
       let res;
-      if (to === POOL) {
-        if (!(await confirmDialog(ts("removeTitle"), ts("removeBody", { module: m.name, business: g.name }), ts("remove"), tg("cancel")))) return draw();
-        res = await sb.from("gw_group_modules").delete().eq("group_id", gid).eq("module_id", mid);
-        if (!res.error) bizTags.splice(bizTags.indexOf(tag), 1);
-      } else if (from === POOL || !tag) {
+      if (!tag && !to) return draw(); // 还没加进来的模块在「No sector」里挪位置：没事
+      if (!tag) {
         const row = { group_id: gid, module_id: mid, ...(sectorsReady ? { sector_id: to || null } : {}) };
         res = await sb.from("gw_group_modules").insert(row);
         if (!res.error) bizTags.push(row);
@@ -1811,7 +1532,7 @@
         `<form class="space-y-4">
           <div data-err></div>
           <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
-            ${field(tb("code"), `<input name="code" required maxlength="20" value="${esc(g ? g.code || "" : "")}" ${g && g.code ? "readonly" : ""} class="${cls.input} font-mono uppercase">`)}
+            ${field(tb("code"), `<input name="code" required maxlength="20" value="${esc(g ? g.code || nextCode(groups) : nextCode(groups))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeHint"))}
             ${field(tb("name"), `<input name="name" required value="${esc(g ? g.name : "")}" class="${cls.input}">`)}
           </div>
           ${field(tg("descriptionLabel"), `<input name="description" value="${esc(g ? g.description || "" : "")}" class="${cls.input}">`)}
@@ -1822,7 +1543,7 @@
         </form>`,
       );
       $("[data-cancel]", m.el).onclick = m.close;
-      $(`[name=${g && g.code ? "name" : "code"}]`, m.el).focus();
+      $("[name=name]", m.el).focus();
       $("form", m.el).addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
@@ -1878,13 +1599,10 @@
       const m = modal(
         c ? tc("editTitle") : tc("addTitle"),
         `<form class="space-y-4"><div data-err></div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || "")}" ${c && c.code ? "readonly" : ""} class="${cls.input} font-mono uppercase">`)}
-            ${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}
-            ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
-            ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
+          <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
+            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeHint"))}
+            <div></div>
           </div>
-          ${field(tc("descriptionLabel"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
           <div>
             <p class="mb-1.5 ${cls.label}">${esc(tc("businesses"))}</p>
             ${
@@ -1905,9 +1623,15 @@
                 : `<p class="text-sm text-slate-400">${esc(tc("noBusiness"))}</p>`
             }
           </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            ${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}
+            ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
+            ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
+            ${field(tc("descriptionLabel"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+          </div>
           ${c ? `<div data-maps></div>` : ""}
           <div class="flex justify-between gap-2">
-            ${c ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
+            ${c && canDelCo ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
             <div class="flex gap-2"><button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button><button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button></div>
           </div>
         </form>`,
@@ -1915,7 +1639,7 @@
       );
       refreshIcons();
       $("[data-cancel]", m.el).onclick = m.close;
-      $(`[name=${c && c.code ? "name" : "code"}]`, m.el).focus();
+      $("[name=name]", m.el).focus();
       // 勾了 Business 才出现面积栏
       m.el.addEventListener("change", (e) => {
         const b = e.target.closest("input[data-biz]");
@@ -1981,7 +1705,7 @@
             drawMaps();
           }
         });
-        $("[data-del]", m.el).onclick = async () => {
+        if ($("[data-del]", m.el)) $("[data-del]", m.el).onclick = async () => {
           if (!(await confirmDialog(tc("deleteTitle"), tc("deleteBody", { name: c.name }), tg("delete"), tg("cancel")))) return;
           const { error } = await sb.from("gw_companies").delete().eq("id", c.id);
           if (error) return ($("[data-err]", m.el).innerHTML = alertBox(tc("inUse")));
@@ -2082,7 +1806,7 @@
                                 ${
                                   cos.length
                                     ? `<label class="mb-1 flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" data-all="${g.id}" class="size-3.5 accent-emerald-600">${esc(tmod("tickAll"))}</label>
-                                       <div class="flex flex-wrap gap-x-4 gap-y-1.5">${cos.map((c) => `<label class="flex items-center gap-1.5 text-sm"><input type="checkbox" name="co" data-g="${g.id}" value="${c.id}" ${coOn.has(c.id) ? "checked" : ""} class="size-4 accent-emerald-600">${esc((c.code ? c.code + " · " : "") + c.name)}</label>`).join("")}</div>`
+                                       <div class="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">${cos.map((c) => `<label class="flex items-center gap-1.5 text-sm"><input type="checkbox" name="co" data-g="${g.id}" value="${c.id}" ${coOn.has(c.id) ? "checked" : ""} class="size-4 accent-emerald-600">${esc((c.code ? c.code + " · " : "") + c.name)}</label>`).join("")}</div>`
                                     : `<span class="text-xs text-slate-400">${esc(tmod("noCompanies"))}</span>`
                                 }
                               </div>
@@ -2094,9 +1818,12 @@
                 </div>`
               : ""
           }
-          <div class="flex justify-end gap-2">
-            <button type="button" data-cancel class="${btn("secondary")}">${esc(tmod("cancel"))}</button>
-            <button type="submit" class="${btn("primary")}">${esc(tmod("save"))}</button>
+          <div class="flex justify-between gap-2">
+            ${canDelMod ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
+            <div class="flex gap-2">
+              <button type="button" data-cancel class="${btn("secondary")}">${esc(tmod("cancel"))}</button>
+              <button type="submit" class="${btn("primary")}">${esc(tmod("save"))}</button>
+            </div>
           </div>
         </form>`,
         { wide: true },
@@ -2104,6 +1831,14 @@
       refreshIcons();
       const f = $("form", m.el);
       $("[data-cancel]", m.el).onclick = m.close;
+      if ($("[data-del]", m.el))
+        $("[data-del]", m.el).onclick = async () => {
+          if (!(await confirmDialog(tmod("deleteTitle"), tmod("deleteBody", { name: mod.name }), tg("delete"), tg("cancel")))) return;
+          const { error } = await sb.from("gw_modules").delete().eq("id", mod.id);
+          if (error) return ($("[data-err]", m.el).innerHTML = alertBox(tmod("saveFailed")));
+          m.close();
+          structureTab();
+        };
       m.el.addEventListener("change", (e) => {
         const el = e.target;
         if (el.name === "biz") {
@@ -2186,87 +1921,41 @@
       });
     }
 
-    // ---------------------------------------------------------- Sector 管理窗：一列一个（拖拉排顺序、改名、删除），底下新增
-    function sectorsDialog() {
-      const list = sectors.slice();
-      const usedCount = (sid) => bizTags.filter((x) => x.sector_id === sid).length;
-      let changed = false;
+    // ---------------------------------------------------------- Sector 新增 / 改名 / 删除（「No sector」标题的「+」新增；Sector 标题的铅笔改）
+    function sectorDialog(x) {
       const m = modal(
-        ts("sectorsTitle"),
-        `<div class="space-y-4">
-          <p class="text-sm text-slate-500">${esc(ts("sectorsHint"))}</p>
+        x ? tsec("editTitle") : tsec("addTitle"),
+        `<form class="space-y-4">
           <div data-err></div>
-          <div data-sec-list class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800"></div>
-          <form data-sec-add class="flex gap-2">
-            <input name="name" required maxlength="40" placeholder="${esc(tsec("placeholder"))}" class="${cls.input} min-w-0 flex-1">
-            <button type="submit" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tsec("add"))}</button>
-          </form>
-          <div class="flex justify-end"><button data-done class="${btn("secondary")}">${esc(t("admin.users.done"))}</button></div>
-        </div>`,
-        { onClose: () => changed && structureTab() },
+          ${field(tsec("name"), `<input name="name" required maxlength="40" value="${esc(x ? x.name : "")}" placeholder="${esc(tsec("placeholder"))}" class="${cls.input}">`)}
+          <div class="flex justify-between gap-2">
+            ${x ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
+            <div class="flex gap-2">
+              <button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button>
+              <button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button>
+            </div>
+          </div>
+        </form>`,
       );
-      const box = $("[data-sec-list]", m.el);
-      let sorter = null;
-      const paint = () => {
-        if (sorter) sorter.destroy();
-        box.innerHTML = list.length
-          ? list
-              .map(
-                (x) => `<div data-card="${x.id}" class="flex items-center gap-2 px-2 py-1.5">
-                  ${grip()}
-                  <input data-sec-name="${x.id}" value="${esc(x.name)}" maxlength="40" aria-label="${esc(tsec("name"))}" class="${cls.input} h-9 min-w-0 flex-1">
-                  <span class="w-20 shrink-0 text-right text-xs text-slate-400">${esc(tsec("used", { count: usedCount(x.id) }))}</span>
-                  <button data-sec-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>
-                </div>`,
-              )
-              .join("")
-          : `<p class="px-3 py-4 text-center text-sm text-slate-400">${esc(tsec("empty"))}</p>`;
-        refreshIcons();
-        sorter = sortableCards(box, "gw_sectors", () => ((changed = true), toast(t("admin.company.orderSaved"))));
-      };
-      paint();
-      const showErr = (error) => ($("[data-err]", m.el).innerHTML = error ? alertBox(error.code === "23505" ? tsec("duplicate") : tg("saveFailed")) : "");
-      // 改名：离开栏位或按 Enter 就存
-      const rename = async (input) => {
-        const x = list.find((y) => y.id === input.dataset.secName);
-        const name = input.value.trim();
-        if (!x || !name || name === x.name) return (input.value = x ? x.name : "");
-        const { error } = await sb.from("gw_sectors").update({ name }).eq("id", x.id);
-        if (error) return (showErr(error), (input.value = x.name));
-        x.name = name;
-        changed = true;
-        showErr(null);
-        toast(ts("saved"));
-      };
-      box.addEventListener("focusout", (e) => e.target.matches("[data-sec-name]") && rename(e.target));
-      box.addEventListener("keydown", (e) => e.key === "Enter" && e.target.matches("[data-sec-name]") && (e.preventDefault(), e.target.blur()));
-      box.addEventListener("click", async (e) => {
-        const b = e.target.closest("[data-sec-del]");
-        if (!b) return;
-        const x = list.find((y) => y.id === b.dataset.secDel);
-        if (!(await confirmDialog(tsec("deleteTitle"), tsec("deleteBody", { name: x.name }), tg("delete"), tg("cancel")))) return;
-        const { error } = await sb.from("gw_sectors").delete().eq("id", x.id);
-        if (error) return showErr(error);
-        list.splice(list.indexOf(x), 1);
-        changed = true;
-        paint();
-      });
-      $("[data-sec-add]", m.el).addEventListener("submit", async (e) => {
+      refreshIcons();
+      $("[data-cancel]", m.el).onclick = m.close;
+      $("[name=name]", m.el).focus();
+      if (x)
+        $("[data-del]", m.el).onclick = async () => {
+          if (!(await confirmDialog(tsec("deleteTitle"), tsec("deleteBody", { name: x.name }), tg("delete"), tg("cancel")))) return;
+          const { error } = await sb.from("gw_sectors").delete().eq("id", x.id);
+          if (error) return ($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed")));
+          m.close();
+          structureTab();
+        };
+      $("form", m.el).addEventListener("submit", async (e) => {
         e.preventDefault();
-        const input = e.target.name;
-        const name = input.value.trim();
-        if (!name) return;
-        const { data, error } = await sb.from("gw_sectors").insert({ name, sort_order: list.length }).select().single();
-        if (error) return showErr(error);
-        list.push(data);
-        changed = true;
-        input.value = "";
-        showErr(null);
-        paint();
-        input.focus();
+        const name = e.target.name.value.trim();
+        const { error } = x ? await sb.from("gw_sectors").update({ name }).eq("id", x.id) : await sb.from("gw_sectors").insert({ name, sort_order: sectors.length });
+        if (error) return ($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tsec("duplicate") : tg("saveFailed")));
+        m.close();
+        structureTab();
       });
-      $("[data-done]", m.el).onclick = m.close;
-      $("[name=name]", $("[data-sec-add]", m.el)).focus();
     }
 
     view.onclick = async (e) => {
@@ -2274,9 +1963,10 @@
       if (!b) return;
       const d = b.dataset;
       if (b.id === "st-add-biz") return bizDialog(null);
-      if (b.id === "st-sectors") return sectorsDialog();
+      if ("addSector" in d) return sectorDialog(null);
+      if (d.editSector) return sectorDialog(sectors.find((x) => x.id === d.editSector));
       if (d.editBiz) return bizDialog(groups.find((x) => x.id === d.editBiz));
-      if (d.delBiz) {
+      if (d.delBiz && canDelBiz) {
         const g = groups.find((x) => x.id === d.delBiz);
         if (!(await confirmDialog(tb("deleteTitle"), tb("deleteBody", { name: g.name }), tg("delete"), tg("cancel")))) return;
         const { error } = await sb.from("gw_groups").delete().eq("id", g.id);

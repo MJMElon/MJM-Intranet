@@ -352,7 +352,7 @@ window.GW_LANG["zh-CN"] = {
   },
   "admin": {
     "sections": {
-      "userGroup": "用户与群组管理",
+      "userGroup": "用户管理",
       "master": "主资料管理",
       "access": "User Access",
       "audit": "操作记录"
@@ -370,13 +370,10 @@ window.GW_LANG["zh-CN"] = {
       "name": "Business 名称"
     },
     "structure": {
-      "hint": "每个 Business 一个方块：上面是它的 Company，下面的模块按 Sector 分栏。把模块拖到别的栏就换 Sector；拖进「其他模块」就从这个 Business 拿掉。",
-      "hintReadOnly": "每个 Business 一个方块：上面是它的 Company，下面的模块按 Sector 分栏。",
+      "codeHint": "流水号，自动给。",
+      "notInBusiness": "{name} 还没加进这个 Business。拖进某个 Sector 栏就加进来。",
       "addBusiness": "新增 Business",
-      "sectors": "Sector",
       "noSector": "没有 Sector",
-      "pool": "其他模块",
-      "poolHint": "把模块往上拖进某个 Sector 栏，就加进这个 Business。",
       "noCompany": "还没有 Company",
       "addCompany": "加 Company",
       "addCompanyTitle": "把 Company 加进 {name}",
@@ -385,13 +382,8 @@ window.GW_LANG["zh-CN"] = {
       "or": "或",
       "newCompany": "新增 Company…",
       "noneToAdd": "所有 Company 都已经在这个 Business 里了。",
-      "removeTitle": "从 Business 拿掉模块",
-      "removeBody": "把「{module}」从 {business} 拿掉？这个 Business 的人以后就不能被开通这个模块。",
-      "remove": "拿掉",
       "saved": "已储存",
       "lead": "负责人：{name}",
-      "sectorsTitle": "Sector",
-      "sectorsHint": "Sector 就是每个 Business 方块里的直栏。拖拉改顺序，直接改字就改名。"
     },
     "sector": {
       "add": "新增 Sector",
@@ -455,6 +447,7 @@ window.GW_LANG["zh-CN"] = {
       "orderSaved": "顺序已储存"
     },
     "userGroups": {
+      "allBusinesses": "全部 Business",
       "description": "把左边的人拖进某个 Business 底下的 Company。每个 Business 决定里面的人可以打开哪些 App。",
       "pending": "待分配",
       "allUsers": "全部用户",
@@ -477,11 +470,6 @@ window.GW_LANG["zh-CN"] = {
       "pendingCompany": "待分配 Company",
       "removeFromCompany": "从这个 Company 拿掉",
       "pendingToggle": "待分配 Company（{count}）",
-      "hide": "从待分配隐藏",
-      "unhide": "放回待分配",
-      "hiddenList": "已隐藏账号",
-      "backToPending": "返回",
-      "noHidden": "没有已隐藏的账号。",
       "memberCount": "{count} 人",
       "alreadyHasAccess": "已经有 {module} 的权限",
       "accessGiven": "{name} → {module}",
@@ -492,7 +480,7 @@ window.GW_LANG["zh-CN"] = {
     "pageTitle": "管理控制台",
     "backToPortal": "返回 Portal",
     "tabs": {
-      "users": "全部用户",
+      "users": "用户",
       "groups": "人员",
       "business": "Business",
       "company": "Company",
@@ -506,6 +494,11 @@ window.GW_LANG["zh-CN"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "deleteRights": "可以删除",
+      "deleteBusiness": "Business",
+      "deleteCompany": "Company",
+      "deleteModule": "模块",
+      "deleteRightsHint": "让这个人可以在主资料管理里删除这些。Super admin 永远可以。",
       "search": "搜索姓名或 Email…",
       "allStatus": "全部状态",
       "status": {
@@ -614,6 +607,8 @@ window.GW_LANG["zh-CN"] = {
       "save": "保存"
     },
     "modules": {
+      "deleteTitle": "删除模块",
+      "deleteBody": "删除「{name}」？所有人都会失去它的权限，它也会从 Intranet 消失。另一个系统本身不受影响。",
       "noMatch": "没有符合筛选的模块。",
       "activeLabel": "启用",
       "description": "大家可以从 MJM Intranet 打开的每一个 模块。System = MJM Intranet 旗下的系统（例如 Diesel）；Link = 现有系统或任何外部网站。给每个 模块 标上 Business（和 Company），开权限时就会出现在对的地方。",
@@ -831,6 +826,8 @@ window.GW_LANG["zh-CN"] = {
       "clear": "清除全部"
     },
     "userWindow": {
+      "withAccess": "有权限的模块",
+      "noAccessYet": "还没开通",
       "edit": "编辑权限",
       "modules": "这个用户可以用的模块",
       "noModules": "还没有模块。",

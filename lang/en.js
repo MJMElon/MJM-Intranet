@@ -352,7 +352,7 @@ window.GW_LANG["en"] = {
   },
   "admin": {
     "sections": {
-      "userGroup": "User & Group Manage",
+      "userGroup": "User Manage",
       "master": "Master Manage",
       "access": "User Access",
       "audit": "Audit Log"
@@ -370,13 +370,10 @@ window.GW_LANG["en"] = {
       "name": "Business Name"
     },
     "structure": {
-      "hint": "One box per business: its companies on top, its modules sorted into sector columns below. Drag a module between columns to change its sector, or into “Other modules” to take it out of the business.",
-      "hintReadOnly": "One box per business: its companies on top, its modules sorted into sector columns below.",
+      "codeHint": "Running number, given automatically.",
+      "notInBusiness": "{name} is not in this business yet. Drag it into a sector column to add it.",
       "addBusiness": "Add business",
-      "sectors": "Sectors",
       "noSector": "No sector",
-      "pool": "Other modules",
-      "poolHint": "Drag a module up into a sector column to add it to this business.",
       "noCompany": "No company yet",
       "addCompany": "Add company",
       "addCompanyTitle": "Add company to {name}",
@@ -385,13 +382,8 @@ window.GW_LANG["en"] = {
       "or": "or",
       "newCompany": "New company…",
       "noneToAdd": "Every company is already in this business.",
-      "removeTitle": "Remove module from business",
-      "removeBody": "Take “{module}” out of {business}? People in this business can no longer be given access to it.",
-      "remove": "Remove",
       "saved": "Saved",
       "lead": "Lead: {name}",
-      "sectorsTitle": "Sectors",
-      "sectorsHint": "Sectors are the columns inside every business box. Drag to reorder, type to rename."
     },
     "sector": {
       "add": "Add sector",
@@ -455,6 +447,7 @@ window.GW_LANG["en"] = {
       "orderSaved": "Order saved"
     },
     "userGroups": {
+      "allBusinesses": "All businesses",
       "description": "Drag people from the left into a company under a business. Each business decides which apps its people can open.",
       "pending": "Pending",
       "allUsers": "All users",
@@ -477,11 +470,6 @@ window.GW_LANG["en"] = {
       "pendingCompany": "Pending allocation to company",
       "removeFromCompany": "Remove from this company",
       "pendingToggle": "Pending allocation to company ({count})",
-      "hide": "Hide from pending",
-      "unhide": "Back to pending",
-      "hiddenList": "Hidden accounts",
-      "backToPending": "Back",
-      "noHidden": "No hidden accounts.",
       "memberCount": "{count} people",
       "alreadyHasAccess": "Already has access to {module}",
       "accessGiven": "{name} → {module}",
@@ -492,7 +480,7 @@ window.GW_LANG["en"] = {
     "pageTitle": "Admin Console",
     "backToPortal": "Back to Portal",
     "tabs": {
-      "users": "All users",
+      "users": "Users",
       "groups": "People",
       "business": "Business",
       "company": "Company",
@@ -506,6 +494,11 @@ window.GW_LANG["en"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "deleteRights": "Can delete",
+      "deleteBusiness": "Business",
+      "deleteCompany": "Company",
+      "deleteModule": "Module",
+      "deleteRightsHint": "Lets this person delete these in Master Manage. Super admins always can.",
       "search": "Search name or email…",
       "allStatus": "All statuses",
       "status": {
@@ -614,6 +607,8 @@ window.GW_LANG["en"] = {
       "save": "Save"
     },
     "modules": {
+      "deleteTitle": "Delete module",
+      "deleteBody": "Delete “{name}”? Everyone loses access to it and it disappears from the Intranet. The other system itself is not touched.",
       "noMatch": "No modules match the filter.",
       "activeLabel": "Active",
       "description": "Every module people can open from MJM Intranet. System = a system under MJM Intranet (e.g. Diesel). Link = an existing system or any outside website. Tag each module with its businesses (and companies) so it shows in the right place when you give access.",
@@ -831,6 +826,8 @@ window.GW_LANG["en"] = {
       "clear": "Clear all"
     },
     "userWindow": {
+      "withAccess": "Modules with access",
+      "noAccessYet": "No access yet",
       "edit": "Edit access",
       "modules": "Modules this user can access",
       "noModules": "No modules yet.",

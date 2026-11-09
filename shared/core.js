@@ -410,12 +410,36 @@ window.GW = (function () {
   // ---------------------------------------------------------------- 打开模块
   /* 第 1 级（外部链接）/ 第 3 级（SSO）：直接打开网址
      第 2 级（Token 跳转）：向 Edge Function 申请 60 秒 Token，再带着 Token 跳转 */
+  // 等 Token 的时候给用户看的画面（新分页：写进去取代 about:blank；同分页：盖一层）
+  const openingHtml = (name) =>
+    `<!doctype html><html><head><meta charset="utf-8"><title>${esc(name)}</title></head>
+     <body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;background:#e7edf7;color:#334155">
+     <div style="text-align:center"><div style="margin:0 auto 14px;width:34px;height:34px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:s 0.8s linear infinite"></div>
+     <div style="font-size:15px;font-weight:600">Opening ${esc(name)}…</div><div style="font-size:12px;color:#64748b;margin-top:4px">MJM Intranet is signing you in</div></div>
+     <style>@keyframes s{to{transform:rotate(360deg)}}</style></body></html>`;
+  function openingOverlay(name) {
+    const el = document.createElement("div");
+    el.className = "fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm";
+    el.innerHTML = `<div class="rounded-2xl bg-white px-8 py-6 text-center shadow-xl dark:bg-slate-900"><div class="mx-auto mb-3 size-8 animate-spin rounded-full border-[3px] border-slate-300 border-t-brand-600"></div><div class="text-sm font-semibold">Opening ${esc(name)}…</div></div>`;
+    document.body.appendChild(el);
+    return () => el.remove();
+  }
   async function openModule(m) {
     const newTab = m.open_mode === "new_tab";
     if (m.access_level === 2) {
-      const win = newTab ? window.open("about:blank", "_blank") : null;
+      const win = newTab ? window.open("", "_blank") : null;
+      if (win) {
+        try {
+          win.document.write(openingHtml(m.name));
+          win.document.close();
+        } catch (e) {
+          /* 忽略 */
+        }
+      }
+      const done = win ? () => {} : openingOverlay(m.name);
       const r = await invoke("gw-issue-token", { module_code: m.code });
       if (!r || !r.redirect_url) {
+        done();
         if (win) win.close();
         return false;
       }

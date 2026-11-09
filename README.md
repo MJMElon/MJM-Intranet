@@ -16,7 +16,6 @@ index.html               主画面（像 iPhone）：App、小工具、文件夹
 login.html               登录封面（MJM 字标 assets/mjm-logo 落下，接着出现白色玻璃登录框）、忘记密码、改密码
 library.html             模块库
 settings.html            个人设置（语言、浅色/深色、重设首页、改密码）
-diesel/index.html        Diesel Claims 模块：车辆、加油报销（收据照片）、审核、统计（说明见 docs/diesel.md）
 admin.html               设置页（右上角齿轮）：User & Group Manage（Group Manage、All users）＋ Master Manage（Role、Business、Company、Module）＋ Audit Log；公告在首页 Notice Board 直接发布 / 修改 / 删除
                          Module 只列系统模块（照片、Business / Company 标签）；外部网站由用户在主画面「Add Icon」自己加（gw_user_links）
 shared/head.js           每页第一个载入：主题、Tailwind、共用函式库（版本在这里统一改）
@@ -24,9 +23,8 @@ shared/config.js         Supabase 网址与 anon key
 shared/core.js           登录检查、页面外框、对话框、Edge Function 调用、Excel
 shared/home.js           主画面（首页与后台预览共用）；小工具资料存 gw_user_widgets
 shared/admin.js          权限后台
-shared/diesel.js         Diesel Claims 模块
 lang/en.js lang/zh-CN.js  界面文字（英文 / 简体中文）
-supabase/migrations/     数据库 migration（只新增 gw_* 对象）
+supabase/migrations/     数据库 migration（只新增 gw_* 对象）；接入其他系统用 gw_register_system(...)，每个系统一个 *_system_*.sql（见 docs/integration.md）
 supabase/functions/      Edge Functions：gw-auth、gw-admin、gw-issue-token、gw-check-access、gw-jwks
 supabase/tests/          RLS 权限测试（pgTAP）
 scripts/                 产生签名金钥、本地测试资料
@@ -35,7 +33,8 @@ docs/                    目标系统接入说明、上线步骤
 
 ## 权限模型
 
-- **Icon**（`gw_modules`，以前叫「模块」）：`kind` = `system`（MJM Intranet 旗下的系统，例如 Diesel）或 `link`（现有系统、任何外部网站）
+- **Icon**（`gw_modules`，以前叫「模块」）：`kind` = `system`（MJM Intranet 旗下 / 自家的系统，例如 CMMS 2、Diesel Manage、Stock）或 `link`（任何外部网站）
+  - Diesel Manage 已搬到 CMMS 2（repo MJM-Machinery-Portal）；Intranet 上的「Diesel Manage」Icon 直接进入 CMMS 2 的 Diesel Manage 页面（Token 跳转）。旧的 `diesel_*` 资料表仍在资料库里，不再使用。
   - 标签：Business（`gw_group_modules`）＋ Company（`gw_module_companies`）
 - **Company**（`gw_companies`）是独立主资料：固定的代码（`code`）、简称、注册号码；可以属于多个 Business（`gw_business_companies`）
   - 对应到现有系统：`gw_company_mappings`（Company × 系统 Icon → 那个系统里的 ID / 名称），之后资料对接用

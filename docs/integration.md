@@ -76,7 +76,7 @@ x-gw-api-key: gwk_...
 {}
 ```
 
-回应：`{ module_code, businesses: [{id, name, description, sort_order}], companies: [{id, code, name, short_name, registration_no, description, is_active, sort_order}], links: [{group_id, company_id}], module_company_ids: [...], module_business_ids: [...], exported_at }`
+回应：`{ module_code, module_users: [{id, email, full_name, is_admin}]（目前可以用这个 Icon 的人）, businesses: [{id, name, description, sort_order}], companies: [{id, code, name, short_name, registration_no, description, is_active, sort_order}], links: [{group_id, company_id}], module_company_ids: [...], module_business_ids: [...], exported_at }`
 
 Edge Functions 由 GitHub Actions 部署（`.github/workflows/functions.yml`，需要 repo secret `SUPABASE_ACCESS_TOKEN`）。
 

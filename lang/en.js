@@ -370,8 +370,10 @@ window.GW_LANG["en"] = {
       "name": "Business Name"
     },
     "structure": {
-      "codeHint": "Running number, given automatically.",
-      "notInBusiness": "{name} is not in this business yet. Drag it into a sector column to add it.",
+      "codeAuto": "System running number. Cannot be edited.",
+      "addModule": "Add module",
+      "addModuleTitle": "Add module to {name}",
+      "addModuleHint": "Only modules not yet in this business are listed. It goes into “No sector”; drag it into a sector column afterwards.",
       "addBusiness": "Add business",
       "noSector": "No sector",
       "noCompany": "No company yet",

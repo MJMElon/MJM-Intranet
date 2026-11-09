@@ -370,8 +370,10 @@ window.GW_LANG["zh-CN"] = {
       "name": "Business 名称"
     },
     "structure": {
-      "codeHint": "流水号，自动给。",
-      "notInBusiness": "{name} 还没加进这个 Business。拖进某个 Sector 栏就加进来。",
+      "codeAuto": "系统流水号，不能改。",
+      "addModule": "加模块",
+      "addModuleTitle": "把模块加进 {name}",
+      "addModuleHint": "只列还没加进这个 Business 的模块。加进去后在「No sector」，再拖到某个 Sector 栏。",
       "addBusiness": "新增 Business",
       "noSector": "没有 Sector",
       "noCompany": "还没有 Company",

@@ -1411,12 +1411,11 @@
     // ---- 一个模块图示（拖拉用；点一下开编辑窗）
     function tile(g, m) {
       const tag = g ? tagOf(g.id, m.id) : null;
-      const outside = !!g && !tag; // 还没加进这个 Business
       const lead = tag && tag.lead_user_id ? personName.get(tag.lead_user_id) : "";
-      const title = outside ? ts("notInBusiness", { name: m.name }) : [m.name, lead ? ts("lead", { name: lead }) : ""].filter(Boolean).join(" · ");
-      return `<div data-mod="${m.id}" ${outside ? "data-outside" : ""} title="${esc(title)}" class="st-tile group flex items-center gap-2 rounded-xl border bg-white px-2 py-1.5 text-left select-none dark:bg-slate-900 ${
-        outside ? "border-dashed border-slate-300 opacity-55 dark:border-slate-600" : "border-slate-200 dark:border-slate-700"
-      } ${isSuper ? "cursor-grab active:cursor-grabbing" : ""} ${m.is_active ? "" : "opacity-60"}">
+      const title = [m.name, lead ? ts("lead", { name: lead }) : ""].filter(Boolean).join(" · ");
+      return `<div data-mod="${m.id}" title="${esc(title)}" class="st-tile group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left select-none dark:border-slate-700 dark:bg-slate-900 ${
+        isSuper ? "cursor-grab active:cursor-grabbing" : ""
+      } ${m.is_active ? "" : "opacity-60"}">
         ${logo(m, "size-8")}
         <span class="min-w-0 flex-1 text-xs leading-tight font-medium">${esc(m.name)}</span>
         ${canRename(m.id) ? `<button data-edit-mod="${m.id}" aria-label="${esc(tmod("edit"))}" title="${esc(tmod("edit"))}" class="shrink-0 rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10">${icon("pencil", "size-3.5")}</button>` : ""}
@@ -1426,11 +1425,9 @@
     function column(g, sid, label) {
       const mods = modules.filter((m) => {
         const tag = tagOf(g.id, m.id);
-        if (!tag) return !sid && isSuper; // 还没加进这个 Business 的放「No sector」最后（只有 super admin 看得到，因为只有他能拖进来）
-        return sectorsReady ? (tag.sector_id || null) === (sid || null) : true;
+        return !!tag && (sectorsReady ? (tag.sector_id || null) === (sid || null) : true);
       });
-      const inside = mods.filter((m) => tagOf(g.id, m.id));
-      const outside = mods.filter((m) => !tagOf(g.id, m.id));
+      const canAddMore = !sid && isSuper && modules.some((m) => !tagOf(g.id, m.id));
       return `<div class="flex min-w-0 flex-col rounded-xl bg-slate-50 p-1.5 dark:bg-white/5">
         <div class="flex items-center gap-1 px-1 pb-1.5">
           <p class="min-w-0 flex-1 truncate text-[11px] font-bold tracking-wider text-slate-500 uppercase" title="${esc(label)}">${esc(label)}</p>
@@ -1442,7 +1439,8 @@
                 : `<button data-add-sector aria-label="${esc(tsec("add"))}" title="${esc(tsec("add"))}" class="flex size-5 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3")}</button>`
           }
         </div>
-        <div data-drop="${g.id}" data-sector="${sid || ""}" class="st-drop flex min-h-14 flex-1 flex-col gap-1.5 rounded-lg">${[...inside, ...outside].map((m) => tile(g, m)).join("")}</div>
+        <div data-drop="${g.id}" data-sector="${sid || ""}" class="st-drop flex min-h-14 flex-1 flex-col gap-1.5 rounded-lg">${mods.map((m) => tile(g, m)).join("")}</div>
+        ${canAddMore ? `<button data-add-mod="${g.id}" class="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 px-2 py-2 text-xs font-medium text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:text-white">${icon("plus", "size-3.5")}${esc(ts("addModule"))}</button>` : ""}
       </div>`;
     }
     // ---- 一个 Business 方块
@@ -1511,7 +1509,6 @@
       if (!g || !m) return draw();
       const tag = tagOf(gid, mid);
       let res;
-      if (!tag && !to) return draw(); // 还没加进来的模块在「No sector」里挪位置：没事
       if (!tag) {
         const row = { group_id: gid, module_id: mid, ...(sectorsReady ? { sector_id: to || null } : {}) };
         res = await sb.from("gw_group_modules").insert(row);
@@ -1525,6 +1522,40 @@
       draw();
     }
 
+    // ---------------------------------------------------------- 「+ Add module」：列出还没加进这个 Business 的模块，点一下加进「No sector」
+    function addModuleDialog(g) {
+      const free = modules.filter((m) => !tagOf(g.id, m.id));
+      const m = modal(
+        ts("addModuleTitle", { name: g.name }),
+        `<div class="space-y-3">
+          <p class="text-sm text-slate-500">${esc(ts("addModuleHint"))}</p>
+          <div data-err></div>
+          <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${free
+            .map(
+              (x) => `<div class="flex items-center gap-3 px-3 py-2">
+                ${logo(x, "size-9")}
+                <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(x.name)}</span>
+                <button data-pick-mod="${x.id}" class="${btn("secondary", "sm")}">${icon("plus", "size-4")} ${esc(ts("add"))}</button>
+              </div>`,
+            )
+            .join("")}</div>
+        </div>`,
+      );
+      refreshIcons();
+      m.el.addEventListener("click", async (e) => {
+        const b = e.target.closest("[data-pick-mod]");
+        if (!b) return;
+        b.disabled = true;
+        const row = { group_id: g.id, module_id: b.dataset.pickMod, ...(sectorsReady ? { sector_id: null } : {}) };
+        const { error } = await sb.from("gw_group_modules").insert(row);
+        if (error) return (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), (b.disabled = false));
+        bizTags.push(row);
+        m.close();
+        toast(ts("saved"));
+        draw();
+      });
+    }
+
     // ---------------------------------------------------------- Business 新增 / 修改
     function bizDialog(g) {
       const m = modal(
@@ -1532,7 +1563,7 @@
         `<form class="space-y-4">
           <div data-err></div>
           <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
-            ${field(tb("code"), `<input name="code" required maxlength="20" value="${esc(g ? g.code || nextCode(groups) : nextCode(groups))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeHint"))}
+            ${field(tb("code"), `<input name="code" required maxlength="20" value="${esc(g ? g.code || nextCode(groups) : nextCode(groups))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeAuto"))}
             ${field(tb("name"), `<input name="name" required value="${esc(g ? g.name : "")}" class="${cls.input}">`)}
           </div>
           ${field(tg("descriptionLabel"), `<input name="description" value="${esc(g ? g.description || "" : "")}" class="${cls.input}">`)}
@@ -1600,24 +1631,25 @@
         c ? tc("editTitle") : tc("addTitle"),
         `<form class="space-y-4"><div data-err></div>
           <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
-            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeHint"))}
+            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeAuto"))}
             <div></div>
           </div>
           <div>
             <p class="mb-1.5 ${cls.label}">${esc(tc("businesses"))}</p>
             ${
               groups.length
-                ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${groups
+                ? `<div class="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-800">${groups
+                    .map((g) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${ticked(g.id) ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white"><span class="font-medium">${esc(g.name)}</span></label>`)
+                    .join("")}</div>
+                  <div class="mt-2 grid gap-2 sm:grid-cols-2">${groups
                     .map((g) => {
                       const l = link(g.id);
-                      const on = ticked(g.id);
-                      return `<div class="flex flex-wrap items-center gap-3 px-3 py-2">
-                        <label class="flex min-w-0 flex-1 items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${on ? "checked" : ""} class="size-4 accent-emerald-600"><span class="truncate font-medium">${esc(g.name)}</span></label>
-                        <span data-area-box="${g.id}" class="${on ? "flex" : "hidden"} items-center gap-1.5">
-                          <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="${esc(tc("area"))}" aria-label="${esc(tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 w-32">
-                          <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
-                        </span>
-                      </div>`;
+                      return `<label data-area-box="${g.id}" class="${ticked(g.id) ? "flex" : "hidden"} items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 text-sm dark:bg-white/5">
+                        <span class="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">${esc(g.name)} · ${esc(tc("area"))}</span>
+                        <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 max-w-28 shrink-0">
+                        <span class="text-xs text-slate-400">ha</span>
+                        <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
+                      </label>`;
                     })
                     .join("")}</div>`
                 : `<p class="text-sm text-slate-400">${esc(tc("noBusiness"))}</p>`
@@ -1974,6 +2006,7 @@
         return structureTab();
       }
       if (d.addCo) return addCompanyDialog(groups.find((x) => x.id === d.addCo));
+      if (d.addMod) return addModuleDialog(groups.find((x) => x.id === d.addMod));
       if (d.co) return isSuper ? companyDialog(coById.get(d.co)) : companyInfo(d.co, d.from || null);
       if (d.editMod) return canRename(d.editMod) && moduleDialog(modById.get(d.editMod));
       if (d.mod) return canRename(d.mod) && moduleDialog(modById.get(d.mod));

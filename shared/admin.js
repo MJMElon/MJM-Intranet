@@ -191,18 +191,9 @@
   }
   /* 横条：Business 下拉 → Company 下拉；只有一个 Company 时直接显示名字（有 pending 选项就变成两格切换）；
      pendingLabel 有给才会多一个「待分配」选项（By Group），没有就是 By Module 的用法（没有 Company 时显示「全部 Company」） */
-  function ugBar({ groups, gid, comps, cid, pendingLabel, allLabel }) {
+  function ugBar({ groups, gid, comps, cid, pendingLabel }) {
     const sel = `h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 sm:w-56 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100`;
-    const bizSel = `<select id="ug-biz" aria-label="${esc(t("admin.tabs.business"))}" class="${sel}">${allLabel ? `<option value="" ${gid === "" ? "selected" : ""}>${esc(allLabel)}</option>` : ""}${groups.map((x) => `<option value="${x.id}" ${x.id === gid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
-    // 用户名单：Business 可以选「全部」；选了 Business 后 Company 也可以「全部」
-    if (allLabel) {
-      const coPart = gid
-        ? `<select id="ug-co" aria-label="${esc(t("admin.tabs.company"))}" class="${sel}"><option value="" ${cid === "" ? "selected" : ""}>${esc(t("admin.access.allCompanies"))}</option>${comps.map((c) => `<option value="${c.id}" ${c.id === cid ? "selected" : ""} title="${esc(c.name)}">${esc(coShort(c))}</option>`).join("")}</select>`
-        : "";
-      return `<div class="flex flex-col gap-2 px-1 pb-3 sm:flex-row sm:items-center">
-        ${bizSel}${coPart ? `<span class="hidden sm:inline">${icon("chevron-right", "size-4 shrink-0 text-slate-400")}</span>${coPart}` : ""}
-      </div>`;
-    }
+    const bizSel = `<select id="ug-biz" aria-label="${esc(t("admin.tabs.business"))}" class="${sel}">${groups.map((x) => `<option value="${x.id}" ${x.id === gid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
     const pill = (text) => `<span class="inline-flex h-10 w-full items-center gap-1.5 rounded-xl sm:w-56 border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">${icon("building-2", "size-4 shrink-0 text-slate-400")}<span class="truncate">${esc(text)}</span></span>`;
     let coPart;
     if (comps.length > 1)
@@ -883,15 +874,14 @@
   }
 
   // ================================================================ 用户名单（User Manage；super_admin 可以管理，角色有「看名单」只能看）
-  /* 一行一个人：头像、名字（底下 Email）、他能用的模块小图示（滑鼠移上去看名字；蓝盾 = 该模块 Admin；Super Admin = 全部模块）、
-     动作：查看（放大镜）/ 编辑（铅笔，直接开编辑模式）/ 停用。上面横条可以选 Business → Company 只看那里的人（预设全部）。 */
+  /* 一行一个人：头像、名字（底下 Email）、角色徽章；
+     动作固定靠右、每行同一个位置：查看（放大镜）/ 编辑（铅笔，直接开编辑模式）/ 停用（自己那行留空位，不会错位）。
+     模块的小图示不在名单上显示（点查看进用户资料窗看）；名单也不按 Business / Company 筛，上面的下拉只筛模块、角色、状态。 */
   async function usersListView(host, shared) {
     const seq = routeSeq;
     const tu = (k, v) => t("admin.users." + k, v);
-    const [users, members, memberCos, roles, mods, mm] = await Promise.all([
+    const [users, roles, mods, mm] = await Promise.all([
       sb.from("gw_profiles").select("*").order("full_name"),
-      sb.from("gw_group_members").select("group_id, user_id"),
-      sb.from("gw_member_companies").select("group_id, user_id, company_id"),
       sb.from("gw_roles").select("id, name").order("sort_order").order("name"),
       sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
       sb.from("gw_module_members").select("user_id, module_id, is_admin"),
@@ -905,21 +895,13 @@
             .filter((r) => r.user_id === u.id && modById.has(r.module_id))
             .map((r) => ({ mod: modById.get(r.module_id), is_admin: !!r.is_admin }))
             .sort((a, b) => byModName(a.mod, b.mod));
-    const logos = (u) =>
-      modsOf(u)
-        .map(
-          ({ mod, is_admin }) =>
-            `<span data-logo="${mod.id}" class="relative inline-flex" title="${esc(mod.name)}${is_admin ? " · " + esc(t("admin.userWindow.adminOf")) : ""}">${modLogo(mod, "size-7")}${
-              is_admin ? `<span data-admin-mark class="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-sky-500 text-white ring-1 ring-white dark:ring-slate-800">${icon("shield-check", "size-2")}</span>` : ""
-            }</span>`,
-        )
-        .join("");
     const roleName = new Map(roles.map((r) => [r.id, r.name]));
     const roleValue = (u) => (u.role === "super_admin" ? "super_admin" : u.role_id || "user");
     const roleBadge = (u) => (u.role === "super_admin" ? badge(tu("roles.super_admin"), "red") : u.role_id ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
     const roleOptions = [["user", tu("roles.user")], ...roles.map((r) => [r.id, r.name]), ["super_admin", tu("roles.super_admin")]];
     const filter = { q: shared.q || "", role: "", status: "", module: "" };
     const canEdit = isSuper || C.can_add_business_user; // 编辑钮：改名字 / 角色与 Company
+    const statusW = "w-24 shrink-0"; // 停用 / 启用钮固定宽度，每一行的动作才会对齐
 
     if (stale(seq)) return;
     host.innerHTML = `<div class="space-y-4">
@@ -935,18 +917,14 @@
           </select>
         </div>
       </div>
-      ${isSuper ? `<p class="px-1 text-xs text-slate-500">${icon("info", "mr-1 inline size-3.5 align-text-bottom")}${esc(tu("externalSource"))}</p>` : ""}
       <div id="list"></div>
     </div>`;
 
     function drawList() {
       const q = filter.q.trim().toLowerCase();
-      const { gid, cid } = shared.state;
       const list = users.filter(
         (u) =>
           (!q || u.full_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.user_code || "").toLowerCase().includes(q)) &&
-          (!gid || members.some((m) => m.group_id === gid && m.user_id === u.id)) &&
-          (!gid || !cid || memberCos.some((m) => m.group_id === gid && m.user_id === u.id && m.company_id === cid)) &&
           (!filter.role || roleValue(u) === filter.role) &&
           (!filter.status || u.status === filter.status) &&
           (!filter.module || isSuperUser(u) || modsOf(u).some((x) => x.mod.id === filter.module)),
@@ -954,9 +932,9 @@
       $("#list").innerHTML = list.length
         ? `<div class="${cls.card} divide-y divide-slate-200 dark:divide-slate-800">${list
             .map(
-              (u) => `<div data-user="${u.id}" class="flex flex-wrap items-center gap-x-3 gap-y-2 p-3 sm:flex-nowrap sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
+              (u) => `<div data-user="${u.id}" class="flex items-center gap-3 p-3 sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
                 <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
-                <div class="min-w-0 flex-1 basis-40">
+                <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <button data-window="${u.id}" class="truncate font-medium hover:underline">${esc(u.full_name)}</button>
                     ${u.user_code ? `<span class="font-mono text-xs text-slate-400">${esc(u.user_code)}</span>` : ""}
@@ -965,13 +943,14 @@
                   </div>
                   <p class="truncate text-xs text-slate-500">${esc(u.email)}</p>
                 </div>
-                <div data-logos class="order-last flex w-full flex-wrap gap-1.5 sm:order-none sm:w-auto sm:max-w-[40%] sm:justify-end">${logos(u) || `<span class="text-xs text-slate-400">—</span>`}</div>
-                <div class="ml-auto flex shrink-0 items-center gap-1">
+                <div class="flex shrink-0 items-center justify-end gap-1">
                   <button data-window="${u.id}" aria-label="${esc(tu("details"))}" title="${esc(tu("details"))}" class="${btn("ghost", "sm")}">${icon("search")}</button>
                   ${canEdit ? `<button data-edit-user="${u.id}" aria-label="${esc(tu("edit"))}" title="${esc(tu("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>` : ""}
                   ${
-                    isSuper && u.id !== me.id
-                      ? `<button data-status="${u.id}" class="${btn(u.status === "active" ? "ghost" : "secondary", "sm")} ${u.status === "active" ? "text-red-600 dark:text-red-400" : ""}">${esc(u.status === "active" ? tu("disable") : tu("enable"))}</button>`
+                    isSuper
+                      ? u.id !== me.id
+                        ? `<button data-status="${u.id}" class="${btn(u.status === "active" ? "ghost" : "secondary", "sm")} ${statusW} justify-center ${u.status === "active" ? "text-red-600 dark:text-red-400" : ""}">${esc(u.status === "active" ? tu("disable") : tu("enable"))}</button>`
+                        : `<span aria-hidden="true" class="${statusW}"></span>`
                       : ""
                   }
                 </div>
@@ -1008,13 +987,13 @@
       else setMsg(tu("errors." + ((r && r.error) || "forbidden")));
       drawListFresh();
     });
-    shared.refresh = drawList; // 横条换 Business / Company → 重新筛
+    shared.refresh = drawList;
     drawList();
   }
 
   /* User Manage 只有一个画面：
-       上面：Business → Company 横条（Users 可以选「全部」；Modules 一定要选一个 Business）
-       中间：两个切换 Users（全部用户名单）/ Modules（模块手风琴）
+       上面：两个切换 Users（全部用户名单）/ Modules（模块手风琴），跟其他分页的 tab 列同一个样式、置中
+       Modules 才有 Business → Company 横条（一定要选一个 Business）；Users 列全部的人，不按 Business / Company 筛
        记住上次看的是哪一个（gw_ug_view）；#users / #groups → Users，#access → Modules */
   const VIEW_OF_HASH = { groups: "users", access: "modules", users: "users" };
   async function usersScreen(initialView) {
@@ -1036,26 +1015,23 @@
     let cur = initialView || ugRecall("gw_ug_view");
     if (cur === "people" || cur === "all") cur = "users"; // 以前的 People / All users
     if (!views.some(([k]) => k === cur)) cur = views[0][0];
-    const shared = { state: ugState(groups, companiesOf, true, true), groups, companiesOf, q: "", refresh: () => {}, reload: () => show(cur) };
+    const shared = { state: ugState(groups, companiesOf, false, false), groups, companiesOf, q: "", refresh: () => {}, reload: () => show(cur) };
 
-    view.innerHTML = `<div class="space-y-3">
-      <div class="${cls.card} p-3">
-        <div id="ug-bar"></div>
-        <div class="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-          <div id="ug-views" class="inline-flex gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800"></div>
-        </div>
-      </div>
+    view.innerHTML = `<div class="space-y-4">
+      ${views.length > 1 ? `<div class="-mx-3 overflow-x-auto px-3 text-center"><div id="ug-views" class="inline-flex min-w-max gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800"></div></div>` : `<div id="ug-views" class="hidden"></div>`}
+      <div id="ug-bar-card" class="${cls.card} hidden p-3 pb-0"><div id="ug-bar"></div></div>
       <div id="ug-host"></div>
     </div>`;
     const host = $("#ug-host");
     function paintBar() {
-      // Modules 一定要有 Business + Company；Users 可以「全部」
-      if (cur === "modules" && !shared.state.gid && groups.length) shared.state.gid = groups[0].id;
+      // 只有 Modules 需要 Business + Company 横条；Users 不筛 Business / Company
+      $("#ug-bar-card").classList.toggle("hidden", cur !== "modules");
+      if (!shared.state.gid && groups.length) shared.state.gid = groups[0].id;
       const comps = shared.state.gid ? companiesOf(shared.state.gid) : [];
-      if (cur === "modules" && shared.state.cid === "" && comps.length) shared.state.cid = comps[0].id;
+      if (shared.state.cid === "" && comps.length) shared.state.cid = comps[0].id;
       if (!comps.some((c) => c.id === shared.state.cid)) shared.state.cid = "";
       $("#ug-bar").innerHTML = groups.length
-        ? ugBar({ groups, gid: shared.state.gid, comps, cid: shared.state.cid, pendingLabel: null, allLabel: cur === "users" ? t("admin.userGroups.allBusinesses") : null })
+        ? ugBar({ groups, gid: shared.state.gid, comps, cid: shared.state.cid, pendingLabel: null })
         : `<p class="pb-3 text-sm text-slate-400">${esc(t("admin.userGroups.noBusiness"))} <a href="#structure" class="font-medium underline">${esc(t("admin.sections.master"))} → ${esc(t("admin.tabs.structure"))}</a></p>`;
       $("#ug-views").innerHTML = views
         .map(([k, tab]) => `<button type="button" data-view="${k}" aria-pressed="${k === cur}" class="rounded-lg px-3.5 py-1.5 text-sm font-medium whitespace-nowrap ${
@@ -1076,8 +1052,7 @@
       if (e.target.closest("#ug-host")) return;
       const b = e.target.closest("[data-view]");
       if (b) return show(b.dataset.view);
-      if (ugBarEvent(e, shared.state, companiesOf, cur === "users")) {
-        if (cur === "users" && e.target.id === "ug-biz") ((shared.state.cid = ""), ugRemember("gw_ug_company", "")); // 换 Business → Company 回到「全部」
+      if (ugBarEvent(e, shared.state, companiesOf, false)) {
         paintBar();
         shared.refresh();
       }

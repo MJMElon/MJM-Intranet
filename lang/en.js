@@ -449,7 +449,6 @@ window.GW_LANG["en"] = {
       "orderSaved": "Order saved"
     },
     "userGroups": {
-      "allBusinesses": "All businesses",
       "description": "Drag people from the left into a company under a business. Each business decides which apps its people can open.",
       "pending": "Pending",
       "allUsers": "All users",
@@ -585,7 +584,6 @@ window.GW_LANG["en"] = {
       "roleHint": "Roles are set up under Master Manage → Roles. A User has no management rights.",
       "allModules": "All modules",
       "details": "View",
-      "externalSource": "User accounts are managed by the HR system; new users will appear here automatically.",
       "becomeSuper": "Become super admin",
       "becomeSuperHint": "A super admin can open every module and can give any user access to modules."
     },

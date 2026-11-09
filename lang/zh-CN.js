@@ -449,7 +449,6 @@ window.GW_LANG["zh-CN"] = {
       "orderSaved": "顺序已储存"
     },
     "userGroups": {
-      "allBusinesses": "全部 Business",
       "description": "把左边的人拖进某个 Business 底下的 Company。每个 Business 决定里面的人可以打开哪些 App。",
       "pending": "待分配",
       "allUsers": "全部用户",
@@ -585,7 +584,6 @@ window.GW_LANG["zh-CN"] = {
       "roleHint": "角色在 Master Manage → 角色 设定。一般用户没有管理权。",
       "allModules": "全部模块",
       "details": "查看",
-      "externalSource": "用户账号由人事系统管理，新用户会自动出现在这里。",
       "becomeSuper": "设为超级管理员",
       "becomeSuperHint": "超级管理员可以打开所有模块，并能为任何用户开放模块权限。"
     },

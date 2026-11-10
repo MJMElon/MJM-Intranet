@@ -773,14 +773,12 @@
       const off = list.filter((u) => u.status === "disabled");
       const row = (u) => `<div data-user="${u.id}" class="flex items-center gap-3 p-3 sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
           <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              ${superMark(u)}
-              <button data-window="${u.id}" class="truncate font-medium hover:underline">${esc(u.full_name)}</button>
-              ${u.user_code ? `<span class="font-mono text-xs text-slate-400">${esc(u.user_code)}</span>` : ""}
-              ${roleBadge(u)}
-            </div>
-            <p class="truncate text-xs text-slate-500">${esc(u.email)}</p>
+          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+            ${superMark(u)}
+            <button data-window="${u.id}" class="truncate font-medium hover:underline">${esc(u.full_name)}</button>
+            <span class="hidden text-slate-300 sm:inline dark:text-slate-600">|</span>
+            <span class="min-w-0 basis-full truncate text-xs text-slate-500 sm:basis-auto sm:text-sm">${esc(u.email)}</span>
+            ${roleBadge(u)}
           </div>
           <div class="flex shrink-0 items-center justify-end gap-1">
             <button data-window="${u.id}" aria-label="${esc(tu("details"))}" title="${esc(tu("details"))}" class="${btn("ghost", "sm")}">${icon("search")}</button>

@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     supabase.from("gw_business_companies").select("group_id, company_id"),
     supabase.from("gw_module_companies").select("company_id").eq("module_id", module.id),
     supabase.from("gw_group_modules").select("group_id").eq("module_id", module.id),
-    supabase.from("gw_module_members").select("user_id, is_admin").eq("module_id", module.id),
+    supabase.from("gw_module_members").select("user_id, group_id, is_admin").eq("module_id", module.id),
     supabase.from("gw_group_members").select("user_id, group_id"),
     supabase.from("gw_profiles").select("id, email, full_name, role, status").eq("status", "active"),
   ]);
@@ -40,13 +40,17 @@ Deno.serve(async (req) => {
   if (failed?.error) return json({ error: "query_failed", detail: failed.error.message }, 500);
 
   // Who may use this Icon right now — the same rule as gw__effective_module_ids:
-  // active super admins always; others need the Icon opened for them AND a
-  // Business that carries the Icon.
+  // active super admins always; others need the Icon opened for them in a
+  // Business they belong to that carries the Icon (access is per Business).
   const taggedGroups = new Set((taggedBiz.data ?? []).map((r) => r.group_id));
-  const inTaggedBusiness = new Set((groupMembers.data ?? []).filter((r) => taggedGroups.has(r.group_id)).map((r) => r.user_id));
-  const memberOf = new Map((members.data ?? []).map((r) => [r.user_id, r.is_admin]));
+  const inBusiness = new Set((groupMembers.data ?? []).map((r) => r.group_id + ":" + r.user_id));
+  const memberOf = new Map<string, boolean>();
+  for (const r of members.data ?? []) {
+    if (!taggedGroups.has(r.group_id) || !inBusiness.has(r.group_id + ":" + r.user_id)) continue;
+    memberOf.set(r.user_id, (memberOf.get(r.user_id) ?? false) || r.is_admin === true);
+  }
   const moduleUsers = (profiles.data ?? [])
-    .filter((p) => p.role === "super_admin" || (memberOf.has(p.id) && inTaggedBusiness.has(p.id)))
+    .filter((p) => p.role === "super_admin" || memberOf.has(p.id))
     .map((p) => ({ id: p.id, email: p.email, full_name: p.full_name, is_admin: p.role === "super_admin" || memberOf.get(p.id) === true }));
 
   return json({

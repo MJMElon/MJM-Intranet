@@ -95,50 +95,53 @@
       sb.from("gw_group_members").select("group_id, user_id"),
       sb.from("gw_group_modules").select("group_id, module_id"),
       sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
-      sb.from("gw_module_members").select("user_id, module_id, is_admin"),
+      sb.from("gw_module_members").select("user_id, module_id, group_id, is_admin"),
       Promise.resolve({ data: [] }),
       sb.from("gw_profiles").select("id, full_name, email, role, status, user_code").order("full_name"),
       sb.from("gw_module_companies").select("module_id, company_id"),
       sb.from("gw_companies").select("id, code, name, short_name"),
     ]).then((r) => r.map((x) => x.data || []));
     const coName = new Map(companies.map((c) => [c.id, c.code || c.name]));
-    const ctx = { groups, members, gm, mods, users, mine, coTags, companies, rows: new Map(rows.map((r) => [r.user_id + ":" + r.module_id, r])) };
+    // 模块权限按 Business：一行 = 这个人在这个 Business 可以用这个模块；key = 人:模块:Business
+    const ctx = { groups, members, gm, mods, users, mine, coTags, companies, rows: new Map(rows.map((r) => [accessKey(r.user_id, r.module_id, r.group_id), r])) };
     const inGroup = (uid, gid) => members.some((m) => m.user_id === uid && m.group_id === gid);
     const groupHas = (gid, mid) => gm.some((x) => x.group_id === gid && x.module_id === mid);
-    const myAdmin = (mid) => !!(ctx.rows.get(me.id + ":" + mid) || {}).is_admin;
+    const myAdmin = (gid, mid) => !!(ctx.rows.get(accessKey(me.id, mid, gid)) || {}).is_admin;
     const roleHas = (gid, mid, flag) => me.bizCan(gid, flag) && groupHas(gid, mid);
     const locked = (u) => u.id === me.id || u.role === "super_admin";
-    // 在某个 Business 里，我能不能改这个人这个模块的 Access / Admin
-    // 角色功能：加进模块 / 从模块移除 / 设定模块 Admin（模块 Admin 加、移除都可以）
-    const adminReach = (gid, mid) => myAdmin(mid) && inGroup(me.id, gid) && groupHas(gid, mid);
-    ctx.canGrant = (u, gid, mid) => !locked(u) && (isSuper || roleHas(gid, mid, "can_grant_module") || adminReach(gid, mid));
-    ctx.canRevoke = (u, gid, mid) => !locked(u) && (isSuper || roleHas(gid, mid, "can_revoke_module") || adminReach(gid, mid));
-    ctx.canAccess = (u, gid, mid) => (ctx.rows.has(u.id + ":" + mid) ? ctx.canRevoke(u, gid, mid) : ctx.canGrant(u, gid, mid));
-    ctx.canAdmin = (u, gid, mid) => !locked(u) && (isSuper || roleHas(gid, mid, "can_set_module_admin"));
+    // 在某个 Business 里，我能不能改这个人这个模块的 Access / Admin（规则同数据库 RLS）
+    // 角色功能：加进模块 / 从模块移除 / 设定模块 Admin；在这个 Business 是这个模块的管理员：加、移除都可以
+    const adminReach = (gid, mid) => myAdmin(gid, mid) && groupHas(gid, mid);
+    const targetOk = (u, gid, mid) => !locked(u) && inGroup(u.id, gid) && groupHas(gid, mid);
+    ctx.canGrant = (u, gid, mid) => isSuper || (targetOk(u, gid, mid) && (roleHas(gid, mid, "can_grant_module") || adminReach(gid, mid)));
+    ctx.canRevoke = (u, gid, mid) => isSuper || (targetOk(u, gid, mid) && (roleHas(gid, mid, "can_revoke_module") || adminReach(gid, mid)));
+    ctx.canAccess = (u, gid, mid) => (ctx.rows.has(accessKey(u.id, mid, gid)) ? ctx.canRevoke(u, gid, mid) : ctx.canGrant(u, gid, mid));
+    ctx.canAdmin = (u, gid, mid) => isSuper || (targetOk(u, gid, mid) && roleHas(gid, mid, "can_set_module_admin"));
     ctx.inGroup = inGroup;
     ctx.companyTags = (mid) => coTags.filter((x) => x.module_id === mid).map((x) => coName.get(x.company_id)).filter(Boolean);
     ctx.groupHas = groupHas;
     // 我管得到的 (Business, 模块) 组合
-    ctx.managedPairs = gm.filter((x) => isSuper || ["can_grant_module", "can_revoke_module", "can_set_module_admin"].some((f) => me.bizCan(x.group_id, f)) || (myAdmin(x.module_id) && inGroup(me.id, x.group_id)));
+    ctx.managedPairs = gm.filter((x) => isSuper || ["can_grant_module", "can_revoke_module", "can_set_module_admin"].some((f) => me.bizCan(x.group_id, f)) || myAdmin(x.group_id, x.module_id));
     return ctx;
   }
 
-  // 改 Access / Admin；回传 null 表示失败
-  async function saveAccess(ctx, uid, mid, access, admin) {
-    const key = uid + ":" + mid;
+  const accessKey = (uid, mid, gid) => uid + ":" + mid + ":" + gid;
+  // 改某个 Business 里的 Access / Admin；回传 false 表示失败
+  async function saveAccess(ctx, uid, mid, gid, access, admin) {
+    const key = accessKey(uid, mid, gid);
     const row = ctx.rows.get(key);
     let error;
     if (!access) {
-      if (row) ({ error } = await sb.from("gw_module_members").delete().eq("user_id", uid).eq("module_id", mid));
+      if (row) ({ error } = await sb.from("gw_module_members").delete().eq("user_id", uid).eq("module_id", mid).eq("group_id", gid));
       if (!error) ctx.rows.delete(key);
     } else if (!row) {
-      ({ error } = await sb.from("gw_module_members").insert({ user_id: uid, module_id: mid, is_admin: !!admin }));
-      if (!error) ctx.rows.set(key, { user_id: uid, module_id: mid, is_admin: !!admin });
+      ({ error } = await sb.from("gw_module_members").insert({ user_id: uid, module_id: mid, group_id: gid, is_admin: !!admin }));
+      if (!error) ctx.rows.set(key, { user_id: uid, module_id: mid, group_id: gid, is_admin: !!admin });
     } else if (!!row.is_admin !== !!admin) {
-      ({ error } = await sb.from("gw_module_members").update({ is_admin: !!admin }).eq("user_id", uid).eq("module_id", mid));
+      ({ error } = await sb.from("gw_module_members").update({ is_admin: !!admin }).eq("user_id", uid).eq("module_id", mid).eq("group_id", gid));
       if (!error) row.is_admin = !!admin;
     }
-    if (error) toast(t("admin.users.accessDialog.saveFailed"));
+    if (error) toast(t("admin.users.accessDialog.saveFailed") + (error.message ? " (" + error.message + ")" : ""));
     return !error;
   }
 
@@ -183,7 +186,8 @@
        底下跟 Master Manage 一样、一个 Business 一个方块：
          标题列（名称；编辑模式有「移出 Business」）
          → 一排 Company 徽章（"MJMP · HR"；编辑模式点徽章或「+」开小窗改 Company / 角色）
-         → 这个人在这个 Business 有权限的模块图示（点图示 → 下面开 Access / Admin 勾选）；「+ Add module」给新模块
+         → 这个人在这个 Business 有权限的模块图示（权限按 Business：加进 Business 不会自动有模块，要在这里「+ Add module」）
+           点图示 → 下面开 Access / Admin 勾选
        编辑模式最底下「+ Add business」把人加进别的 Business
        谁能改：名字 / Super Admin = super_admin；Business / Company / 角色 = super_admin 或在那个 Business 能加人的角色；
          模块权限 = super_admin、角色有加 / 移除 / 设定 Admin 的 Business、或是模块 Admin；自己和 Super Admin 只能看。 */
@@ -193,7 +197,7 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) || !!(pending && ctx && (pending.access !== !!rowOf(pending.mid) || pending.admin !== !!(rowOf(pending.mid) || {}).is_admin)) });
+    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) || !!(pending && ctx && (pending.access !== !!rowOf(pending.gid, pending.mid) || pending.admin !== !!(rowOf(pending.gid, pending.mid) || {}).is_admin)) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -224,13 +228,13 @@
     const mcRow = (gid, cid) => mcs.find((x) => x.group_id === gid && x.company_id === cid);
     const superU = () => isSuperUser(u);
     const locked = () => u.id === me.id || superU();
-    const rowOf = (mid) => (superU() ? SUPER_ROW : ctx.rows.get(u.id + ":" + mid));
+    const rowOf = (gid, mid) => (superU() ? SUPER_ROW : ctx.rows.get(accessKey(u.id, mid, gid))); // 这个人在这个 Business 的这个模块
     const canEditAccess = () =>
       !locked() &&
       (isSuper ||
         mems.some((gid) => ["can_grant_module", "can_revoke_module", "can_set_module_admin"].some((f) => me.bizCan(gid, f))) ||
         (gxRows || []).some((g) => mems.includes(g.group_id) && canManageModule(g.module_id)) ||
-        (me.adminModuleIds || []).some((mid) => (gxRows || []).some((g) => mems.includes(g.group_id) && g.module_id === mid)));
+        (me.adminPairs || []).some((a) => mems.includes(a.group_id) && (gxRows || []).some((g) => g.group_id === a.group_id && g.module_id === a.module_id)));
     const canEditProfile = isSuper; // 改名字 / Super Admin
     const canRolesFor = (gid) => isSuper || me.bizCan(gid, "can_add_business_user");
     const canPlace = (gid) => isSuper || (canRolesFor(gid) && !superU() && u.id !== me.id); // 改这个 Business 的成员 / Company / 角色（规则同数据库）
@@ -276,13 +280,14 @@
     // 点开的模块：Access / Admin 勾选先记在 pending，按 Save 才写入（规则同 By Module）
     let pending = null; // { gid, mid, access, admin }
     const openPanel = (gid, mid) => {
-      const row = rowOf(mid);
+      const row = rowOf(gid, mid);
       pending = { gid, mid, access: !!row, admin: !!(row && row.is_admin) };
+      openMod.clear(); // 一次只开一个面板
       openMod.set(gid, mid);
     };
     const closePanel = (gid) => ((pending = null), openMod.delete(gid));
     function panel(gid, mod) {
-      const row = rowOf(mod.id);
+      const row = rowOf(gid, mod.id);
       if (!pending || pending.mid !== mod.id) openPanel(gid, mod.id);
       const canAdm = !superU() && ctx.canAdmin(u, gid, mod.id) && !!row;
       const canAcc = !superU() && ctx.canAccess(u, gid, mod.id) && !(row && row.is_admin && !ctx.canAdmin(u, gid, mod.id));
@@ -307,12 +312,12 @@
     function bizBox(g) {
       const list = ctx ? modulesFor(g.id) : null;
       const place = editing && canPlace(g.id);
-      const mine = list ? list.filter((x) => rowOf(x.id)) : [];
-      const addable = list && !superU() ? list.filter((x) => !rowOf(x.id) && ctx.canGrant(u, g.id, x.id)) : [];
+      const mine = list ? list.filter((x) => rowOf(g.id, x.id)) : [];
+      const addable = list && !superU() ? list.filter((x) => !rowOf(g.id, x.id) && ctx.canGrant(u, g.id, x.id)) : [];
       // 这个 Business 有、但这个人因为不在对的 Company 而拿不到的模块（提示先加 Company）
-      const limited = list && !superU() ? linkedMods(g.id).filter((mod) => !rowOf(mod.id) && !openToHere(mod, g.id)) : [];
+      const limited = list && !superU() ? linkedMods(g.id).filter((mod) => !rowOf(g.id, mod.id) && !openToHere(mod, g.id)) : [];
       const tile = (mod) => {
-        const row = rowOf(mod.id);
+        const row = rowOf(g.id, mod.id);
         const active = openMod.get(g.id) === mod.id;
         return `<button type="button" data-tile="${g.id}:${mod.id}" title="${esc(mod.name)}" class="relative flex max-w-full items-center gap-2 rounded-xl border px-2 py-1.5 text-left transition-colors ${
           active ? "border-brand-500 bg-white ring-2 ring-brand-500 dark:bg-slate-900" : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
@@ -554,7 +559,7 @@
 
     // + Add module：这个 Business 里、这个人还没有、而且我能开的模块 → 点 Add 直接开 Access
     function addModuleDialog(g) {
-      const free = modulesFor(g.id).filter((x) => !rowOf(x.id) && ctx.canGrant(u, g.id, x.id));
+      const free = modulesFor(g.id).filter((x) => !rowOf(g.id, x.id) && ctx.canGrant(u, g.id, x.id));
       const pm = modal(
         tu("addModuleTitle", { business: g.name }),
         `<div class="space-y-3">
@@ -575,9 +580,9 @@
         const b = e.target.closest("[data-pick-mod]");
         if (!b) return;
         b.disabled = true;
-        if (!(await saveAccess(ctx, uid, b.dataset.pickMod, true, false))) return (b.disabled = false);
+        if (!(await saveAccess(ctx, uid, b.dataset.pickMod, g.id, true, false))) return (b.disabled = false);
         pm.close();
-        openMod.set(g.id, b.dataset.pickMod);
+        openPanel(g.id, b.dataset.pickMod);
         draw();
       });
     }
@@ -593,7 +598,8 @@
       if (error) return fail(error);
       for (let i = mcs.length - 1; i >= 0; i--) if (mcs[i].group_id === g.id) mcs.splice(i, 1);
       mems.splice(mems.indexOf(g.id), 1);
-      openMod.delete(g.id);
+      if (ctx) [...ctx.rows.keys()].filter((k) => k.startsWith(uid + ":") && k.endsWith(":" + g.id)).forEach((k) => ctx.rows.delete(k));
+      closePanel(g.id);
       draw();
     }
 
@@ -628,7 +634,7 @@
       const { gid, mid, access, admin } = pending;
       saving = true;
       draw();
-      const ok = await saveAccess(ctx, uid, mid, access, admin);
+      const ok = await saveAccess(ctx, uid, mid, gid, access, admin);
       saving = false;
       if (ok) ((closePanel(gid)), toast(t("admin.users.savedOk")));
       draw();
@@ -670,7 +676,7 @@
       sb.from("gw_member_companies").select("group_id, user_id, company_id"),
       sb.from("gw_roles").select("id, name").order("sort_order").order("name"),
       sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
-      sb.from("gw_module_members").select("user_id, module_id, is_admin"),
+      sb.from("gw_module_members").select("user_id, module_id, group_id, is_admin"),
       sb.from("gw_group_modules").select("group_id, module_id"),
       sb.from("gw_module_companies").select("module_id, company_id"),
     ]).then((r) => r.map((x) => x.data || []));
@@ -694,7 +700,7 @@
         })
         .sort(byModName);
     };
-    const hasMod = (u, mid) => isSuperUser(u) || mm.some((r) => r.user_id === u.id && r.module_id === mid);
+    const hasMod = (u, mid, gid) => isSuperUser(u) || mm.some((r) => r.user_id === u.id && r.module_id === mid && r.group_id === gid);
     const roleName = new Map(roles.map((r) => [r.id, r.name]));
     const roleBadge = (u) => (u.role_id && !isSuperUser(u) ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
     const superMark = (u) => (isSuperUser(u) ? `<span title="${esc(tu("roles.super_admin"))}" aria-label="${esc(tu("roles.super_admin"))}" class="flex size-5 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">${icon("shield-check", "size-3.5")}</span>` : "");
@@ -758,7 +764,7 @@
       if (adv.mid && isSuperUser(u)) return true; // Super Admin 每个模块都有
       if (!members.some((m) => m.group_id === adv.gid && m.user_id === u.id)) return false;
       if (adv.cid && !memberCos.some((m) => m.group_id === adv.gid && m.user_id === u.id && m.company_id === adv.cid)) return false;
-      return !adv.mid || hasMod(u, adv.mid);
+      return !adv.mid || hasMod(u, adv.mid, adv.gid);
     };
 
     function drawList() {
@@ -805,7 +811,7 @@
     async function reload() {
       const [p, m, gm, mc] = await Promise.all([
         sb.from("gw_profiles").select("*").order("full_name"),
-        sb.from("gw_module_members").select("user_id, module_id, is_admin"),
+        sb.from("gw_module_members").select("user_id, module_id, group_id, is_admin"),
         sb.from("gw_group_members").select("group_id, user_id"),
         sb.from("gw_member_companies").select("group_id, user_id, company_id"),
       ]);
@@ -871,6 +877,8 @@
     const groupName = new Map(groups.map((g) => [g.id, g.name]));
     const NOTICE = ["can_post_notice", "can_delete_notice"];
     const UG = ["can_grant_module", "can_revoke_module", "can_set_module_admin", "can_add_business_user", "can_remove_business_user", "can_view_users"];
+    // 角色的「Manage users」一个勾 = 加 / 移出这个 Business 的人（含 Company）、看名单；模块权限交给模块管理员 / super_admin
+    const UG_BIZ = ["can_add_business_user", "can_remove_business_user", "can_view_users"];
     const bizRows = (rid) => rb.filter((x) => x.role_id === rid);
     const hasAny = (row, keys) => keys.some((k) => row[k]);
     const th = (text, extra) => `<th class="px-4 py-3 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase ${extra || ""}">${esc(text)}</th>`;
@@ -947,7 +955,7 @@
           ${
             groups.length
               ? `<div class="divide-y divide-slate-100 dark:divide-slate-800">${groups
-                  .map((g) => `<label class="flex items-center gap-2.5 py-1.5 text-sm font-medium ${readOnly ? "" : "cursor-pointer"}">${box("manage_access", g.id, hasAny(row(g.id), UG))}${esc(g.name)}</label>`)
+                  .map((g) => `<label class="flex items-center gap-2.5 py-1.5 text-sm font-medium ${readOnly ? "" : "cursor-pointer"}">${box("manage_access", g.id, hasAny(row(g.id), UG_BIZ))}${esc(g.name)}</label>`)
                   .join("")}</div>`
               : `<p class="text-sm text-slate-400">${esc(tr("noBusinessYet"))}</p>`
           }
@@ -1003,10 +1011,10 @@
         const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error && error.code === "23505" ? tr("duplicate") : tg("saveFailed"))), (submit.disabled = false));
         const perBiz = {};
         groups.forEach((g) => (perBiz[g.id] = {}));
-        // 「Manage user access」一个勾 = 这个 Business 的全部用户权限功能（加 / 移除模块、设模块 Admin、加 / 移出 Business、看名单）
+        // 「Manage users」一个勾 = 加 / 移出这个 Business 的人、看名单；模块相关的角色功能一律关掉（交给模块管理员）
         $$("input[data-g]", f).forEach((x) => {
           if (!x.dataset.g) return;
-          if (x.name === "manage_access") UG.forEach((k) => (perBiz[x.dataset.g][k] = x.checked));
+          if (x.name === "manage_access") UG.forEach((k) => (perBiz[x.dataset.g][k] = x.checked && UG_BIZ.includes(k)));
           else perBiz[x.dataset.g][x.name] = x.checked;
         });
         const anyUg = Object.values(perBiz).some((p) => hasAny(p, UG));

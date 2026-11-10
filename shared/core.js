@@ -67,7 +67,7 @@ window.GW = (function () {
     // 按 Business ＋ Company 指派的角色（gw_member_companies.role_id）也一起拿：只算在那个 Business 的功能，全域功能照算
     const [{ data: profile }, { data: adm }, { data: mcs }] = await Promise.all([
       sb.from("gw_profiles").select("*, gw_roles(*, gw_role_businesses(*))").eq("id", session.user.id).maybeSingle(),
-      sb.from("gw_module_members").select("module_id").eq("user_id", session.user.id).eq("is_admin", true),
+      sb.from("gw_module_members").select("module_id, group_id").eq("user_id", session.user.id).eq("is_admin", true),
       sb.from("gw_member_companies").select("group_id, company_id, role_id, gw_roles(*, gw_role_businesses(*))").eq("user_id", session.user.id),
     ]);
     if (profile) {
@@ -82,6 +82,7 @@ window.GW = (function () {
       profile.businessIds = [];
       profile.roleModules = [];
       profile.adminModuleIds = [];
+      profile.adminPairs = []; // 我在哪个 Business 是哪个模块的管理员 [{ group_id, module_id }]
       profile.adminModules = 0;
       // 角色功能：全域的（gw_roles）＋ 按 Business 的（gw_role_businesses）；super_admin 全部都有
       const GLOBAL = ["can_view_user_group", "can_view_audit", "can_edit_module_name", "can_manage_module_access"];
@@ -90,7 +91,8 @@ window.GW = (function () {
       profile.perms = {}; // group_id → { can_post_notice, ... }
       if (!profile.isSuper) {
         // 模块管理员：可以开 / 收回自己管理的模块的权限
-        profile.adminModuleIds = (adm || []).map((x) => x.module_id);
+        profile.adminPairs = (adm || []).map((x) => ({ group_id: x.group_id, module_id: x.module_id }));
+        profile.adminModuleIds = [...new Set(profile.adminPairs.map((x) => x.module_id))];
         profile.adminModules = profile.adminModuleIds.length;
       }
       const perBizRoles = profile.isSuper ? [] : profile.companyRoles.filter((x) => x.role);

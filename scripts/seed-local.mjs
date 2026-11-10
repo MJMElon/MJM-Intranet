@@ -155,10 +155,18 @@ await must(
     ].map(([g, m]) => ({ group_id: grp[g], module_id: mod[m] })),
   ),
 );
-// 逐个开给人；车队组长是 HQ 车辆 Diesel 的模块管理员
+// 逐个开给人（按 Business：在他所属、而且有这个模块的每个 Business 各一行）；车队组长是 HQ 车辆 Diesel 的模块管理员
+const perBusiness = async (rows) => {
+  const [gm, gx] = await Promise.all([must(db.from("gw_group_members").select("group_id, user_id")), must(db.from("gw_group_modules").select("group_id, module_id"))]);
+  return rows.flatMap((r) =>
+    gm
+      .filter((m) => m.user_id === r.user_id && gx.some((x) => x.group_id === m.group_id && x.module_id === r.module_id))
+      .map((m) => ({ ...r, group_id: m.group_id })),
+  );
+};
 await must(
   db.from("gw_module_members").upsert(
-    [
+    await perBusiness([
       ["admin.hq@mjm.local", "WIKI"],
       ["admin.hq@mjm.local", "HR"],
       ["driver@mjm.local", "WIKI"],
@@ -173,7 +181,7 @@ await must(
       ["new@mjm.local", "DIESEL-HQ"],
       ["new@mjm.local", "MACHINERY"],
       ["fleet.lead@mjm.local", "DIESEL-HQ", true],
-    ].map(([e, m, admin]) => ({ user_id: ids[e], module_id: mod[m], is_admin: !!admin })),
+    ].map(([e, m, admin]) => ({ user_id: ids[e], module_id: mod[m], is_admin: !!admin }))),
   ),
 );
 // HR 在「全体员工」「总部车队」可以做的事（按 Business）
@@ -205,11 +213,13 @@ if (diesel) {
   await must(db.from("gw_group_modules").upsert({ group_id: grp["总部车队"], module_id: diesel.id }));
   await must(
     db.from("gw_module_members").upsert(
-      [
-        ["fleet.lead@mjm.local", true],
-        ["driver@mjm.local", false],
-        ["new@mjm.local", false],
-      ].map(([e, admin]) => ({ user_id: ids[e], module_id: diesel.id, is_admin: admin })),
+      await perBusiness(
+        [
+          ["fleet.lead@mjm.local", true],
+          ["driver@mjm.local", false],
+          ["new@mjm.local", false],
+        ].map(([e, admin]) => ({ user_id: ids[e], module_id: diesel.id, is_admin: admin })),
+      ),
     ),
   );
   await must(

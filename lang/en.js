@@ -788,7 +788,7 @@ window.GW_LANG["en"] = {
       "outsiderAdded": "{name} now has access to {module}."
     },
     "roles": {
-      "manageAccess": "Manage user access",
+      "manageAccess": "Manage users in business",
       "description": "A role is a set of functions, limited to the businesses and modules you tick for it. Give the role to people in the user list.",
       "add": "Add role",
       "addTitle": "Add New Role",

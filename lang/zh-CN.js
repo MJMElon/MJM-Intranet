@@ -788,7 +788,7 @@ window.GW_LANG["zh-CN"] = {
       "outsiderAdded": "{name} 现在可以用 {module}。"
     },
     "roles": {
-      "manageAccess": "管理用户权限",
+      "manageAccess": "管理 Business 的用户",
       "description": "角色 = 一组功能，只在你勾选的 Business 和模块内有效。在用户名单把角色给人。",
       "add": "新增角色",
       "addTitle": "新增角色",

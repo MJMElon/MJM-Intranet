@@ -121,11 +121,44 @@ window.GWHome = (function () {
       return items.sort((a, b) => a.slot - b.slot || a.kind.localeCompare(b.kind));
     }
     const folderLinks = (fid) => links.filter((l) => l.folder_id === fid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    const folderApps = (fid) =>
-      [...layout.entries()]
+    /* 分享给我的文件夹（folder.shared_by = 拥有者）：文件夹、连结、App 都是对方的，我只能看、打开，位置记在 gw_folder_shares；
+       里面的 App 只显示我自己也有权限的。自己的文件夹 is_shared = 分享用（可以选分享给谁）。 */
+    const sharedApps = new Map(); // 分享给我的文件夹 → 里面的 App（module id）
+    const folderApps = (fid) => {
+      const f = folders.find((x) => x.id === fid);
+      if (f && f.shared_by) return (sharedApps.get(fid) || []).filter((id) => modules.has(id));
+      return [...layout.entries()]
         .filter(([id, l]) => l.folder_id === fid && modules.has(id))
         .sort((a, b) => a[1].sort_order - b[1].sort_order)
         .map(([id]) => id);
+    };
+    async function loadShared() {
+      if (readOnly) return;
+      const me = data.profile.id;
+      const [mineRes, shareRes] = await Promise.all([
+        sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me),
+        sb.from("gw_folder_shares").select("folder_id, sort_order").eq("user_id", me),
+      ]);
+      if (mineRes.error || shareRes.error) return; // 资料库还没更新：没有分享功能，其他照常
+      (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas }));
+      const shares = shareRes.data || [];
+      if (shares.length) {
+        const ids = shares.map((x) => x.folder_id);
+        const [fs, ls, ly] = await Promise.all([
+          sb.from("gw_user_folders").select("id, user_id, name, color, collapsed, is_shared, canvas").in("id", ids),
+          sb.from("gw_user_links").select("*").in("folder_id", ids),
+          sb.from("gw_user_layout").select("module_id, folder_id").in("folder_id", ids),
+        ]).then((r) => r.map((x) => x.data || []));
+        fs.forEach((f) => {
+          if (folders.some((x) => x.id === f.id)) return;
+          const sh = shares.find((x) => x.folder_id === f.id);
+          folders.push({ ...f, shared_by: f.user_id, sort_order: sh ? sh.sort_order : 0 });
+        });
+        ls.forEach((l) => !links.some((x) => x.id === l.id) && links.push({ ...l }));
+        ly.forEach((l) => sharedApps.set(l.folder_id, [...(sharedApps.get(l.folder_id) || []), l.module_id]));
+      }
+      draw();
+    }
 
     // 把 slot 换算成实际位置；重叠的（例如换了装置、栏数不同）往后找空位，只影响显示不改资料
     function positions(skip) {
@@ -181,6 +214,7 @@ window.GWHome = (function () {
       if (kind === "folder") {
         const f = folders.find((x) => x.id === id);
         if (f) f.sort_order = slot;
+        if (f && f.shared_by) return sb.from("gw_folder_shares").update({ sort_order: slot }).eq("folder_id", id).eq("user_id", data.profile.id);
         return sb.from("gw_user_folders").update({ sort_order: slot }).eq("id", id);
       }
       if (kind === "link") {
@@ -528,12 +562,10 @@ window.GWHome = (function () {
       if (editing) {
         return `<button type="button" data-done class="fixed right-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-40 flex h-12 items-center gap-2 rounded-full bg-slate-900 px-5 font-semibold text-white shadow-xl sm:bottom-8 dark:bg-white dark:text-slate-900">${icon("check")} ${esc(t("fab.done"))}</button>`;
       }
+      // 只放四样；图示颜色在编辑模式（长按图示）的「…」选单里
       const items = [
-        ["tidy", "layout-grid", t("fab.tidyWidgets")],
-        ["icons", "palette", t("fab.iconColors")],
-        ["add-link", "link", t("fab.addLink")],
         ["add-widget", "layout-dashboard", t("fab.addWidget")],
-        ["add-apps", "layout-grid", t("fab.addApps")],
+        ["add-link", "link", t("fab.addLink")],
         ["new-folder", "folder-plus", t("fab.newFolder")],
         ["edit", "move", t("fab.edit")],
       ];
@@ -744,7 +776,9 @@ window.GWHome = (function () {
       if (it.kind === "folder") {
         const f = folders.find((x) => x.id === it.id);
         const minis = [...folderApps(f.id).map((id) => tileColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => tileColor(l.name))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
-        return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml: folderIcon(minis), label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t("home.deleteFolder"), BADGE_L) });
+        const shared = f.is_shared || f.shared_by;
+        const iconHtml = shared ? `<span class="relative">${folderIcon(minis)}<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-sky-500 text-white ring-2 ring-white dark:ring-slate-900">${icon("users", "size-3")}</span></span>` : folderIcon(minis);
+        return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
       }
       return widgetTile(widgets.find((w) => w.id === it.id), p, it.key);
     }
@@ -2246,12 +2280,14 @@ window.GWHome = (function () {
           <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("home.moveTo"))}</span>
             <select data-move class="${cls.input}">
               <option value="">${esc(t("fab.homeScreen"))}</option>
-              ${folders.map((f) => `<option value="${f.id}" ${current === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}
+              ${folders.filter((f) => !f.shared_by).map((f) => `<option value="${f.id}" ${current === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}
             </select>
           </label>
+          <button data-colors class="${btn("secondary")} w-full">${icon("palette")} ${esc(t("fab.iconColors"))}</button>
           <button data-remove class="${btn("ghost")} w-full text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(t("home.removeFromHome"))}</button>
         </div>`,
       );
+      $("[data-colors]", dlg.el).onclick = () => (dlg.close(), iconColorsDialog());
       $("[data-move]", dlg.el).addEventListener("change", async (e) => {
         const folderId = e.target.value || null;
         const order = folderId ? folderApps(folderId).length + 1 : nextSlot(1, 1);
@@ -2268,6 +2304,8 @@ window.GWHome = (function () {
       const f = folders.find((x) => x.id === fid);
       const ids = folderApps(fid);
       const lks = folderLinks(fid);
+      const mineF = !f.shared_by; // 分享给我的：不能移出里面的东西、不能改名
+      const canOut = !readOnly && mineF;
       const wrap = document.createElement("div");
       wrap.setAttribute("role", "dialog");
       wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-6 backdrop-blur-md";
@@ -2280,21 +2318,29 @@ window.GWHome = (function () {
                   .map(
                     (id) => `<div class="relative flex flex-col items-center gap-1.5">
                       <button type="button" data-open="${id}" class="flex flex-col items-center gap-1.5">${appIcon(modules.get(id), "size-14 sm:size-16")}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(modules.get(id).name)}</span></button>
-                      ${readOnly ? "" : `<button type="button" data-out="${id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>`}
+                      ${canOut ? `<button type="button" data-out="${id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
                     </div>`,
                   )
                   .join("")}${lks
                   .map(
                     (l) => `<div class="relative flex flex-col items-center gap-1.5">
                       <button type="button" data-open-link="${l.id}" title="${esc(l.url)}" class="flex flex-col items-center gap-1.5">${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url }, "size-14 sm:size-16")}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(l.name)}</span></button>
-                      ${readOnly ? "" : `<button type="button" data-out-link="${l.id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>`}
+                      ${canOut ? `<button type="button" data-out-link="${l.id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
                     </div>`,
                   )
                   .join("")}</div>`
               : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`
           }
         </div>
-        ${readOnly ? "" : `<button type="button" data-rename class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("pencil", "size-4")} ${esc(t("home.editFolder"))}</button>`}`;
+        ${
+          readOnly
+            ? ""
+            : `<div class="mt-4 flex flex-wrap justify-center gap-2">
+                <button type="button" data-map class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("git-fork", "size-4")} ${esc(t("home.mindMap"))}</button>
+                ${mineF && f.is_shared ? `<button type="button" data-share class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("users", "size-4")} ${esc(t("home.shareBtn"))}</button>` : ""}
+                ${mineF ? `<button type="button" data-rename class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("pencil", "size-4")} ${esc(t("home.editFolder"))}</button>` : `<span class="inline-flex items-center gap-1.5 rounded-full bg-sky-500/90 px-4 py-2 text-sm font-medium text-white shadow">${icon("users", "size-4")} ${esc(t("home.sharedBy"))}</span>`}
+              </div>`
+        }`;
       document.body.appendChild(wrap);
       refreshIcons();
       const close = () => wrap.remove();
@@ -2329,7 +2375,297 @@ window.GWHome = (function () {
           close();
           folderDialog(f);
         }
+        if ("share" in b.dataset) return close(), sharePicker(f);
+        if ("map" in b.dataset) return close(), openMindMap(f);
       });
+    }
+
+    // ------------------------------------------------------------ 文件夹心智图（Paint）
+    /* 文件夹里的 App / 连结自动变成节点；可以再加方块（长方形 / 圆角 / 菱形）写字。
+       每个节点四边各一个蓝点（接点）：从一个接点拖到另一个节点就连一条线（有箭头）。
+       拖动节点改位置；点一下选取（Delete 删除、换颜色）；方块点两下改文字；App / 连结点两下打开。
+       存在 gw_user_folders.canvas（gw_save_folder_canvas：拥有者和被分享的人都能改，改了会自动存）。 */
+    const MAP_COLORS = ["slate", "sky", "emerald", "amber", "rose", "violet"];
+    const MAP_FILL = {
+      slate: "border-slate-300 bg-white text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100",
+      sky: "border-sky-300 bg-sky-100 text-sky-900",
+      emerald: "border-emerald-300 bg-emerald-100 text-emerald-900",
+      amber: "border-amber-300 bg-amber-100 text-amber-900",
+      rose: "border-rose-300 bg-rose-100 text-rose-900",
+      violet: "border-violet-300 bg-violet-100 text-violet-900",
+    };
+    const MAP_SWATCH = { slate: "#94a3b8", sky: "#38bdf8", emerald: "#34d399", amber: "#fbbf24", rose: "#fb7185", violet: "#a78bfa" };
+    function openMindMap(f) {
+      const W = 2000, H = 1400;
+      const uid = () => Math.random().toString(36).slice(2, 10);
+      const cv = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
+      const nodes = (Array.isArray(cv.nodes) ? cv.nodes : []).map((n) => ({ ...n }));
+      let edges = (Array.isArray(cv.edges) ? cv.edges : []).map((e) => ({ ...e }));
+      // 文件夹里的 App / 连结：没有节点的补上，已经不在文件夹的拿掉
+      const apps = folderApps(f.id), lks = folderLinks(f.id).map((l) => l.id);
+      const kept = nodes.filter((n) => n.type === "shape" || (n.type === "app" ? apps.includes(n.ref) : lks.includes(n.ref)));
+      nodes.splice(0, nodes.length, ...kept);
+      let k = nodes.length;
+      const place = (type, ref) => {
+        if (nodes.some((n) => n.type === type && n.ref === ref)) return;
+        nodes.push({ id: uid(), type, ref, x: 40 + (k % 7) * 170, y: 40 + Math.floor(k / 7) * 150, w: 120, h: 100 });
+        k++;
+      };
+      apps.forEach((id) => place("app", id));
+      lks.forEach((id) => place("link", id));
+      const have = new Set(nodes.map((n) => n.id));
+      edges = edges.filter((e) => e && e.from && e.to && have.has(e.from.n) && have.has(e.to.n));
+
+      let sel = null; // { node } | { edge }
+      let dirty = false, saveTimer = null, drag = null;
+      const wrap = document.createElement("div");
+      wrap.setAttribute("role", "dialog");
+      wrap.className = "fixed inset-0 z-50 flex flex-col bg-slate-100 dark:bg-slate-950";
+      const tb = (attr, ic, label, extra) => `<button type="button" ${attr} class="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 ${extra || ""}">${icon(ic, "size-4")}<span class="hidden sm:inline">${esc(label)}</span></button>`;
+      wrap.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+          ${tb("data-back", "arrow-left", t("home.mapBack"))}
+          <h2 class="min-w-0 flex-1 truncate text-base font-semibold">${esc(f.name)}</h2>
+          ${tb('data-add="rect"', "square", t("home.mapAddBox"))}
+          ${tb('data-add="round"', "circle", t("home.mapAddRound"))}
+          ${tb('data-add="diamond"', "diamond", t("home.mapAddDiamond"))}
+          <span data-colors class="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
+          ${tb("data-del", "trash-2", t("home.mapDelete"), "text-red-600 dark:text-red-400")}
+          <span data-status class="text-xs text-slate-400"></span>
+        </div>
+        <p class="px-3 py-1.5 text-xs text-slate-500">${esc(t("home.mapHint"))}</p>
+        <div data-scroll class="min-h-0 flex-1 overflow-auto overscroll-contain">
+          <div data-canvas class="relative" style="width:${W}px;height:${H}px;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
+            <svg data-edges class="absolute inset-0" width="${W}" height="${H}" style="pointer-events:none">
+              <defs><marker id="gw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker></defs>
+              <g data-edge-layer></g>
+              <path data-temp fill="none" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="6 4" style="display:none"/>
+            </svg>
+            <div data-nodes class="absolute inset-0"></div>
+          </div>
+        </div>`;
+      document.body.appendChild(wrap);
+      const canvasEl = $("[data-canvas]", wrap), nodesEl = $("[data-nodes]", wrap), edgeLayer = $("[data-edge-layer]", wrap), temp = $("[data-temp]", wrap);
+      const status = $("[data-status]", wrap), colorsEl = $("[data-colors]", wrap), delBtn = $("[data-del]", wrap), scrollEl = $("[data-scroll]", wrap);
+      const byId = (id) => nodes.find((n) => n.id === id);
+      const port = (n, side) => (side === "t" ? [n.x + n.w / 2, n.y] : side === "b" ? [n.x + n.w / 2, n.y + n.h] : side === "l" ? [n.x, n.y + n.h / 2] : [n.x + n.w, n.y + n.h / 2]);
+      const bend = (x, y, side, dx, dy) => (side === "l" ? [x - dx, y] : side === "r" ? [x + dx, y] : side === "t" ? [x, y - dy] : [x, y + dy]);
+      const pathD = (a, sa, b, sb2) => {
+        const [x1, y1] = port(a, sa), [x2, y2] = port(b, sb2);
+        const dx = Math.max(40, Math.abs(x2 - x1) / 2), dy = Math.max(40, Math.abs(y2 - y1) / 2);
+        const c1 = bend(x1, y1, sa, dx, dy), c2 = bend(x2, y2, sb2, dx, dy);
+        return `M${x1} ${y1} C${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${x2} ${y2}`;
+      };
+      function drawEdges() {
+        edgeLayer.innerHTML = edges
+          .map((e) => {
+            const a = byId(e.from.n), b = byId(e.to.n);
+            if (!a || !b) return "";
+            const on = !!(sel && sel.edge === e.id);
+            const d = pathD(a, e.from.s, b, e.to.s);
+            return `<path d="${d}" fill="none" stroke="transparent" stroke-width="16" style="pointer-events:stroke;cursor:pointer" data-edge="${e.id}"/><path d="${d}" fill="none" stroke="${on ? "#0ea5e9" : "#475569"}" stroke-width="${on ? 3 : 2}" marker-end="url(#gw-arrow)" style="pointer-events:none"/>`;
+          })
+          .join("");
+      }
+      const nodeHtml = (n) => {
+        const on = !!(sel && sel.node === n.id);
+        const ports = ["t", "r", "b", "l"]
+          .map(
+            (sd) => `<span data-port="${n.id}:${sd}" class="absolute z-10 size-4 rounded-full border-2 border-white bg-sky-500 shadow ${on ? "" : "opacity-0 group-hover:opacity-100"} ${
+              sd === "t" ? "-top-2 left-1/2 -translate-x-1/2" : sd === "b" ? "-bottom-2 left-1/2 -translate-x-1/2" : sd === "l" ? "top-1/2 -left-2 -translate-y-1/2" : "top-1/2 -right-2 -translate-y-1/2"
+            }" style="touch-action:none;cursor:crosshair"></span>`,
+          )
+          .join("");
+        let body;
+        if (n.type === "shape") {
+          const fill = MAP_FILL[n.color] || MAP_FILL.slate;
+          const shape = n.shape === "round" ? "rounded-full" : n.shape === "diamond" ? "border-0" : "rounded-xl";
+          const clip = n.shape === "diamond" ? "clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)" : "";
+          body = `<div data-text class="flex h-full w-full items-center justify-center border-2 px-3 text-center text-sm font-medium break-words outline-none ${shape} ${fill}" style="${clip}">${esc(n.text || "")}</div>`;
+        } else {
+          const m = n.type === "app" ? modules.get(n.ref) : null;
+          const l = n.type === "link" ? links.find((x) => x.id === n.ref) : null;
+          body = `<div class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/70 bg-white/80 p-2 backdrop-blur dark:border-white/10 dark:bg-white/10">${appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, "size-12")}<span class="w-full truncate text-center text-xs font-medium">${esc(m ? m.name : l ? l.name : "")}</span></div>`;
+        }
+        return `<div data-node="${n.id}" class="group absolute rounded-xl select-none ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-slate-100 dark:ring-offset-slate-950" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;touch-action:none;cursor:grab">${body}${ports}</div>`;
+      };
+      function drawNodes() {
+        nodesEl.innerHTML = nodes.map(nodeHtml).join("");
+        refreshIcons();
+        const shapeSel = !!(sel && sel.node && (byId(sel.node) || {}).type === "shape");
+        colorsEl.classList.toggle("hidden", !shapeSel);
+        colorsEl.classList.toggle("flex", shapeSel);
+        delBtn.disabled = !(sel && (sel.edge || shapeSel));
+      }
+      const paint = () => (drawNodes(), drawEdges());
+      async function save() {
+        if (!dirty) return;
+        clearTimeout(saveTimer);
+        const canvas = { nodes, edges };
+        const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
+        if (error) return ((status.textContent = t("home.saveFailed")), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
+        dirty = false;
+        f.canvas = canvas;
+        status.textContent = t("home.mapSaved");
+      }
+      const markDirty = () => {
+        dirty = true;
+        status.textContent = t("home.mapUnsaved");
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(save, 800);
+      };
+      const close = async () => {
+        document.removeEventListener("keydown", onKey);
+        await save();
+        wrap.remove();
+      };
+      function delSel() {
+        if (!sel) return;
+        if (sel.edge) edges = edges.filter((e) => e.id !== sel.edge);
+        else {
+          const n = byId(sel.node);
+          if (!n || n.type !== "shape") return;
+          nodes.splice(nodes.indexOf(n), 1);
+          edges = edges.filter((e) => e.from.n !== n.id && e.to.n !== n.id);
+        }
+        sel = null;
+        markDirty();
+        paint();
+      }
+      function editText(id) {
+        const el = $(`[data-node="${id}"] [data-text]`, nodesEl);
+        if (!el) return;
+        el.contentEditable = "true";
+        el.focus();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const s0 = getSelection();
+        s0.removeAllRanges();
+        s0.addRange(range);
+        const done = () => {
+          el.contentEditable = "false";
+          const n = byId(id);
+          const txt = (el.innerText || "").trim().slice(0, 200);
+          if (n && txt !== (n.text || "")) ((n.text = txt), markDirty());
+          paint();
+        };
+        el.addEventListener("blur", done, { once: true });
+        el.addEventListener("keydown", (ev) => {
+          ev.stopPropagation();
+          if ((ev.key === "Enter" && !ev.shiftKey) || ev.key === "Escape") (ev.preventDefault(), el.blur());
+        });
+      }
+      const onKey = (e) => {
+        if (e.target && e.target.isContentEditable) return;
+        if (e.key === "Escape") return close();
+        if ((e.key === "Delete" || e.key === "Backspace") && sel) (e.preventDefault(), delSel());
+      };
+      document.addEventListener("keydown", onKey);
+      wrap.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if ("back" in b.dataset) return close();
+        if (b.dataset.add) {
+          const shape = b.dataset.add;
+          const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x: Math.round(scrollEl.scrollLeft + 60 + (nodes.length % 5) * 30), y: Math.round(scrollEl.scrollTop + 80 + (nodes.length % 5) * 30), w: shape === "diamond" ? 150 : 160, h: shape === "diamond" ? 110 : 64 };
+          nodes.push(n);
+          sel = { node: n.id };
+          markDirty();
+          paint();
+          return editText(n.id);
+        }
+        if (b.dataset.color) {
+          const n = sel && sel.node ? byId(sel.node) : null;
+          if (n && n.type === "shape") ((n.color = b.dataset.color), markDirty(), paint());
+          return;
+        }
+        if ("del" in b.dataset) return delSel();
+      });
+      const pt = (e) => {
+        const r = canvasEl.getBoundingClientRect();
+        return [e.clientX - r.left, e.clientY - r.top];
+      };
+      canvasEl.addEventListener("pointerdown", (e) => {
+        if (e.button) return;
+        const portEl = e.target.closest("[data-port]");
+        if (portEl) {
+          const [n, sd] = portEl.dataset.port.split(":");
+          drag = { kind: "link", from: { n, s: sd } };
+          canvasEl.setPointerCapture(e.pointerId);
+          return e.preventDefault();
+        }
+        const nodeEl = e.target.closest("[data-node]");
+        if (nodeEl) {
+          if (e.target.isContentEditable) return;
+          const n = byId(nodeEl.dataset.node);
+          const [x, y] = pt(e);
+          drag = { kind: "move", id: n.id, dx: x - n.x, dy: y - n.y, moved: false };
+          if (!sel || sel.node !== n.id) ((sel = { node: n.id }), paint());
+          canvasEl.setPointerCapture(e.pointerId);
+          return e.preventDefault();
+        }
+        const edgeEl = e.target.closest("[data-edge]");
+        if (edgeEl) return ((sel = { edge: edgeEl.dataset.edge }), paint());
+        if (sel) ((sel = null), paint());
+      });
+      canvasEl.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        const [x, y] = pt(e);
+        if (drag.kind === "move") {
+          const n = byId(drag.id);
+          n.x = Math.max(0, Math.min(W - n.w, Math.round(x - drag.dx)));
+          n.y = Math.max(0, Math.min(H - n.h, Math.round(y - drag.dy)));
+          drag.moved = true;
+          const el = $(`[data-node="${n.id}"]`, nodesEl);
+          if (el) ((el.style.left = n.x + "px"), (el.style.top = n.y + "px"));
+          drawEdges();
+        } else {
+          const [x1, y1] = port(byId(drag.from.n), drag.from.s);
+          temp.setAttribute("d", `M${x1} ${y1} L${x} ${y}`);
+          temp.style.display = "";
+        }
+      });
+      const endDrag = (e) => {
+        if (!drag) return;
+        if (drag.kind === "move") {
+          if (drag.moved) markDirty();
+        } else {
+          temp.style.display = "none";
+          const under = document.elementFromPoint(e.clientX, e.clientY);
+          const target = under && (under.closest("[data-port]") || under.closest("[data-node]"));
+          if (target) {
+            let n, sd;
+            if (target.dataset.port) [n, sd] = target.dataset.port.split(":");
+            else {
+              n = target.dataset.node;
+              const b = byId(n);
+              const [x, y] = pt(e);
+              const dl = x - b.x, dr = b.x + b.w - x, dt = y - b.y, db = b.y + b.h - y;
+              const m = Math.min(dl, dr, dt, db);
+              sd = m === dl ? "l" : m === dr ? "r" : m === dt ? "t" : "b";
+            }
+            if (n !== drag.from.n && !edges.some((ed) => ed.from.n === drag.from.n && ed.to.n === n)) {
+              edges.push({ id: uid(), from: drag.from, to: { n, s: sd } });
+              markDirty();
+            }
+          }
+        }
+        drag = null;
+        paint();
+      };
+      canvasEl.addEventListener("pointerup", endDrag);
+      canvasEl.addEventListener("pointercancel", () => ((drag = null), (temp.style.display = "none"), paint()));
+      canvasEl.addEventListener("dblclick", (e) => {
+        const nodeEl = e.target.closest("[data-node]");
+        if (!nodeEl) return;
+        const n = byId(nodeEl.dataset.node);
+        if (!n) return;
+        if (n.type === "shape") return editText(n.id);
+        if (n.type === "app") return close().then(() => open(n.ref));
+        const l = links.find((x) => x.id === n.ref);
+        if (l) window.open(l.url, "_blank", "noopener,noreferrer");
+      });
+      paint();
     }
 
     // 图示颜色：全部一起选（柔和 / 多彩 / 单一颜色），也可以一个一个 App 自己选
@@ -2453,8 +2789,9 @@ window.GWHome = (function () {
     }
 
     function folderDialog(folder) {
+      if (!folder) return newFolderDialog();
       const dlg = modal(
-        folder ? t("home.editFolder") : t("fab.newFolder"),
+        t("home.editFolder"),
         `<form class="space-y-4">
           <input name="name" maxlength="40" required value="${esc(folder ? folder.name : "")}" placeholder="${esc(t("home.folderName"))}" class="${cls.input}">
           <div class="flex justify-end gap-2">
@@ -2487,8 +2824,119 @@ window.GWHome = (function () {
       });
     }
 
+    // 新文件夹：先选 Own use（只有自己看）或 Shared（分享给同 Business 的同事），再取名；分享用的建好就选分享给谁
+    function newFolderDialog() {
+      const choice = (v, ic, title, hint, on) => `<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 has-checked:border-slate-900 has-checked:bg-slate-50 dark:border-slate-700 dark:has-checked:border-white dark:has-checked:bg-white/5">
+          <input type="radio" name="kind" value="${v}" ${on ? "checked" : ""} class="mt-1 size-4 accent-slate-900">
+          ${icon(ic, "mt-0.5 size-5 shrink-0 text-slate-500")}
+          <span class="min-w-0"><span class="block text-sm font-medium">${esc(title)}</span><span class="block text-xs text-slate-500">${esc(hint)}</span></span>
+        </label>`;
+      const dlg = modal(
+        t("fab.newFolder"),
+        `<form class="space-y-4">
+          <div data-err></div>
+          <div class="grid gap-2 sm:grid-cols-2">
+            ${choice("own", "folder", t("home.folderOwn"), t("home.folderOwnHint"), true)}
+            ${choice("shared", "users", t("home.folderShared"), t("home.folderSharedHint"), false)}
+          </div>
+          <input name="name" maxlength="40" required placeholder="${esc(t("home.folderName"))}" class="${cls.input}">
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </form>`,
+      );
+      refreshIcons();
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      const form = $("form", dlg.el);
+      $("[name=name]", form).focus();
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = form.name.value.trim();
+        if (!name) return;
+        const shared = form.kind.value === "shared";
+        const submit = $("button[type=submit]", form);
+        submit.disabled = true;
+        const row = { user_id: data.profile.id, name, color: "slate", sort_order: nextSlot(1, 1), ...(shared ? { is_shared: true } : {}) };
+        const { data: created, error } = await sb.from("gw_user_folders").insert(row).select("id, name, color, sort_order, collapsed").single();
+        if (error) {
+          submit.disabled = false;
+          return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(shared && /is_shared/.test(error.message || "") ? t("home.sharedNeedsDb") : t("home.saveFailed")));
+        }
+        if (shared) created.is_shared = true;
+        folders.push(created);
+        dlg.close();
+        draw();
+        if (shared) sharePicker(created);
+      });
+    }
+
+    // 分享给谁：同 Business 的在职同事（gw_folder_share_candidates），勾选 → 存 gw_folder_shares
+    async function sharePicker(f) {
+      const [cand, cur] = await Promise.all([sb.rpc("gw_folder_share_candidates"), sb.from("gw_folder_shares").select("user_id").eq("folder_id", f.id)]);
+      if (cand.error || cur.error) return toast(t("home.sharedNeedsDb"));
+      const list = cand.data || [];
+      const on = new Set((cur.data || []).map((x) => x.user_id));
+      const dlg = modal(
+        t("home.shareTitle", { name: f.name }),
+        `<div class="space-y-3">
+          <p class="text-xs text-slate-500">${esc(t("home.shareHint"))}</p>
+          ${list.length ? `<div class="relative"><span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400">${icon("search")}</span><input data-q type="search" placeholder="${esc(t("home.shareSearch"))}" class="${cls.input} pl-9"></div>` : ""}
+          <div class="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${
+            list.length
+              ? list
+                  .map(
+                    (u) => `<label data-row="${esc(((u.full_name || "") + " " + (u.email || "")).toLowerCase())}" class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
+                      <input type="checkbox" data-pick="${u.id}" ${on.has(u.id) ? "checked" : ""} class="size-4 accent-emerald-600">
+                      <span class="min-w-0 flex-1"><span class="block truncate font-medium">${esc(u.full_name || "")}</span><span class="block truncate text-xs text-slate-500">${esc(u.email || "")}</span></span>
+                    </label>`,
+                  )
+                  .join("")
+              : `<p class="px-3 py-6 text-center text-sm text-slate-400">${esc(t("home.shareNone"))}</p>`
+          }</div>
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="button" data-save class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </div>`,
+        { wide: true },
+      );
+      refreshIcons();
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      const q = $("[data-q]", dlg.el);
+      if (q) q.addEventListener("input", () => { const v = q.value.trim().toLowerCase(); $$("[data-row]", dlg.el).forEach((r) => r.classList.toggle("hidden", !!v && !r.dataset.row.includes(v))); });
+      $("[data-save]", dlg.el).onclick = async () => {
+        const picked = new Set($$("[data-pick]:checked", dlg.el).map((x) => x.dataset.pick));
+        const add = [...picked].filter((id) => !on.has(id));
+        const drop = [...on].filter((id) => !picked.has(id));
+        $("[data-save]", dlg.el).disabled = true;
+        if (add.length) {
+          const { error } = await sb.from("gw_folder_shares").insert(add.map((user_id) => ({ folder_id: f.id, user_id })));
+          if (error) return (($("[data-save]", dlg.el).disabled = false), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
+        }
+        if (drop.length) {
+          const { error } = await sb.from("gw_folder_shares").delete().eq("folder_id", f.id).in("user_id", drop);
+          if (error) return (($("[data-save]", dlg.el).disabled = false), toast(t("home.saveFailed")));
+        }
+        dlg.close();
+        toast(t("home.shareSaved", { count: picked.size }));
+      };
+    }
+
     async function deleteFolder(fid) {
       const f = folders.find((x) => x.id === fid);
+      if (f.shared_by) {
+        // 分享给我的：只是从我的主页拿掉（退出分享），文件夹本身是对方的
+        const ok = await confirmDialog(t("home.leaveSharedTitle"), t("home.leaveSharedBody", { name: f.name }), t("home.leaveShared"), t("home.cancel"));
+        if (!ok) return;
+        folders = folders.filter((x) => x.id !== fid);
+        links = links.filter((l) => l.folder_id !== fid);
+        sharedApps.delete(fid);
+        draw();
+        const { error } = await sb.from("gw_folder_shares").delete().eq("folder_id", fid).eq("user_id", data.profile.id);
+        if (error) toast(t("home.saveFailed"));
+        return;
+      }
       const ok = await confirmDialog(t("home.deleteFolderTitle"), t("home.deleteFolderBody", { name: f.name }), t("home.delete"), t("home.cancel"));
       if (!ok) return;
       // 文件夹里的 App 回到主画面的空格
@@ -2653,6 +3101,7 @@ window.GWHome = (function () {
 
     if (sectionsOn) widgets.filter(isFloating).forEach(migratePos); // 旧版 px 位置换成格子（只在记忆中）
     draw();
+    loadShared();
   }
 
   return { render, WIDGETS };

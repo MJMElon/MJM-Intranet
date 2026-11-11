@@ -717,7 +717,7 @@ window.GWHome = (function () {
     function sTile(gid, it, p) {
       if (it.kind === "module") {
         const m = modules.get(it.module_id);
-        return cellTile({ key: it.id, kind: "module", p, btnAttr: `data-open="${m.id}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name, badges: badge(`data-hide-mod="${m.id}" data-gid="${gid}"`, "minus", t("home.removeFromSection"), BADGE_L) });
+        return cellTile({ key: it.id, kind: "module", p, btnAttr: `data-open="${m.id}" data-gid="${gid}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name, badges: badge(`data-hide-mod="${m.id}" data-gid="${gid}"`, "minus", t("home.removeFromSection"), BADGE_L) });
       }
       const del = badge(`data-del-item="${it.id}"`, "minus", t("home.delete"), BADGE_L);
       if (it.kind === "folder") {
@@ -2511,7 +2511,19 @@ window.GWHome = (function () {
       await saveApps(moved);
     }
 
-    async function open(id) {
+    // 从 Business 区块点开的模块：带上区块里选的 Company（或这个 Business 唯一的 Company），
+    // 以及这家 Company 在那个系统里的代码（Connector 设定的），让系统开起来就是这家公司
+    function companyContext(gid, moduleId) {
+      if (!sectionsOn || !gid) return null;
+      const list = companiesOf(gid);
+      const sel = selectedCompany(gid);
+      const c = sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel);
+      if (!c) return null;
+      const map = (S.companyMappings || []).find((x) => x.module_id === moduleId && x.company_id === c.id);
+      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "" };
+    }
+
+    async function open(id, gid) {
       if (readOnly || editing || Date.now() - lastDragEnd < 300) return;
       const m = modules.get(id);
       data.recent = [id, ...data.recent.filter((x) => x !== id)].slice(0, 5);
@@ -2519,7 +2531,7 @@ window.GWHome = (function () {
         m.is_new = false;
         if (sectionsOn) sb.rpc("gw_mark_seen", { p_modules: [id] });
       }
-      const ok = await openModule(m);
+      const ok = await openModule(m, companyContext(gid, id));
       if (!ok) toast(t("home.openFailed"));
     }
 
@@ -2557,7 +2569,7 @@ window.GWHome = (function () {
         if (d.delItem) return deleteBoxItem(sItems.find((x) => x.id === d.delItem));
         if ("weatherRetry" in d) return ((weather = null), $$("[data-weather]", root).forEach((el) => (el.innerHTML = weatherInner(el.dataset.weather))), loadWeather(true));
       }
-      if (d.open) return open(d.open);
+      if (d.open) return open(d.open, d.gid);
       if (d.openLink) {
         if (editing || Date.now() - lastDragEnd < 300) return;
         const l = links.find((x) => x.id === d.openLink);

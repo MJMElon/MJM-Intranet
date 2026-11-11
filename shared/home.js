@@ -847,7 +847,7 @@ window.GWHome = (function () {
           ? ""
           : `<div data-list="${key}" data-fw-host="${key}" data-cols="${n}" class="relative mx-auto grid ${mode === "row" ? "overflow-hidden" : ""}" style="width:${n * g.cw}px;grid-template-columns:repeat(${n},${g.cw}px);grid-template-rows:repeat(${shownRows},${g.rh}px);grid-auto-rows:${g.rh}px;${mode === "row" ? `height:${g.rh}px;` : ""}">${body}<div data-box-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div></div>`;
       return `<div data-sec-wrap data-sec-key="${key}" class="p-2" style="width:${B.fill ? "100%" : (2 * n + 1) * g.hw + "px"};max-width:100%">
-        <section data-box="${key}" class="relative ${glassSkin} ${companyMenuGid === key || estateMenuGid === key ? "z-20" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
+        <section data-box="${key}" data-pad="${pad}" class="relative ${glassSkin} ${companyMenuGid === key || estateMenuGid === key ? "z-20" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
     }
     // 区块里的格子内容（图示 / 便条 / 小工具）
     function boxTiles(key, B) {
@@ -1296,9 +1296,25 @@ window.GWHome = (function () {
     const wRect = (p) => ({ x: p.x, y: p.y, w: p.w * 2, h: p.h });
     const shown = new Map(); // 页面小工具现在显示的位置（被区块盖到时会暂时挪开）
     const shownOf = (w) => shown.get(w.id) || w.config.pos;
+    // 每个区块的高度补到「整数行」（页面格子 rh 的倍数）：区块底边才会和旁边的小工具底边对齐、下一个区块也从格线开始
+    function alignBoxes() {
+      const page = $("#gw-page", root);
+      if (!page) return;
+      const g = pageGeo();
+      $$("[data-sec-wrap]", page).forEach((el) => {
+        const box = $("[data-box]", el);
+        if (!box) return;
+        box.style.padding = box.dataset.pad || "";
+        const h = el.getBoundingClientRect().height;
+        const target = Math.ceil(h / g.rh - 0.02) * g.rh;
+        const extra = Math.max(0, target - h);
+        if (extra) box.style.paddingBottom = Math.round(parseFloat(getComputedStyle(box).paddingBottom) + extra) + "px";
+      });
+    }
     function boxRectsPage() {
       const page = $("#gw-page", root);
       if (!page) return [];
+      alignBoxes();
       const g = pageGeo();
       const pr = page.getBoundingClientRect();
       return $$("[data-sec-wrap]", page).map((el) => {

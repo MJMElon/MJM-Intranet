@@ -3181,7 +3181,10 @@ window.GWHome = (function () {
       const sel = selectedCompany(gid);
       const c = sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel);
       if (!c) return null;
-      const map = (S.companyMappings || []).find((x) => x.module_id === moduleId && x.company_id === c.id);
+      // Connector 里设的代码：先找这个模块的；没有就找同一个系统（网址同一个主机）别的模块的
+      const origin = (id) => { try { return new URL(modules.get(id).url).origin; } catch (e) { return ""; } };
+      const maps = (S.companyMappings || []).filter((x) => x.company_id === c.id);
+      const map = maps.find((x) => x.module_id === moduleId) || maps.find((x) => modules.has(x.module_id) && origin(x.module_id) && origin(x.module_id) === origin(moduleId));
       return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "" };
     }
 

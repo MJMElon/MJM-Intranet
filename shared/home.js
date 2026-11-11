@@ -2449,7 +2449,7 @@ window.GWHome = (function () {
       violet: "border-violet-300 bg-violet-100 text-violet-900",
     };
     const MAP_SWATCH = { slate: "#94a3b8", sky: "#38bdf8", emerald: "#34d399", amber: "#fbbf24", rose: "#fb7185", violet: "#a78bfa" };
-    const NODE_W = 120, NODE_H = 108, ROW_W = 240, ROW_H = 48, GRID = 24;
+    const NODE_W = 120, NODE_H = 108, ROW_W = 312, ROW_H = 48, GRID = 24, MIN_W = 96, MIN_H = 48;
     const snap = (v) => Math.round(v / GRID) * GRID; // 位置都对齐点点格子，排起来才整齐
     function mountMindMap(f, host, hooks) {
       const W = 1600, H = 1200;
@@ -2479,7 +2479,7 @@ window.GWHome = (function () {
       const canEdit = !!hooks.canEdit;
       const tool = (attr, ic, label, extra) =>
         `<button type="button" ${attr} class="flex w-full flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-white aria-pressed:bg-slate-900 aria-pressed:text-white disabled:opacity-40 dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900 ${extra || ""}">${icon(ic, "size-5")}<span class="leading-tight">${esc(label)}</span></button>`;
-      host.innerHTML = `<div class="flex h-full gap-3">
+      host.innerHTML = `<div class="relative flex h-full gap-3">
           <div data-scroll class="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-white/70 bg-white/60 dark:border-white/10 dark:bg-slate-950/40">
             <div data-canvas class="relative" style="width:${W}px;height:${H}px;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
               <svg data-edges class="absolute inset-0" width="${W}" height="${H}" style="pointer-events:none">
@@ -2491,14 +2491,15 @@ window.GWHome = (function () {
               <div data-marquee class="pointer-events-none absolute hidden rounded border-2 border-dashed border-sky-500 bg-sky-500/10"></div>
             </div>
           </div>
+          <div data-shape-pop class="absolute z-30 hidden origin-right scale-95 flex-row items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 opacity-0 shadow-xl transition duration-150 dark:border-slate-700 dark:bg-slate-800">
+            ${tool('data-add="rect"', "square", t("home.mapAddBox"), "w-14")}
+            ${tool('data-add="round"', "circle", t("home.mapAddRound"), "w-14")}
+            ${tool('data-add="diamond"', "diamond", t("home.mapAddDiamond"), "w-14")}
+            <span class="absolute top-1/2 -right-1.5 size-3 -translate-y-1/2 rotate-45 border-t border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"></span>
+          </div>
           <div data-tools class="${canEdit ? "flex" : "hidden"} w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
             ${hooks.canAddLink ? tool('data-tool="icon"', "link", t("home.mapIcon")) : ""}
             ${tool('data-tool="text"', "type", t("home.mapText"))}
-            <div data-shape-pop class="hidden w-full flex-col gap-0.5 rounded-xl bg-slate-100 p-1 dark:bg-white/10">
-              ${tool('data-add="rect"', "square", t("home.mapAddBox"))}
-              ${tool('data-add="round"', "circle", t("home.mapAddRound"))}
-              ${tool('data-add="diamond"', "diamond", t("home.mapAddDiamond"))}
-            </div>
             ${tool('data-tool="line"', "spline", t("home.mapLine"))}
             ${tool('data-tool="all"', "box-select", t("home.mapSelectAll"))}
             ${tool('data-tool="bullets"', "list", t("home.mapBullets"))}
@@ -2511,6 +2512,25 @@ window.GWHome = (function () {
       const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host), marquee = $("[data-marquee]", host);
       const status = $("[data-status]", host), colorsEl = $("[data-colors]", host), delBtn = $("[data-del]", host), scrollEl = $("[data-scroll]", host);
       const byId = (id) => nodes.find((n) => n.id === id);
+      // 「文字」的小面板：从按钮旁边长出来（开 = 先摆到按钮旁边再放大）
+      const pop = $("[data-shape-pop]", host);
+      function shapePop(show, btnEl) {
+        if (!show) {
+          pop.classList.add("opacity-0", "scale-95");
+          setTimeout(() => (pop.classList.add("hidden"), pop.classList.remove("flex")), 150);
+          return;
+        }
+        const hr = host.getBoundingClientRect(), br = btnEl.getBoundingClientRect();
+        pop.style.top = Math.round(br.top - hr.top + br.height / 2) + "px";
+        pop.style.right = Math.round(hr.right - br.left + 10) + "px";
+        pop.style.transform = "translateY(-50%)";
+        pop.classList.remove("hidden");
+        pop.classList.add("flex");
+        requestAnimationFrame(() => pop.classList.remove("opacity-0", "scale-95"));
+      }
+      host.addEventListener("pointerdown", (e) => {
+        if (!pop.classList.contains("hidden") && !e.target.closest("[data-shape-pop]") && !e.target.closest('[data-tool="text"]')) shapePop(false);
+      });
       const port = (n, side) => (side === "t" ? [n.x + n.w / 2, n.y] : side === "b" ? [n.x + n.w / 2, n.y + n.h] : side === "l" ? [n.x, n.y + n.h / 2] : [n.x + n.w, n.y + n.h / 2]);
       const bendPt = (x, y, side, dx, dy) => (side === "l" ? [x - dx, y] : side === "r" ? [x + dx, y] : side === "t" ? [x, y - dy] : [x, y + dy]);
       const pathD = (a, sa, b, sb2) => {
@@ -2575,7 +2595,9 @@ window.GWHome = (function () {
               </div>`;
         }
         const bullet = n.bullet ? `<span class="absolute top-1/2 -left-5 size-2.5 -translate-y-1/2 rounded-full bg-slate-500 dark:bg-slate-300"></span>` : "";
-        return `<div data-node="${n.id}" class="group absolute rounded-2xl select-none ${editing ? "z-20" : ""} ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;pointer-events:auto;touch-action:none;cursor:${!canEdit ? "pointer" : lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}</div>`;
+        // 右下角拉大 / 缩小（名字太长就拉宽）
+        const grip = canEdit && !editing ? `<span data-resize="${n.id}" class="absolute -right-1.5 -bottom-1.5 z-10 flex size-5 items-end justify-end rounded-full bg-white text-slate-500 shadow ring-1 ring-slate-300 ${on ? "" : "opacity-0 group-hover:opacity-100"} dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600" style="touch-action:none;cursor:nwse-resize"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" class="m-0.5"><path d="M11 1 1 11M11 6 6 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>` : "";
+        return `<div data-node="${n.id}" class="group absolute rounded-2xl select-none ${editing ? "z-20" : ""} ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;pointer-events:auto;touch-action:none;cursor:${!canEdit ? "pointer" : lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}${grip}</div>`;
       };
       const selShapes = () => [...selSet].map(byId).filter((n) => n && n.type === "shape");
       const selLinks = () => (hooks.canEditLinks ? [...selSet].map(byId).filter((n) => n && n.type === "link") : []);
@@ -2704,12 +2726,7 @@ window.GWHome = (function () {
         if (!b) return;
         if (b.dataset.pickIcon) return pickLinkIcon(b.dataset.pickIcon);
         if ("linkOk" in b.dataset) return finishLinkEdit();
-        if (b.dataset.tool === "text") {
-          const pop = $("[data-shape-pop]", host);
-          pop.classList.toggle("hidden");
-          pop.classList.toggle("flex", !pop.classList.contains("hidden"));
-          return;
-        }
+        if (b.dataset.tool === "text") return shapePop(pop.classList.contains("hidden"), b);
         if (b.dataset.tool === "grid") {
           // 换回格子：心智图的排法会不见，而且不能复原 → 先问
           return confirmDialog(t("home.mapToGridTitle"), t("home.mapToGridBody"), t("home.mapToGrid"), t("home.cancel")).then(async (ok) => {
@@ -2723,8 +2740,7 @@ window.GWHome = (function () {
           });
         }
         if (b.dataset.add) {
-          $("[data-shape-pop]", host).classList.add("hidden");
-          $("[data-shape-pop]", host).classList.remove("flex");
+          shapePop(false);
           const shape = b.dataset.add;
           const w = shape === "diamond" ? 144 : 168, h = shape === "diamond" ? 96 : 72;
           // 放在看得到的范围里第一个没被盖到的格子
@@ -2773,6 +2789,14 @@ window.GWHome = (function () {
           // 正在改连结图示：点它自己里面不动；点别处 = 存
           if (e.target.closest(`[data-node="${linkEdit}"]`)) return;
           return finishLinkEdit();
+        }
+        const gripEl = e.target.closest("[data-resize]");
+        if (gripEl && !lineMode) {
+          const n = byId(gripEl.dataset.resize);
+          const [x, y] = pt(e);
+          drag = { kind: "resize", id: n.id, x0: x, y0: y, w0: n.w, h0: n.h, moved: false };
+          canvasEl.setPointerCapture(e.pointerId);
+          return e.preventDefault();
         }
         const portEl = e.target.closest("[data-port]");
         if (portEl && !lineMode) {
@@ -2831,6 +2855,15 @@ window.GWHome = (function () {
       canvasEl.addEventListener("pointermove", (e) => {
         if (!drag) return;
         const [x, y] = pt(e);
+        if (drag.kind === "resize") {
+          const n = byId(drag.id);
+          n.w = Math.max(MIN_W, Math.min(W - n.x, snap(drag.w0 + x - drag.x0)));
+          n.h = Math.max(MIN_H, Math.min(H - n.y, snap(drag.h0 + y - drag.y0)));
+          drag.moved = true;
+          const el = $(`[data-node="${n.id}"]`, nodesEl);
+          if (el) ((el.style.width = n.w + "px"), (el.style.height = n.h + "px"));
+          return drawEdges();
+        }
         if (drag.kind === "move") {
           const dx = x - drag.x0, dy = y - drag.y0;
           if (lp && Math.hypot(dx, dy) > 6) (clearTimeout(lp), (lp = null));
@@ -2859,7 +2892,7 @@ window.GWHome = (function () {
         clearTimeout(lp);
         lp = null;
         if (!drag) return;
-        if (drag.kind === "move") {
+        if (drag.kind === "move" || drag.kind === "resize") {
           if (drag.moved) markDirty();
         } else if (drag.kind === "box") {
           marquee.classList.add("hidden");

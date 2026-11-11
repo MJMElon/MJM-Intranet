@@ -69,6 +69,7 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "estate": "Estate",
     "linkPhoto": "Photo",
     "linkPhotoTooBig": "Photo must be under 2 MB.",
     "mapHand": "Hand",
@@ -451,6 +452,12 @@ window.GW_LANG["en"] = {
       "notReady": "The database has not been updated for sectors yet."
     },
     "company": {
+      "estates": "Estates",
+      "estatesHint": "Only for a company that runs more than one estate (e.g. MJM Plantation 1, 2, 3). Each estate gets its own dropdown on the home page and its own report. Leave empty when the company is one estate.",
+      "estateName": "Estate name",
+      "addEstate": "Add estate",
+      "estateDuplicate": "This estate already exists for this company.",
+      "estatesNotReady": "Run the SQL for estates first (20261121110000).",
       "description": "Companies are master data shared by every system. A company can belong to several businesses. Its code never changes and is used to match the company in existing systems.",
       "search": "Search code or name…",
       "add": "Add company",

@@ -445,6 +445,8 @@ window.GW = (function () {
       u.searchParams.set("gw_company", ctx.company);
       if (ctx.company_name && ctx.company_name !== ctx.company) u.searchParams.set("gw_company_name", ctx.company_name);
       if (ctx.company_short) u.searchParams.set("gw_company_short", ctx.company_short);
+      if (ctx.estate) u.searchParams.set("gw_estate", ctx.estate);
+      if (ctx.estate_short) u.searchParams.set("gw_estate_short", ctx.estate_short);
       return u.toString();
     } catch (e) {
       return url;

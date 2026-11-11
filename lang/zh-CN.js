@@ -69,6 +69,7 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "estate": "Estate",
     "linkPhoto": "照片",
     "linkPhotoTooBig": "照片要小于 2 MB。",
     "mapHand": "手形",
@@ -451,6 +452,12 @@ window.GW_LANG["zh-CN"] = {
       "notReady": "数据库还没更新到支持 Sector。"
     },
     "company": {
+      "estates": "Estate",
+      "estatesHint": "只有一家公司管好几个 Estate 时才要加（例如 MJM Plantation 1、2、3）。每个 Estate 在主画面有自己的下拉、有自己的报表。公司本身就是一个 Estate 的话留空。",
+      "estateName": "Estate 名称",
+      "addEstate": "加 Estate",
+      "estateDuplicate": "这家公司已经有这个 Estate。",
+      "estatesNotReady": "请先执行 Estate 的 SQL（20261121110000）。",
       "description": "Company 是所有系统共用的主资料，一个 Company 可以属于多个 Business。Company 代码固定不变，用来对应现有系统里的公司。",
       "search": "搜寻代码或名称…",
       "add": "新增 Company",

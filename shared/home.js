@@ -811,7 +811,7 @@ window.GWHome = (function () {
           ? ""
           : `<div data-list="${key}" data-fw-host="${key}" data-cols="${n}" class="relative mx-auto grid ${mode === "row" ? "overflow-hidden" : ""}" style="width:${n * g.cw}px;grid-template-columns:repeat(${n},${g.cw}px);grid-template-rows:repeat(${shownRows},${g.rh}px);grid-auto-rows:${g.rh}px;${mode === "row" ? `height:${g.rh}px;` : ""}">${body}<div data-box-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div></div>`;
       return `<div data-sec-wrap data-sec-key="${key}" class="p-2" style="width:${B.fill ? "100%" : (2 * n + 1) * g.hw + "px"};max-width:100%">
-        <section data-box="${key}" class="relative ${glassSkin} ${companyMenuGid === key ? "z-30" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
+        <section data-box="${key}" class="relative ${glassSkin} ${companyMenuGid === key ? "z-20" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
     }
     // 区块里的格子内容（图示 / 便条 / 小工具）
     function boxTiles(key, B) {
@@ -1960,7 +1960,7 @@ window.GWHome = (function () {
         ${editing ? `<p class="mx-2 mb-2 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
         <div id="gw-page" class="relative mb-6">
           <div id="gw-stack" class="flex flex-wrap items-start">${parts.map((x) => x[1]).join("")}</div>
-          <div id="gw-float" class="pointer-events-none absolute inset-0 z-30 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g)).join("")}</div>
+          <div id="gw-float" class="pointer-events-none absolute inset-0 z-10 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g)).join("")}</div>
         </div>
       </div>`;
     }

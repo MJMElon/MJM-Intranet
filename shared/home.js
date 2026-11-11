@@ -2215,7 +2215,8 @@ window.GWHome = (function () {
 
     // ------------------------------------------------------------ App 选单 / 文件夹
     // 个人连结图示：名称、网址、图示
-    function linkDialog(link) {
+    // o.folderId：直接建在这个文件夹里；o.onSaved：存好之后叫
+    function linkDialog(link, o) {
       let chosen = link ? link.icon : "link";
       const dlg = modal(
         link ? t("home.editLink") : t("fab.addLink"),
@@ -2254,7 +2255,7 @@ window.GWHome = (function () {
         } else {
           const { data: created, error } = await sb
             .from("gw_user_links")
-            .insert({ ...row, user_id: data.profile.id, sort_order: nextSlot(1, 1) })
+            .insert({ ...row, user_id: data.profile.id, sort_order: nextSlot(1, 1), ...(o && o.folderId ? { folder_id: o.folderId } : {}) })
             .select()
             .single();
           if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.saveFailed")));
@@ -2262,6 +2263,7 @@ window.GWHome = (function () {
         }
         dlg.close();
         draw();
+        if (o && o.onSaved) o.onSaved();
       });
     }
 
@@ -2299,59 +2301,74 @@ window.GWHome = (function () {
       $("[data-remove]", dlg.el).onclick = () => (dlg.close(), removeApp(id));
     }
 
-    // 文件夹：像 iPhone 一样放大成一个浮动窗，名字在上面
-    function openFolder(fid) {
+    // 文件夹：像 iPhone 一样放大成一个浮动窗，名字在上面（长按名字可以改名）
+    /* mode = "grid"（图示格子）| "map"（心智图：视窗放大，右边一排工具；还是浮动窗，不换页）
+       右上角小小的「两个人」= 分享给谁（分享用的文件夹、拥有者才有）；分享给我的文件夹右上角是淡蓝的「两个人」。
+       分享给我的：不能移出里面的东西、不能改名。 */
+    function openFolder(fid, mode) {
       const f = folders.find((x) => x.id === fid);
+      if (!f) return;
+      mode = mode || "grid";
       const ids = folderApps(fid);
       const lks = folderLinks(fid);
-      const mineF = !f.shared_by; // 分享给我的：不能移出里面的东西、不能改名
+      const mineF = !f.shared_by;
       const canOut = !readOnly && mineF;
+      const canRename = mineF && !readOnly;
       const wrap = document.createElement("div");
       wrap.setAttribute("role", "dialog");
-      wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-6 backdrop-blur-md";
+      wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md sm:p-6";
+      const tile = (btnAttr, iconHtml, label, title, outAttr) => `<div class="relative flex flex-col items-center gap-1.5">
+          <button type="button" ${btnAttr} ${title ? `title="${esc(title)}"` : ""} class="flex flex-col items-center gap-1.5">${iconHtml}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(label)}</span></button>
+          ${canOut ? `<button type="button" ${outAttr} title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
+        </div>`;
+      const grid =
+        ids.length || lks.length
+          ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${ids.map((id) => tile(`data-open="${id}"`, appIcon(modules.get(id), "size-14 sm:size-16"), modules.get(id).name, "", `data-out="${id}"`)).join("")}${lks
+              .map((l) => tile(`data-open-link="${l.id}"`, appIcon({ code: l.name, icon: l.icon, image_url: l.image_url }, "size-14 sm:size-16"), l.name, l.url, `data-out-link="${l.id}"`))
+              .join("")}</div>`
+          : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`;
+      const pill = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon(ic, "size-4")} ${esc(label)}</button>`;
       wrap.innerHTML = `
-        <h2 class="mb-5 max-w-full truncate px-4 text-3xl font-bold text-white drop-shadow sm:text-4xl">${esc(f.name)}</h2>
-        <div data-win class="w-full max-w-md rounded-[2rem] border border-white/60 bg-white/75 p-6 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/75">
-          ${
-            ids.length || lks.length
-              ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${ids
-                  .map(
-                    (id) => `<div class="relative flex flex-col items-center gap-1.5">
-                      <button type="button" data-open="${id}" class="flex flex-col items-center gap-1.5">${appIcon(modules.get(id), "size-14 sm:size-16")}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(modules.get(id).name)}</span></button>
-                      ${canOut ? `<button type="button" data-out="${id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
-                    </div>`,
-                  )
-                  .join("")}${lks
-                  .map(
-                    (l) => `<div class="relative flex flex-col items-center gap-1.5">
-                      <button type="button" data-open-link="${l.id}" title="${esc(l.url)}" class="flex flex-col items-center gap-1.5">${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url }, "size-14 sm:size-16")}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(l.name)}</span></button>
-                      ${canOut ? `<button type="button" data-out-link="${l.id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
-                    </div>`,
-                  )
-                  .join("")}</div>`
-              : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`
-          }
+        <h2 data-title class="mb-4 max-w-full truncate px-4 text-3xl font-bold text-white drop-shadow select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
+        <div data-win class="relative w-full ${mode === "map" ? "max-w-5xl" : "max-w-md"} rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
+          ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
+          ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
+          ${mode === "map" ? `<div data-map-host class="h-[72vh] min-h-[420px]"></div>` : grid}
         </div>
-        ${
-          readOnly
-            ? ""
-            : `<div class="mt-4 flex flex-wrap justify-center gap-2">
-                <button type="button" data-map class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("git-fork", "size-4")} ${esc(t("home.mindMap"))}</button>
-                ${mineF && f.is_shared ? `<button type="button" data-share class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("users", "size-4")} ${esc(t("home.shareBtn"))}</button>` : ""}
-                ${mineF ? `<button type="button" data-rename class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("pencil", "size-4")} ${esc(t("home.editFolder"))}</button>` : `<span class="inline-flex items-center gap-1.5 rounded-full bg-sky-500/90 px-4 py-2 text-sm font-medium text-white shadow">${icon("users", "size-4")} ${esc(t("home.sharedBy"))}</span>`}
-              </div>`
-        }`;
+        ${readOnly ? "" : `<div class="mt-4 flex flex-wrap justify-center gap-2">${mode === "map" ? pill("data-grid", "layout-grid", t("home.mapGrid")) : pill("data-map", "git-fork", t("home.mindMap"))}</div>`}`;
       document.body.appendChild(wrap);
       refreshIcons();
-      const close = () => wrap.remove();
-      const onKey = (e) => e.key === "Escape" && (close(), document.removeEventListener("keydown", onKey));
+      let mapCtl = null;
+      const close = () => {
+        if (mapCtl) mapCtl.flush();
+        wrap.remove();
+        document.removeEventListener("keydown", onKey);
+      };
+      // Esc：上面还有弹窗（分享名单、加连结）就不动；心智图在画线就先取消画线
+      const onKey = (e) => {
+        if (e.key !== "Escape" || document.querySelector(".gw-modal")) return;
+        if (mapCtl && mapCtl.onEscape()) return;
+        close();
+      };
       document.addEventListener("keydown", onKey);
+      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), canAddLink: canOut });
+      // 长按名字 → 改名
+      if (canRename) {
+        const h = $("[data-title]", wrap);
+        let timer = null;
+        const stop = () => (clearTimeout(timer), (timer = null));
+        h.addEventListener("pointerdown", () => ((timer = setTimeout(() => ((timer = null), close(), folderDialog(f)), 600)), undefined));
+        ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => h.addEventListener(ev, stop));
+        h.addEventListener("contextmenu", (e) => e.preventDefault());
+      }
       wrap.addEventListener("click", async (e) => {
+        if (!e.target.isConnected) return; // 里面的工具刚重画过（图示换掉了）：不是点外面
         const b = e.target.closest("button");
         if (!b) {
-          if (!e.target.closest("[data-win]")) close();
+          if (!e.target.closest("[data-win]") && !e.target.closest("[data-title]")) close();
           return;
         }
+        if (!wrap.contains(b) || b.closest("[data-map-host]")) return;
         if (b.dataset.open) return close(), open(b.dataset.open);
         if (b.dataset.openLink) {
           const l = links.find((x) => x.id === b.dataset.openLink);
@@ -2371,19 +2388,16 @@ window.GWHome = (function () {
           await saveApps([{ module_id: id, folder_id: null, sort_order: slot }]);
           return openFolder(fid);
         }
-        if ("rename" in b.dataset) {
-          close();
-          folderDialog(f);
-        }
-        if ("share" in b.dataset) return close(), sharePicker(f);
-        if ("map" in b.dataset) return close(), openMindMap(f);
+        if ("share" in b.dataset) return sharePicker(f);
+        if ("map" in b.dataset) return close(), openFolder(fid, "map");
+        if ("grid" in b.dataset) return close(), openFolder(fid, "grid");
       });
     }
 
-    // ------------------------------------------------------------ 文件夹心智图（Paint）
-    /* 文件夹里的 App / 连结自动变成节点；可以再加方块（长方形 / 圆角 / 菱形）写字。
-       每个节点四边各一个蓝点（接点）：从一个接点拖到另一个节点就连一条线（有箭头）。
-       拖动节点改位置；点一下选取（Delete 删除、换颜色）；方块点两下改文字；App / 连结点两下打开。
+    // ------------------------------------------------------------ 文件夹心智图（在文件夹浮动窗里，右边一排工具）
+    /* 文件夹里的 App / 连结自动变成节点；工具：加连结图示（拥有者）、方块 / 圆角 / 菱形（打字用）、
+       画线（点两个节点就连一条有箭头的线；也可以从节点四边的蓝点拖到另一个节点）、全选、条列（把选到的 / 全部排成一直栏，前面一个点）、
+       颜色（选到方块时）、删除。拖动节点改位置（选了好几个会一起动）；方块点两下改文字；App / 连结点两下打开。
        存在 gw_user_folders.canvas（gw_save_folder_canvas：拥有者和被分享的人都能改，改了会自动存）。 */
     const MAP_COLORS = ["slate", "sky", "emerald", "amber", "rose", "violet"];
     const MAP_FILL = {
@@ -2395,8 +2409,9 @@ window.GWHome = (function () {
       violet: "border-violet-300 bg-violet-100 text-violet-900",
     };
     const MAP_SWATCH = { slate: "#94a3b8", sky: "#38bdf8", emerald: "#34d399", amber: "#fbbf24", rose: "#fb7185", violet: "#a78bfa" };
-    function openMindMap(f) {
-      const W = 2000, H = 1400;
+    const NODE_W = 120, NODE_H = 100, ROW_W = 240, ROW_H = 56;
+    function mountMindMap(f, host, hooks) {
+      const W = 1600, H = 1200;
       const uid = () => Math.random().toString(36).slice(2, 10);
       const cv = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
       const nodes = (Array.isArray(cv.nodes) ? cv.nodes : []).map((n) => ({ ...n }));
@@ -2408,7 +2423,7 @@ window.GWHome = (function () {
       let k = nodes.length;
       const place = (type, ref) => {
         if (nodes.some((n) => n.type === type && n.ref === ref)) return;
-        nodes.push({ id: uid(), type, ref, x: 40 + (k % 7) * 170, y: 40 + Math.floor(k / 7) * 150, w: 120, h: 100 });
+        nodes.push({ id: uid(), type, ref, x: 40 + (k % 6) * 160, y: 40 + Math.floor(k / 6) * 140, w: NODE_W, h: NODE_H });
         k++;
       };
       apps.forEach((id) => place("app", id));
@@ -2416,59 +2431,69 @@ window.GWHome = (function () {
       const have = new Set(nodes.map((n) => n.id));
       edges = edges.filter((e) => e && e.from && e.to && have.has(e.from.n) && have.has(e.to.n));
 
-      let sel = null; // { node } | { edge }
+      let selSet = new Set(), selEdge = null;
+      let lineMode = false, lineFrom = null;
       let dirty = false, saveTimer = null, drag = null;
-      const wrap = document.createElement("div");
-      wrap.setAttribute("role", "dialog");
-      wrap.className = "fixed inset-0 z-50 flex flex-col bg-slate-100 dark:bg-slate-950";
-      const tb = (attr, ic, label, extra) => `<button type="button" ${attr} class="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 ${extra || ""}">${icon(ic, "size-4")}<span class="hidden sm:inline">${esc(label)}</span></button>`;
-      wrap.innerHTML = `
-        <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/90 px-3 py-2 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
-          ${tb("data-back", "arrow-left", t("home.mapBack"))}
-          <h2 class="min-w-0 flex-1 truncate text-base font-semibold">${esc(f.name)}</h2>
-          ${tb('data-add="rect"', "square", t("home.mapAddBox"))}
-          ${tb('data-add="round"', "circle", t("home.mapAddRound"))}
-          ${tb('data-add="diamond"', "diamond", t("home.mapAddDiamond"))}
-          <span data-colors class="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
-          ${tb("data-del", "trash-2", t("home.mapDelete"), "text-red-600 dark:text-red-400")}
-          <span data-status class="text-xs text-slate-400"></span>
-        </div>
-        <p class="px-3 py-1.5 text-xs text-slate-500">${esc(t("home.mapHint"))}</p>
-        <div data-scroll class="min-h-0 flex-1 overflow-auto overscroll-contain">
-          <div data-canvas class="relative" style="width:${W}px;height:${H}px;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
-            <svg data-edges class="absolute inset-0" width="${W}" height="${H}" style="pointer-events:none">
-              <defs><marker id="gw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker></defs>
-              <g data-edge-layer></g>
-              <path data-temp fill="none" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="6 4" style="display:none"/>
-            </svg>
-            <div data-nodes class="absolute inset-0"></div>
+      const tool = (attr, ic, label, extra) =>
+        `<button type="button" ${attr} class="flex w-full flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-white aria-pressed:bg-slate-900 aria-pressed:text-white disabled:opacity-40 dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900 ${extra || ""}">${icon(ic, "size-5")}<span class="leading-tight">${esc(label)}</span></button>`;
+      host.innerHTML = `<div class="flex h-full gap-3">
+          <div data-scroll class="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-white/70 bg-white/60 dark:border-white/10 dark:bg-slate-950/40">
+            <div data-canvas class="relative" style="width:${W}px;height:${H}px;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
+              <svg data-edges class="absolute inset-0" width="${W}" height="${H}" style="pointer-events:none">
+                <defs><marker id="gw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker></defs>
+                <g data-edge-layer></g>
+                <path data-temp fill="none" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="6 4" style="display:none"/>
+              </svg>
+              <div data-nodes class="absolute inset-0"></div>
+            </div>
+          </div>
+          <div data-tools class="flex w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
+            ${hooks.canAddLink ? tool('data-tool="icon"', "link", t("home.mapIcon")) : ""}
+            ${tool('data-add="rect"', "square", t("home.mapAddBox"))}
+            ${tool('data-add="round"', "circle", t("home.mapAddRound"))}
+            ${tool('data-add="diamond"', "diamond", t("home.mapAddDiamond"))}
+            ${tool('data-tool="line"', "spline", t("home.mapLine"))}
+            ${tool('data-tool="all"', "box-select", t("home.mapSelectAll"))}
+            ${tool('data-tool="bullets"', "list", t("home.mapBullets"))}
+            <span data-colors class="hidden w-full flex-wrap justify-center gap-1 px-1 py-1">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
+            ${tool("data-del", "trash-2", t("home.mapDelete"), "text-red-600 dark:text-red-400")}
+            <span data-status class="mt-auto px-1 pb-1 text-center text-[10px] leading-tight text-slate-400"></span>
           </div>
         </div>`;
-      document.body.appendChild(wrap);
-      const canvasEl = $("[data-canvas]", wrap), nodesEl = $("[data-nodes]", wrap), edgeLayer = $("[data-edge-layer]", wrap), temp = $("[data-temp]", wrap);
-      const status = $("[data-status]", wrap), colorsEl = $("[data-colors]", wrap), delBtn = $("[data-del]", wrap), scrollEl = $("[data-scroll]", wrap);
+      const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host);
+      const status = $("[data-status]", host), colorsEl = $("[data-colors]", host), delBtn = $("[data-del]", host), scrollEl = $("[data-scroll]", host);
       const byId = (id) => nodes.find((n) => n.id === id);
       const port = (n, side) => (side === "t" ? [n.x + n.w / 2, n.y] : side === "b" ? [n.x + n.w / 2, n.y + n.h] : side === "l" ? [n.x, n.y + n.h / 2] : [n.x + n.w, n.y + n.h / 2]);
-      const bend = (x, y, side, dx, dy) => (side === "l" ? [x - dx, y] : side === "r" ? [x + dx, y] : side === "t" ? [x, y - dy] : [x, y + dy]);
+      const bendPt = (x, y, side, dx, dy) => (side === "l" ? [x - dx, y] : side === "r" ? [x + dx, y] : side === "t" ? [x, y - dy] : [x, y + dy]);
       const pathD = (a, sa, b, sb2) => {
         const [x1, y1] = port(a, sa), [x2, y2] = port(b, sb2);
         const dx = Math.max(40, Math.abs(x2 - x1) / 2), dy = Math.max(40, Math.abs(y2 - y1) / 2);
-        const c1 = bend(x1, y1, sa, dx, dy), c2 = bend(x2, y2, sb2, dx, dy);
+        const c1 = bendPt(x1, y1, sa, dx, dy), c2 = bendPt(x2, y2, sb2, dx, dy);
         return `M${x1} ${y1} C${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${x2} ${y2}`;
+      };
+      // 画线工具：照两个节点的相对位置决定从哪一边出、哪一边进
+      const autoSides = (a, b) => {
+        const dx = b.x + b.w / 2 - (a.x + a.w / 2), dy = b.y + b.h / 2 - (a.y + a.h / 2);
+        return Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? ["r", "l"] : ["l", "r"]) : dy > 0 ? ["b", "t"] : ["t", "b"];
+      };
+      const addEdge = (from, to) => {
+        if (from.n === to.n || edges.some((ed) => ed.from.n === from.n && ed.to.n === to.n)) return false;
+        edges.push({ id: uid(), from, to });
+        return true;
       };
       function drawEdges() {
         edgeLayer.innerHTML = edges
           .map((e) => {
             const a = byId(e.from.n), b = byId(e.to.n);
             if (!a || !b) return "";
-            const on = !!(sel && sel.edge === e.id);
+            const on = selEdge === e.id;
             const d = pathD(a, e.from.s, b, e.to.s);
             return `<path d="${d}" fill="none" stroke="transparent" stroke-width="16" style="pointer-events:stroke;cursor:pointer" data-edge="${e.id}"/><path d="${d}" fill="none" stroke="${on ? "#0ea5e9" : "#475569"}" stroke-width="${on ? 3 : 2}" marker-end="url(#gw-arrow)" style="pointer-events:none"/>`;
           })
           .join("");
       }
       const nodeHtml = (n) => {
-        const on = !!(sel && sel.node === n.id);
+        const on = selSet.has(n.id) || lineFrom === n.id;
         const ports = ["t", "r", "b", "l"]
           .map(
             (sd) => `<span data-port="${n.id}:${sd}" class="absolute z-10 size-4 rounded-full border-2 border-white bg-sky-500 shadow ${on ? "" : "opacity-0 group-hover:opacity-100"} ${
@@ -2485,17 +2510,25 @@ window.GWHome = (function () {
         } else {
           const m = n.type === "app" ? modules.get(n.ref) : null;
           const l = n.type === "link" ? links.find((x) => x.id === n.ref) : null;
-          body = `<div class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/70 bg-white/80 p-2 backdrop-blur dark:border-white/10 dark:bg-white/10">${appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, "size-12")}<span class="w-full truncate text-center text-xs font-medium">${esc(m ? m.name : l ? l.name : "")}</span></div>`;
+          const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, n.bullet ? "size-9" : "size-12");
+          const label = m ? m.name : l ? l.name : "";
+          body = n.bullet
+            ? `<div class="flex h-full w-full items-center gap-3 rounded-2xl border-2 border-white/70 bg-white/80 px-3 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(label)}</span></div>`
+            : `<div class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/70 bg-white/80 p-2 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span class="w-full truncate text-center text-xs font-medium">${esc(label)}</span></div>`;
         }
-        return `<div data-node="${n.id}" class="group absolute rounded-xl select-none ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-slate-100 dark:ring-offset-slate-950" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;touch-action:none;cursor:grab">${body}${ports}</div>`;
+        const bullet = n.bullet ? `<span class="absolute top-1/2 -left-5 size-2.5 -translate-y-1/2 rounded-full bg-slate-500 dark:bg-slate-300"></span>` : "";
+        return `<div data-node="${n.id}" class="group absolute rounded-xl select-none ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;touch-action:none;cursor:${lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}</div>`;
       };
+      const selShapes = () => [...selSet].map(byId).filter((n) => n && n.type === "shape");
       function drawNodes() {
         nodesEl.innerHTML = nodes.map(nodeHtml).join("");
         refreshIcons();
-        const shapeSel = !!(sel && sel.node && (byId(sel.node) || {}).type === "shape");
-        colorsEl.classList.toggle("hidden", !shapeSel);
-        colorsEl.classList.toggle("flex", shapeSel);
-        delBtn.disabled = !(sel && (sel.edge || shapeSel));
+        const hasShape = selShapes().length > 0;
+        colorsEl.classList.toggle("hidden", !hasShape);
+        colorsEl.classList.toggle("flex", hasShape);
+        delBtn.disabled = !(selEdge || hasShape);
+        $$("[data-tool]", host).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.tool === "line" && lineMode) || (b.dataset.tool === "all" && selSet.size && selSet.size === nodes.length) ? "true" : "false"));
+        if (lineMode) status.textContent = lineFrom ? t("home.mapLinePick") : t("home.mapLineStart");
       }
       const paint = () => (drawNodes(), drawEdges());
       async function save() {
@@ -2506,29 +2539,36 @@ window.GWHome = (function () {
         if (error) return ((status.textContent = t("home.saveFailed")), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
         dirty = false;
         f.canvas = canvas;
-        status.textContent = t("home.mapSaved");
+        if (!lineMode) status.textContent = t("home.mapSaved");
       }
       const markDirty = () => {
         dirty = true;
-        status.textContent = t("home.mapUnsaved");
+        if (!lineMode) status.textContent = t("home.mapUnsaved");
         clearTimeout(saveTimer);
         saveTimer = setTimeout(save, 800);
       };
-      const close = async () => {
-        document.removeEventListener("keydown", onKey);
-        await save();
-        wrap.remove();
-      };
       function delSel() {
-        if (!sel) return;
-        if (sel.edge) edges = edges.filter((e) => e.id !== sel.edge);
-        else {
-          const n = byId(sel.node);
-          if (!n || n.type !== "shape") return;
+        if (selEdge) edges = edges.filter((e) => e.id !== selEdge);
+        selShapes().forEach((n) => {
           nodes.splice(nodes.indexOf(n), 1);
           edges = edges.filter((e) => e.from.n !== n.id && e.to.n !== n.id);
-        }
-        sel = null;
+        });
+        selEdge = null;
+        selSet = new Set();
+        markDirty();
+        paint();
+      }
+      // 条列：选到的（没选就全部）排成一直栏，前面一个点；App / 连结变成一行一个（图示在左、名字在右）；再按一次就还原
+      function bullets() {
+        const targets = (selSet.size ? nodes.filter((n) => selSet.has(n.id)) : nodes.slice()).sort((a, b) => a.y - b.y || a.x - b.x);
+        if (!targets.length) return;
+        const undo = targets.every((n) => n.bullet);
+        let y = 40;
+        targets.forEach((n) => {
+          n.bullet = !undo;
+          if (n.type !== "shape") ((n.w = undo ? NODE_W : ROW_W), (n.h = undo ? NODE_H : ROW_H));
+          if (!undo) ((n.x = 60), (n.y = y), (y += n.h + 14));
+        });
         markDirty();
         paint();
       }
@@ -2556,27 +2596,39 @@ window.GWHome = (function () {
         });
       }
       const onKey = (e) => {
-        if (e.target && e.target.isContentEditable) return;
-        if (e.key === "Escape") return close();
-        if ((e.key === "Delete" || e.key === "Backspace") && sel) (e.preventDefault(), delSel());
+        if (!document.body.contains(host) || (e.target && e.target.isContentEditable) || document.querySelector(".gw-modal")) return;
+        if ((e.key === "Delete" || e.key === "Backspace") && (selEdge || selShapes().length)) (e.preventDefault(), delSel());
       };
       document.addEventListener("keydown", onKey);
-      wrap.addEventListener("click", (e) => {
+      host.addEventListener("click", (e) => {
         const b = e.target.closest("button");
         if (!b) return;
-        if ("back" in b.dataset) return close();
         if (b.dataset.add) {
           const shape = b.dataset.add;
-          const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x: Math.round(scrollEl.scrollLeft + 60 + (nodes.length % 5) * 30), y: Math.round(scrollEl.scrollTop + 80 + (nodes.length % 5) * 30), w: shape === "diamond" ? 150 : 160, h: shape === "diamond" ? 110 : 64 };
+          const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x: Math.round(scrollEl.scrollLeft + 60 + (nodes.length % 5) * 30), y: Math.round(scrollEl.scrollTop + 60 + (nodes.length % 5) * 30), w: shape === "diamond" ? 150 : 160, h: shape === "diamond" ? 110 : 64 };
           nodes.push(n);
-          sel = { node: n.id };
+          selSet = new Set([n.id]);
+          selEdge = null;
           markDirty();
           paint();
           return editText(n.id);
         }
+        if (b.dataset.tool === "icon") return linkDialog(null, { folderId: f.id, onSaved: hooks.reopen });
+        if (b.dataset.tool === "line") {
+          lineMode = !lineMode;
+          lineFrom = null;
+          if (!lineMode) status.textContent = "";
+          return paint();
+        }
+        if (b.dataset.tool === "all") {
+          selSet = selSet.size === nodes.length ? new Set() : new Set(nodes.map((n) => n.id));
+          selEdge = null;
+          return paint();
+        }
+        if (b.dataset.tool === "bullets") return bullets();
         if (b.dataset.color) {
-          const n = sel && sel.node ? byId(sel.node) : null;
-          if (n && n.type === "shape") ((n.color = b.dataset.color), markDirty(), paint());
+          const list = selShapes();
+          if (list.length) (list.forEach((n) => (n.color = b.dataset.color)), markDirty(), paint());
           return;
         }
         if ("del" in b.dataset) return delSel();
@@ -2588,7 +2640,7 @@ window.GWHome = (function () {
       canvasEl.addEventListener("pointerdown", (e) => {
         if (e.button) return;
         const portEl = e.target.closest("[data-port]");
-        if (portEl) {
+        if (portEl && !lineMode) {
           const [n, sd] = portEl.dataset.port.split(":");
           drag = { kind: "link", from: { n, s: sd } };
           canvasEl.setPointerCapture(e.pointerId);
@@ -2598,26 +2650,41 @@ window.GWHome = (function () {
         if (nodeEl) {
           if (e.target.isContentEditable) return;
           const n = byId(nodeEl.dataset.node);
+          if (lineMode) {
+            // 画线：点第一个，再点第二个
+            if (!lineFrom) lineFrom = n.id;
+            else {
+              const a = byId(lineFrom);
+              const [sa, sb2] = autoSides(a, n);
+              if (addEdge({ n: a.id, s: sa }, { n: n.id, s: sb2 })) markDirty();
+              lineFrom = null;
+            }
+            return paint();
+          }
           const [x, y] = pt(e);
-          drag = { kind: "move", id: n.id, dx: x - n.x, dy: y - n.y, moved: false };
-          if (!sel || sel.node !== n.id) ((sel = { node: n.id }), paint());
+          if (!selSet.has(n.id)) ((selSet = new Set([n.id])), (selEdge = null), paint());
+          drag = { kind: "move", id: n.id, x0: x, y0: y, start: new Map([...selSet].map((id) => [id, { x: byId(id).x, y: byId(id).y }])), moved: false };
           canvasEl.setPointerCapture(e.pointerId);
           return e.preventDefault();
         }
         const edgeEl = e.target.closest("[data-edge]");
-        if (edgeEl) return ((sel = { edge: edgeEl.dataset.edge }), paint());
-        if (sel) ((sel = null), paint());
+        if (edgeEl) return ((selEdge = edgeEl.dataset.edge), (selSet = new Set()), paint());
+        if (selSet.size || selEdge || lineFrom) ((selSet = new Set()), (selEdge = null), (lineFrom = null), paint());
       });
       canvasEl.addEventListener("pointermove", (e) => {
         if (!drag) return;
         const [x, y] = pt(e);
         if (drag.kind === "move") {
-          const n = byId(drag.id);
-          n.x = Math.max(0, Math.min(W - n.w, Math.round(x - drag.dx)));
-          n.y = Math.max(0, Math.min(H - n.h, Math.round(y - drag.dy)));
+          const dx = x - drag.x0, dy = y - drag.y0;
+          drag.start.forEach((s0, id) => {
+            const n = byId(id);
+            if (!n) return;
+            n.x = Math.max(0, Math.min(W - n.w, Math.round(s0.x + dx)));
+            n.y = Math.max(0, Math.min(H - n.h, Math.round(s0.y + dy)));
+            const el = $(`[data-node="${n.id}"]`, nodesEl);
+            if (el) ((el.style.left = n.x + "px"), (el.style.top = n.y + "px"));
+          });
           drag.moved = true;
-          const el = $(`[data-node="${n.id}"]`, nodesEl);
-          if (el) ((el.style.left = n.x + "px"), (el.style.top = n.y + "px"));
           drawEdges();
         } else {
           const [x1, y1] = port(byId(drag.from.n), drag.from.s);
@@ -2644,10 +2711,7 @@ window.GWHome = (function () {
               const m = Math.min(dl, dr, dt, db);
               sd = m === dl ? "l" : m === dr ? "r" : m === dt ? "t" : "b";
             }
-            if (n !== drag.from.n && !edges.some((ed) => ed.from.n === drag.from.n && ed.to.n === n)) {
-              edges.push({ id: uid(), from: drag.from, to: { n, s: sd } });
-              markDirty();
-            }
+            if (addEdge(drag.from, { n, s: sd })) markDirty();
           }
         }
         drag = null;
@@ -2656,16 +2720,32 @@ window.GWHome = (function () {
       canvasEl.addEventListener("pointerup", endDrag);
       canvasEl.addEventListener("pointercancel", () => ((drag = null), (temp.style.display = "none"), paint()));
       canvasEl.addEventListener("dblclick", (e) => {
+        if (lineMode) return;
         const nodeEl = e.target.closest("[data-node]");
         if (!nodeEl) return;
         const n = byId(nodeEl.dataset.node);
         if (!n) return;
         if (n.type === "shape") return editText(n.id);
-        if (n.type === "app") return close().then(() => open(n.ref));
+        if (n.type === "app") return hooks.openApp(n.ref);
         const l = links.find((x) => x.id === n.ref);
         if (l) window.open(l.url, "_blank", "noopener,noreferrer");
       });
       paint();
+      return {
+        flush: () => {
+          document.removeEventListener("keydown", onKey);
+          clearTimeout(saveTimer);
+          if (dirty) save();
+        },
+        onEscape: () => {
+          if (!lineMode) return false;
+          lineMode = false;
+          lineFrom = null;
+          status.textContent = "";
+          paint();
+          return true;
+        },
+      };
     }
 
     // 图示颜色：全部一起选（柔和 / 多彩 / 单一颜色），也可以一个一个 App 自己选
@@ -2880,7 +2960,6 @@ window.GWHome = (function () {
       const dlg = modal(
         t("home.shareTitle", { name: f.name }),
         `<div class="space-y-3">
-          <p class="text-xs text-slate-500">${esc(t("home.shareHint"))}</p>
           ${list.length ? `<div class="relative"><span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400">${icon("search")}</span><input data-q type="search" placeholder="${esc(t("home.shareSearch"))}" class="${cls.input} pl-9"></div>` : ""}
           <div class="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${
             list.length

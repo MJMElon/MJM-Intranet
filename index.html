@@ -24,7 +24,7 @@
   const sectionsOn = !secRes.error;
   // 旧版：第一次登录按群组自动排好预设版面
   if (firstVisit && !sectionsOn) await GW.sb.rpc("gw_init_layout");
-  const [{ data, error }, widgetRes, memberRes, linkRes, imgRes, itemRes, groupRes, gmodRes, bcoRes, coRes, mcoRes, myCoRes] = await Promise.all([
+  const [{ data, error }, widgetRes, memberRes, linkRes, imgRes, itemRes, groupRes, gmodRes, bcoRes, coRes, mcoRes, myCoRes, mapRes] = await Promise.all([
     GW.sb.rpc("gw_get_home"),
     GW.sb.from("gw_user_widgets").select("*").order("sort_order"),
     GW.sb.from("gw_group_members").select("group_id").eq("user_id", profile.id),
@@ -38,6 +38,8 @@
     sectionsOn ? GW.sb.from("gw_companies").select("id, name, code, short_name").eq("is_active", true).order("sort_order").order("name") : Promise.resolve({ data: [] }),
     sectionsOn ? GW.sb.from("gw_module_companies").select("module_id, company_id") : Promise.resolve({ data: [] }),
     sectionsOn ? GW.sb.from("gw_member_companies").select("group_id, company_id").eq("user_id", profile.id) : Promise.resolve({ data: [] }),
+    // Company 在各个系统里的代码（开模块时一起带过去，让那个系统直接切到这家公司）
+    sectionsOn ? GW.sb.from("gw_company_mappings").select("company_id, module_id, external_id") : Promise.resolve({ data: [] }),
   ]);
   if (error) return (main.innerHTML = GW.alertBox(t("errors.description")));
   // 模块照片
@@ -104,6 +106,7 @@
         bizCompanies: bcoRes.data || [],
         companies: coRes.data || [],
         moduleCompanies: mcoRes.data || [],
+        companyMappings: mapRes.data || [],
         // 在这个 Business 里只属于一个 Company 的人，预设选那个 Company；属于好几个就预设「全部」
         myCompany: Object.fromEntries(
           (myCoRes.data || [])

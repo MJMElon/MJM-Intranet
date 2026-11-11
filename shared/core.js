@@ -437,7 +437,20 @@ window.GW = (function () {
     document.body.appendChild(el);
     return () => el.remove();
   }
-  async function openModule(m) {
+  // 开模块的网址加上「哪家公司」（gw_company = 那个系统认得的代码或名字，gw_company_name = Intranet 里的名字）
+  function withCompany(url, ctx) {
+    if (!ctx || !ctx.company) return url;
+    try {
+      const u = new URL(url);
+      u.searchParams.set("gw_company", ctx.company);
+      if (ctx.company_name && ctx.company_name !== ctx.company) u.searchParams.set("gw_company_name", ctx.company_name);
+      if (ctx.company_short) u.searchParams.set("gw_company_short", ctx.company_short);
+      return u.toString();
+    } catch (e) {
+      return url;
+    }
+  }
+  async function openModule(m, ctx) {
     const newTab = m.open_mode === "new_tab";
     if (m.access_level === 2) {
       const win = newTab ? window.open("", "_blank") : null;
@@ -456,21 +469,22 @@ window.GW = (function () {
         if (win) win.close();
         return false;
       }
+      const target = withCompany(r.redirect_url, ctx);
       if (win) {
         win.opener = null;
-        win.location.href = r.redirect_url;
+        win.location.href = target;
       } else {
-        location.assign(r.redirect_url);
+        location.assign(target);
       }
       return true;
     }
     const record = sb.rpc("gw_record_open", { p_module: m.id });
     if (newTab) {
-      window.open(m.url, "_blank", "noopener,noreferrer");
+      window.open(withCompany(m.url, ctx), "_blank", "noopener,noreferrer");
       await record;
     } else {
       await record;
-      location.assign(m.url);
+      location.assign(withCompany(m.url, ctx));
     }
     return true;
   }

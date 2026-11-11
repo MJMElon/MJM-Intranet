@@ -49,12 +49,13 @@ window.GWHome = (function () {
     greeting: { sizes: ["medium"], icon: "sun" },
     clock: { sizes: ["small", "medium"], icon: "clock" },
     search: { sizes: ["medium"], icon: "search" },
-    recent: { sizes: ["small", "medium"], icon: "history" },
+    // 最近打开：已停用（不再提供，主页上旧的也不显示）
+    recent: { sizes: ["small", "medium"], icon: "history", hidden: true, retired: true },
     // Notice Board：固定在最上面，只能调大小，不能移动、不能删除，也不能再加第二个
     announcements: { sizes: ["medium", "large"], icon: "megaphone", hidden: true, pinned: true },
     calendar: { sizes: ["small", "medium"], icon: "calendar" },
     weather: { sizes: ["small", "medium"], icon: "cloud-sun" },
-    ai: { sizes: ["medium", "large"], icon: "bot" },
+    ai: { sizes: ["medium", "large"], icon: "bot", soon: true }, // 还没开放：列在最后、灰掉
     notes: { sizes: ["small", "medium", "large"], icon: "sticky-note" },
     // 管理入口已改为右上角齿轮；旧的管理小工具仍照常显示，但不再提供新增
     admin: { sizes: ["medium"], icon: "shield-check", hidden: true },
@@ -90,7 +91,7 @@ window.GWHome = (function () {
       ICON = { style: (saved && saved.style) || "calm", apps: { ...((saved && saved.apps) || {}) } };
     }
     let folders = data.folders.map((f) => ({ ...f }));
-    let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })) : [];
+    let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })).filter((w) => !(WIDGETS[w.widget_type] || {}).retired) : [];
     // 个人连结图示（用户自己加的网址）
     let links = ((opts && opts.links) || []).map((l) => ({ ...l }));
     // App 位置（只记录目前有权限的）
@@ -536,18 +537,21 @@ window.GWHome = (function () {
     }
 
     function widgetsSheet() {
-      const types = Object.entries(WIDGETS).filter(([, d]) => !d.hidden);
+      // 只列名称；还没开放的（soon）排最后、灰掉、写「coming soon」
+      const types = Object.entries(WIDGETS)
+        .filter(([, d]) => !d.hidden)
+        .sort(([, a], [, b]) => (a.soon ? 1 : 0) - (b.soon ? 1 : 0));
       return `<div class="mb-3 flex items-center justify-between"><h3 class="font-semibold">${esc(t("fab.addWidget"))}</h3>${iconBtn("data-close-sheet", t("home.close"), "x")}</div>
-        <p class="mb-3 text-xs text-slate-500">${esc(t("fab.addWidgetHint"))}</p>
         <div class="space-y-2">${types
           .map(
-            ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+            ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800 ${d.soon ? "opacity-50" : ""}">
               <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${icon(d.icon, "size-5")}</span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-semibold">${esc(t("widgets.types." + type))}</span>
-                <span class="block text-xs text-slate-500">${esc(t("widgets.desc." + type))}</span>
-              </span>
-              <span class="flex gap-1">${d.sizes.map((s) => `<button type="button" data-add-widget="${type}" data-size="${s}" class="${btn("secondary", "sm")} px-2">${esc(t("widgets.sizes." + s))}</button>`).join("")}</span>
+              <span class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(t("widgets.types." + type))}</span>
+              ${
+                d.soon
+                  ? `<span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">${esc(t("settings.comingSoon"))}</span>`
+                  : `<span class="flex gap-1">${d.sizes.map((s) => `<button type="button" data-add-widget="${type}" data-size="${s}" class="${btn("secondary", "sm")} px-2">${esc(t("widgets.sizes." + s))}</button>`).join("")}</span>`
+              }
             </div>`,
           )
           .join("")}</div>`;

@@ -596,6 +596,10 @@ window.GWHome = (function () {
     let sItems = S ? S.items.map((x) => ({ ...x })) : [];
     const expanded = new Map(S ? S.state.map((x) => [x.group_id, !!x.expanded]) : []);
     let companyMenuGid = null; // 打开着 Company 选单的区块
+    let estateMenuGid = null; // 打开着 Estate 选单的区块
+    // 每个区块选的 Estate：记在 Notice Board 小工具的 config.estates
+    const estateSel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.estates || {}));
+    const estatesOf = (cid) => (S && S.estates ? S.estates : []).filter((x) => x.company_id === cid);
     // 每个区块选的 Company（"all" = 全部）：记在 Notice Board 小工具的 config.companies；没选过就用自己在那个 Business 的 Company
     const companySel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companies || {}));
     const companiesOf = (gid) => {
@@ -608,6 +612,21 @@ window.GWHome = (function () {
       // 一定选一个 Company：自己选过的 → 自己的 Company → 第一个
       const v = companySel.get(gid) || S.myCompany[gid];
       return list.some((c) => c.id === v) ? v : list[0].id;
+    };
+    // 区块里现在的 Company 物件（选「全部」而这个 Business 只有一家时就是那一家）
+    const currentCompany = (gid) => {
+      const list = companiesOf(gid);
+      const sel = selectedCompany(gid);
+      return sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel) || null;
+    };
+    // 区块里选的 Estate：公司只有一个（或没有）Estate 就是那一个；多于一个时用选过的，没选过用第一个
+    const selectedEstate = (gid) => {
+      const c = currentCompany(gid);
+      if (!c) return null;
+      const list = estatesOf(c.id);
+      if (list.length < 2) return list[0] || null;
+      const v = estateSel.get(gid);
+      return list.find((x) => x.id === v) || list[0];
     };
     // 模块有标 Company 的，只在选了那个 Company（或选全部）时显示；没标 Company 的模块一律显示
     const shownFor = (gid, moduleId) => {
@@ -801,7 +820,7 @@ window.GWHome = (function () {
       const step = (dir, ic, label, off) => `<button type="button" data-mode="${dir}" aria-label="${esc(label)}" title="${esc(label)}" ${off ? "disabled" : ""} class="flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 disabled:pointer-events-none disabled:opacity-25 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
       const steps = key === "home" ? "" : step("less", "chevron-up", t("home.collapse"), mode === "title") + step("more", "chevron-down", t("home.expand"), mode === "full");
       return `<div class="flex min-w-0 items-center gap-2" style="height:${g.th}px;${mode === "title" ? "" : `margin-bottom:${g.tg}px;`}padding:0 ${Math.max(0, side - 6)}px 0 ${side}px">
-        <h2 class="min-w-0 truncate text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${key === "home" ? "" : companyPicker(key)}
+        <h2 class="min-w-0 truncate text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${key === "home" ? "" : companyPicker(key) + estatePicker(key)}
         <div class="ml-auto flex shrink-0 items-center">${sectionsOn ? secGrip() : ""}${steps}</div></div>`;
     }
     // 一个区块（My Home 也一样）：外框宽 = 整数格 + 半格，高 = 整数格
@@ -816,7 +835,7 @@ window.GWHome = (function () {
           ? ""
           : `<div data-list="${key}" data-fw-host="${key}" data-cols="${n}" class="relative mx-auto grid ${mode === "row" ? "overflow-hidden" : ""}" style="width:${n * g.cw}px;grid-template-columns:repeat(${n},${g.cw}px);grid-template-rows:repeat(${shownRows},${g.rh}px);grid-auto-rows:${g.rh}px;${mode === "row" ? `height:${g.rh}px;` : ""}">${body}<div data-box-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div></div>`;
       return `<div data-sec-wrap data-sec-key="${key}" class="p-2" style="width:${B.fill ? "100%" : (2 * n + 1) * g.hw + "px"};max-width:100%">
-        <section data-box="${key}" class="relative ${glassSkin} ${companyMenuGid === key ? "z-20" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
+        <section data-box="${key}" class="relative ${glassSkin} ${companyMenuGid === key || estateMenuGid === key ? "z-20" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
     }
     // 区块里的格子内容（图示 / 便条 / 小工具）
     function boxTiles(key, B) {
@@ -841,6 +860,20 @@ window.GWHome = (function () {
       return `<div class="relative min-w-0">
         <button type="button" data-company-menu="${gid}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
         ${companyMenuGid === gid ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-64 w-60 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map((c) => row(c.id, c.name)).join("")}</div>` : ""}
+      </div>`;
+    };
+
+    // 区块标题旁边的 Estate 选择（公司有多于一个 Estate 才出现，例如 MJM Plantation 1 / 2 / 3）
+    const estatePicker = (gid) => {
+      const c = currentCompany(gid);
+      const list = c ? estatesOf(c.id) : [];
+      if (list.length < 2) return "";
+      const cur = selectedEstate(gid);
+      const label = cur ? cur.short_name || cur.name : list[0].name;
+      const row = (x) => `<button type="button" data-estate-pick="${x.id}" data-gid="${gid}" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"><span class="truncate">${esc(x.name)}</span>${cur && cur.id === x.id ? icon("check", "size-4 text-emerald-600") : ""}</button>`;
+      return `<div class="relative min-w-0">
+        <button type="button" data-estate-menu="${gid}" title="${esc(t("home.estate"))}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("map-pin", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
+        ${estateMenuGid === gid ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-64 w-60 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map(row).join("")}</div>` : ""}
       </div>`;
     };
 
@@ -914,7 +947,7 @@ window.GWHome = (function () {
     root.addEventListener("pointerdown", (e) => {
       if (!sectionsOn || editing || e.button !== 0) return;
       const el = e.target.closest(".gw-item, [data-fw], [data-box]");
-      if (!el || e.target.closest("input, textarea, select, a, [data-company-menu], [data-mode], .gw-sheet, .sec-grip")) return; // 握把直接拖区块，不算长按
+      if (!el || e.target.closest("input, textarea, select, a, [data-company-menu], [data-estate-menu], [data-mode], .gw-sheet, .sec-grip")) return; // 握把直接拖区块，不算长按
       lp = { x: e.clientX, y: e.clientY, id: e.pointerId };
       lp.timer = setTimeout(() => {
         lp.fired = true;
@@ -3408,7 +3441,8 @@ window.GWHome = (function () {
       const origin = (id) => { try { return new URL(modules.get(id).url).origin; } catch (e) { return ""; } };
       const maps = (S.companyMappings || []).filter((x) => x.company_id === c.id);
       const map = maps.find((x) => x.module_id === moduleId) || maps.find((x) => modules.has(x.module_id) && origin(x.module_id) && origin(x.module_id) === origin(moduleId));
-      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "" };
+      const est = selectedEstate(gid);
+      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "", estate: est ? est.name : "", estate_short: est ? est.short_name || "" : "" };
     }
 
     async function open(id, gid) {
@@ -3431,14 +3465,25 @@ window.GWHome = (function () {
       if (sectionsOn && editing && downOnEmpty && !e.target.closest(EDIT_KEEP)) return setEditing(false);
       const b = e.target.closest("button");
       if (!b || !root.contains(b)) {
-        if (sectionsOn && companyMenuGid) return ((companyMenuGid = null), draw());
+        if (sectionsOn && (companyMenuGid || estateMenuGid)) return ((companyMenuGid = null), (estateMenuGid = null), draw());
         if (fabOpen && !e.target.closest("[data-fab-toggle]")) ((fabOpen = false), draw());
         return;
       }
       const d = b.dataset;
       if (sectionsOn) {
         if (companyMenuGid && !("companyMenu" in d) && !("companyPick" in d)) companyMenuGid = null;
-        if ("companyMenu" in d) return ((companyMenuGid = companyMenuGid === d.companyMenu ? null : d.companyMenu), draw());
+        if (estateMenuGid && !("estateMenu" in d) && !("estatePick" in d)) estateMenuGid = null;
+        if ("companyMenu" in d) return ((estateMenuGid = null), (companyMenuGid = companyMenuGid === d.companyMenu ? null : d.companyMenu), draw());
+        if ("estateMenu" in d) return ((companyMenuGid = null), (estateMenuGid = estateMenuGid === d.estateMenu ? null : d.estateMenu), draw());
+        if ("estatePick" in d) {
+          estateMenuGid = null;
+          estateSel.set(d.gid, d.estatePick);
+          draw();
+          const w = board();
+          if (!w) return;
+          w.config = { ...(w.config || {}), estates: Object.fromEntries(estateSel) };
+          return sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+        }
         if ("companyPick" in d) {
           companyMenuGid = null;
           companySel.set(d.gid, d.companyPick);

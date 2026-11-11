@@ -2623,6 +2623,8 @@ window.GWHome = (function () {
         colorsEl.classList.toggle("hidden", !hasShape);
         colorsEl.classList.toggle("flex", hasShape);
         delBtn.disabled = !(selEdge || hasShape || selLinks().length);
+        const bulletBtn = $('[data-tool="bullets"]', host);
+        if (bulletBtn) bulletBtn.disabled = !selSet.size; // 没选图示就不能按
         $$("[data-tool]", host).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.tool === "line" && lineMode) || (b.dataset.tool === "hand" && panMode) || (b.dataset.tool === "all" && selSet.size && selSet.size === nodes.length) ? "true" : "false"));
         if (lineMode) status.textContent = lineFrom ? t("home.mapLinePick") : t("home.mapLineStart");
       }
@@ -2664,9 +2666,9 @@ window.GWHome = (function () {
         markDirty();
         paint();
       }
-      // 条列：选到的（没选就全部）排成一直栏，前面一个点；App / 连结变成一行一个（图示在左、名字在右）；再按一次就还原
+      // 条列：只排「选到的」图示（没选就什么都不动），排成一直栏，前面一个点；App / 连结变成一行一个（图示在左、名字在右）；再按一次就还原
       function bullets() {
-        const targets = (selSet.size ? nodes.filter((n) => selSet.has(n.id)) : nodes.slice()).sort((a, b) => a.y - b.y || a.x - b.x);
+        const targets = nodes.filter((n) => selSet.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
         if (!targets.length) return;
         const undo = targets.every((n) => n.bullet);
         let y = 48;

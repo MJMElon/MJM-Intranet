@@ -480,9 +480,20 @@ window.GWHome = (function () {
               ${cells.map((d) => `<span class="${d === today ? "mx-auto flex size-5 items-center justify-center rounded-full bg-rose-500 font-bold text-white" : ""}">${d}</span>`).join("")}
             </div>`;
         }
-        case "notes":
+        case "notes": {
+          // 便条：上面是待办清单（圆圈打勾，像 Apple 备忘录），下面是自由文字
+          const todos = w.config && Array.isArray(w.config.todos) ? w.config.todos : [];
+          const item = (td) => `<li class="flex items-center gap-2">
+              <button type="button" data-todo-toggle="${w.id}:${td.id}" ${readOnly ? "disabled" : ""} aria-label="${esc(t("widgets.todoDone"))}" class="no-drag flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${td.done ? "border-amber-500 bg-amber-500 text-white" : "border-slate-400 hover:border-amber-500 dark:border-slate-500"}">${td.done ? icon("check", "size-3") : ""}</button>
+              <input data-todo-text="${w.id}:${td.id}" value="${esc(td.text || "")}" maxlength="200" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.todoPlaceholder"))}" class="no-drag min-w-0 flex-1 bg-transparent text-sm outline-none ${td.done ? "text-slate-400 line-through" : ""}">
+            </li>`;
           return `${wTitle("sticky-note", t("widgets.types.notes"))}
-            <textarea data-note="${w.id}" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.notesPlaceholder"))}" class="no-drag h-[calc(100%-1.75rem)] w-full resize-none bg-transparent text-sm outline-none">${esc((w.config && w.config.text) || "")}</textarea>`;
+            <div class="flex h-[calc(100%-1.75rem)] flex-col gap-1.5">
+              ${todos.length ? `<ul data-todos="${w.id}" class="no-drag max-h-[70%] shrink-0 space-y-1 overflow-y-auto pr-1">${todos.map(item).join("")}</ul>` : ""}
+              ${readOnly ? "" : `<button type="button" data-todo-add="${w.id}" class="no-drag flex items-center gap-1.5 self-start rounded-full px-1.5 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/10 dark:hover:text-slate-200">${icon("list-checks", "size-3.5")}${esc(t("widgets.todoAdd"))}</button>`}
+              <textarea data-note="${w.id}" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.notesPlaceholder"))}" class="no-drag min-h-0 w-full flex-1 resize-none bg-transparent text-sm outline-none">${esc((w.config && w.config.text) || "")}</textarea>
+            </div>`;
+        }
         case "admin":
           return `${wTitle("shield-check", t("home.adminSection"))}
             <div class="grid content-start gap-2 ${isSuper ? "grid-cols-2" : "grid-cols-1"}">
@@ -3473,6 +3484,18 @@ window.GWHome = (function () {
       // 编辑中点空白处（不是图示、小工具、按钮）：离开编辑
       if (sectionsOn && editing && downOnEmpty && !e.target.closest(EDIT_KEEP)) return setEditing(false);
       const b = e.target.closest("button");
+      if (b && b.dataset.todoAdd) {
+        const w = widgets.find((x) => x.id === b.dataset.todoAdd);
+        if (w) ((w.config = w.config || {}), addTodo(w));
+        return;
+      }
+      if (b && b.dataset.todoToggle) {
+        const [wid, tid] = b.dataset.todoToggle.split(":");
+        const w = widgets.find((x) => x.id === wid);
+        const td = w && (w.config.todos || []).find((x) => x.id === tid);
+        if (td) ((td.done = !td.done), saveNote(w), draw());
+        return;
+      }
       if (!b || !root.contains(b)) {
         if (sectionsOn && (companyMenuGid || estateMenuGid)) return ((companyMenuGid = null), (estateMenuGid = null), draw());
         if (fabOpen && !e.target.closest("[data-fab-toggle]")) ((fabOpen = false), draw());
@@ -3580,8 +3603,48 @@ window.GWHome = (function () {
         // 便条：停止输入一秒后自动保存
         const w = widgets.find((x) => x.id === el.dataset.note);
         w.config = { ...(w.config || {}), text: el.value.slice(0, 2000) };
-        clearTimeout(noteTimer);
-        noteTimer = setTimeout(() => sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id), 1000);
+        saveNote(w);
+      } else if (el.matches("[data-todo-text]")) {
+        const [wid, tid] = el.dataset.todoText.split(":");
+        const w = widgets.find((x) => x.id === wid);
+        const td = w && (w.config.todos || []).find((x) => x.id === tid);
+        if (td) ((td.text = el.value.slice(0, 200)), saveNote(w));
+      }
+    });
+    function saveNote(w) {
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed"))), 1000);
+    }
+    // 待办：新增一行 / 打勾 / Enter 再加一行 / 空行按 Backspace 删掉
+    const focusTodo = (wid, tid) => {
+      const el = $(`[data-todo-text="${wid}:${tid}"]`, root);
+      if (el) el.focus();
+    };
+    function addTodo(w, afterId) {
+      const todos = (w.config.todos = Array.isArray(w.config.todos) ? w.config.todos : []);
+      const td = { id: Math.random().toString(36).slice(2, 10), text: "", done: false };
+      const i = afterId ? todos.findIndex((x) => x.id === afterId) : -1;
+      todos.splice(i < 0 ? todos.length : i + 1, 0, td);
+      saveNote(w);
+      draw();
+      focusTodo(w.id, td.id);
+    }
+    root.addEventListener("keydown", (e) => {
+      const el = e.target.closest("[data-todo-text]");
+      if (!el) return;
+      const [wid, tid] = el.dataset.todoText.split(":");
+      const w = widgets.find((x) => x.id === wid);
+      if (!w) return;
+      if (e.key === "Enter") return (e.preventDefault(), addTodo(w, tid));
+      if (e.key === "Backspace" && !el.value) {
+        e.preventDefault();
+        const todos = w.config.todos || [];
+        const i = todos.findIndex((x) => x.id === tid);
+        if (i < 0) return;
+        todos.splice(i, 1);
+        saveNote(w);
+        draw();
+        if (todos[i - 1]) focusTodo(wid, todos[i - 1].id);
       }
     });
     document.addEventListener("keydown", (e) => {

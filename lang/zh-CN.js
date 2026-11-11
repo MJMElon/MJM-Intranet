@@ -291,6 +291,9 @@ window.GW_LANG["zh-CN"] = {
     "putBack": "放回去"
   },
   "widgets": {
+    "todoAdd": "新增待办",
+    "todoPlaceholder": "待办事项",
+    "todoDone": "完成",
     "unavailable": "小工具要等下次系统更新后才能使用。",
     "added": "已新增小工具",
     "remove": "移除小工具",

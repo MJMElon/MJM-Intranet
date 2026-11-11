@@ -291,6 +291,9 @@ window.GW_LANG["en"] = {
     "putBack": "Put back"
   },
   "widgets": {
+    "todoAdd": "Add to-do",
+    "todoPlaceholder": "To-do",
+    "todoDone": "Done",
     "unavailable": "Widgets will be available after the next system update.",
     "added": "Widget added",
     "remove": "Remove widget",

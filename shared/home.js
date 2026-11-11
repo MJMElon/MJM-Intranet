@@ -2962,7 +2962,13 @@ window.GWHome = (function () {
     // 从 Business 区块点开的模块：带上区块里选的 Company（或这个 Business 唯一的 Company），
     // 以及这家 Company 在那个系统里的代码（Connector 设定的），让系统开起来就是这家公司
     function companyContext(gid, moduleId) {
-      if (!sectionsOn || !gid) return null;
+      if (!sectionsOn) return null;
+      // 不是从区块点开的（Dock、最近用过、搜寻、文件夹）：找这个模块属于哪个 Business，用那个区块选的 Company
+      if (!gid) {
+        const gids = S.groupModules.filter((x) => x.module_id === moduleId).map((x) => x.group_id);
+        gid = gids.find((g) => companyContext(g, moduleId)) || null;
+        if (!gid) return null;
+      }
       const list = companiesOf(gid);
       const sel = selectedCompany(gid);
       const c = sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel);

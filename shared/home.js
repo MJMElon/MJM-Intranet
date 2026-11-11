@@ -3460,6 +3460,12 @@ window.GWHome = (function () {
 
     // ------------------------------------------------------------ 事件（委派）
     let noteTimer;
+    // 面板开着时点到主页区块以外（例如页面底下的空白）也要收起来
+    document.addEventListener("click", (e) => {
+      if (!sheet || root.contains(e.target) || e.target.closest(".gw-modal, [data-fab], [data-fab-toggle]")) return;
+      sheet = null;
+      draw();
+    });
     root.addEventListener("click", (e) => {
       if (Date.now() - lastDragEnd < 400) return; // 刚拖完，不算点击
       // 「新增小工具 / App」面板开着时，点面板外面就收起来

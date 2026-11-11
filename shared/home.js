@@ -3462,6 +3462,8 @@ window.GWHome = (function () {
     let noteTimer;
     root.addEventListener("click", (e) => {
       if (Date.now() - lastDragEnd < 400) return; // 刚拖完，不算点击
+      // 「新增小工具 / App」面板开着时，点面板外面就收起来
+      if (sheet && !e.target.closest(".gw-sheet") && !e.target.closest("[data-fab], [data-fab-toggle]")) return ((sheet = null), draw());
       // 编辑中点空白处（不是图示、小工具、按钮）：离开编辑
       if (sectionsOn && editing && downOnEmpty && !e.target.closest(EDIT_KEEP)) return setEditing(false);
       const b = e.target.closest("button");

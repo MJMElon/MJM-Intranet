@@ -56,6 +56,7 @@ body.gw-dragging { cursor: grabbing; }
 @keyframes gw-wiggle { 0% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.4deg); } 100% { transform: rotate(-1.4deg); } }
 @keyframes gw-wiggle-sm { 0% { transform: rotate(-.35deg); } 50% { transform: rotate(.35deg); } 100% { transform: rotate(-.35deg); } }
 .gw-jiggle [data-list] > .gw-item { animation: gw-wiggle .3s ease-in-out infinite; }
+.gw-node-edit { animation: gw-wiggle .3s ease-in-out infinite; }
 .gw-jiggle [data-list] > .gw-item:nth-child(2n) { animation-delay: -.15s; }
 .gw-jiggle .gw-fw-body { animation: gw-wiggle-sm .45s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {

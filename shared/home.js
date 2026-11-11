@@ -35,7 +35,8 @@ window.GWHome = (function () {
   const CALM = ["from-slate-400 to-slate-600", "from-sky-400 to-sky-600", "from-slate-500 to-slate-700", "from-teal-400 to-teal-600", "from-indigo-300 to-indigo-500"];
   let ICON = { style: "calm", apps: {} };
   const hashOf = (code) => [...String(code)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
-  const tileColor = (code, id) => {
+  const tileColor = (code, id, color) => {
+    if (color && PALETTE[color]) return PALETTE[color][0]; // 连结自己选的颜色
     const own = id && ICON.apps[id];
     if (own && PALETTE[own]) return PALETTE[own][0];
     if (PALETTE[ICON.style]) return PALETTE[ICON.style][0];
@@ -311,7 +312,7 @@ window.GWHome = (function () {
     function appIcon(m, size) {
       if (m.image_url)
         return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} overflow-hidden rounded-[26%] bg-white"><img src="${esc(m.image_url)}" alt="" class="size-full object-cover">${newDot(m)}</span>`;
-      return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} items-center justify-center rounded-[26%] bg-gradient-to-br ${tileColor(m.code, m.id)} text-white">
+      return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} items-center justify-center rounded-[26%] bg-gradient-to-br ${tileColor(m.code, m.id, m.color)} text-white">
         ${m.icon === "link" ? icon("link", "size-7 sm:size-8") : moduleIcon(m.icon, "size-7 sm:size-8")}${newDot(m)}
       </span>`;
     }
@@ -320,7 +321,7 @@ window.GWHome = (function () {
     function linkTile(l) {
       return `<div data-kind="link" data-id="${l.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-open-link="${l.id}" class="flex flex-col items-center gap-1.5" title="${esc(l.url)}">
-          ${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url })}
+          ${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color })}
           <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(l.name)}</span>
         </button>
         ${editing ? badge(`data-remove-link="${l.id}"`, "minus", t("home.removeFromHome"), "top-0 left-1/2 -translate-x-[2.4rem]") + badge(`data-edit-link="${l.id}"`, "pencil", t("home.editLink"), "top-0 left-1/2 translate-x-[1rem]") : ""}
@@ -770,11 +771,11 @@ window.GWHome = (function () {
       }
       if (it.kind === "link") {
         const l = links.find((x) => x.id === it.id);
-        return cellTile({ key: it.key, kind: "link", p, btnAttr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url }), label: l.name, title: l.url, badges: badge(`data-remove-link="${l.id}"`, "minus", t("home.removeFromHome"), BADGE_L) + badge(`data-edit-link="${l.id}"`, "pencil", t("home.editLink"), BADGE_R) });
+        return cellTile({ key: it.key, kind: "link", p, btnAttr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }), label: l.name, title: l.url, badges: badge(`data-remove-link="${l.id}"`, "minus", t("home.removeFromHome"), BADGE_L) + badge(`data-edit-link="${l.id}"`, "pencil", t("home.editLink"), BADGE_R) });
       }
       if (it.kind === "folder") {
         const f = folders.find((x) => x.id === it.id);
-        const minis = [...folderApps(f.id).map((id) => tileColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => tileColor(l.name))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
+        const minis = [...folderApps(f.id).map((id) => tileColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => tileColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
         const shared = f.is_shared || f.shared_by;
         const iconHtml = shared ? `<span class="relative">${folderIcon(minis)}<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-sky-500 text-white ring-2 ring-white dark:ring-slate-900">${icon("users", "size-3")}</span></span>` : folderIcon(minis);
         return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
@@ -2323,7 +2324,7 @@ window.GWHome = (function () {
       const grid =
         ids.length || lks.length
           ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${ids.map((id) => tile(`data-open="${id}"`, appIcon(modules.get(id), "size-14 sm:size-16"), modules.get(id).name, "", `data-out="${id}"`)).join("")}${lks
-              .map((l) => tile(`data-open-link="${l.id}"`, appIcon({ code: l.name, icon: l.icon, image_url: l.image_url }, "size-14 sm:size-16"), l.name, l.url, `data-out-link="${l.id}"`))
+              .map((l) => tile(`data-open-link="${l.id}"`, appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, "size-14 sm:size-16"), l.name, l.url, `data-out-link="${l.id}"`))
               .join("")}</div>`
           : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`;
       const pill = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon(ic, "size-4")} ${esc(label)}</button>`;
@@ -2476,12 +2477,14 @@ window.GWHome = (function () {
       let lineMode = false, lineFrom = null;
       let dirty = false, saveTimer = null, drag = null;
       let linkEdit = null, lp = null; // 长按连结图示：改名字 / 换图示（只有拥有者）
+      let scale = 1, panMode = false, spaceHeld = false; // 缩放（Ctrl + 滚轮 / 触控板捏合）、手形工具（按住拖动画面）
       const canEdit = !!hooks.canEdit;
       const tool = (attr, ic, label, extra) =>
         `<button type="button" ${attr} class="flex w-full flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-white aria-pressed:bg-slate-900 aria-pressed:text-white disabled:opacity-40 dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900 ${extra || ""}">${icon(ic, "size-5")}<span class="leading-tight">${esc(label)}</span></button>`;
       host.innerHTML = `<div class="relative flex h-full gap-3">
-          <div data-scroll class="relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-white/70 bg-white/60 dark:border-white/10 dark:bg-slate-950/40">
-            <div data-canvas class="relative" style="width:${W}px;height:${H}px;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
+          <div data-scroll class="gw-noscroll relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-white/70 bg-white/60 dark:border-white/10 dark:bg-slate-950/40">
+            <div data-zoom style="width:${W}px;height:${H}px">
+            <div data-canvas class="relative" style="width:${W}px;height:${H}px;transform-origin:0 0;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
               <svg data-edges class="absolute inset-0" width="${W}" height="${H}" style="pointer-events:none">
                 <defs><marker id="gw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker></defs>
                 <g data-edge-layer></g>
@@ -2489,6 +2492,7 @@ window.GWHome = (function () {
               </svg>
               <div data-nodes class="absolute inset-0" style="pointer-events:none"></div>
               <div data-marquee class="pointer-events-none absolute hidden rounded border-2 border-dashed border-sky-500 bg-sky-500/10"></div>
+            </div>
             </div>
           </div>
           <div data-shape-pop class="absolute z-30 hidden origin-right scale-95 flex-row items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 opacity-0 shadow-xl transition duration-150 dark:border-slate-700 dark:bg-slate-800">
@@ -2501,6 +2505,7 @@ window.GWHome = (function () {
             ${hooks.canAddLink ? tool('data-tool="icon"', "link", t("home.mapIcon")) : ""}
             ${tool('data-tool="text"', "type", t("home.mapText"))}
             ${tool('data-tool="line"', "spline", t("home.mapLine"))}
+            ${tool('data-tool="hand"', "hand", t("home.mapHand"))}
             ${tool('data-tool="all"', "box-select", t("home.mapSelectAll"))}
             ${tool('data-tool="bullets"', "list", t("home.mapBullets"))}
             <span data-colors class="hidden w-full flex-wrap justify-center gap-1 px-1 py-1">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
@@ -2579,7 +2584,7 @@ window.GWHome = (function () {
         } else {
           const m = n.type === "app" ? modules.get(n.ref) : null;
           const l = n.type === "link" ? links.find((x) => x.id === n.ref) : null;
-          const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, n.bullet ? "size-8" : "size-12");
+          const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null, color: l ? l.color : null }, n.bullet ? "size-8" : "size-12");
           const label = m ? m.name : l ? l.name : "";
           const nameAttr = editing ? `data-link-name contenteditable="true" class="min-w-0 max-w-full rounded bg-white px-1 text-xs font-medium outline-none ring-2 ring-sky-400 dark:bg-slate-900"` : "";
           const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800";
@@ -2591,7 +2596,17 @@ window.GWHome = (function () {
           if (editing)
             body += `<div data-link-pop class="absolute top-full left-0 z-20 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900" style="cursor:default">
                 <div class="flex flex-wrap gap-1">${["link", ...Object.keys(GW.MODULE_ICONS)].filter((v, i, a) => a.indexOf(v) === i).map((key) => `<button type="button" data-pick-icon="${key}" class="flex size-8 items-center justify-center rounded-lg border ${(l ? l.icon : "link") === key ? "border-brand-500 bg-brand-50 text-brand-600" : "border-slate-200 text-slate-500 dark:border-slate-700"}">${key === "link" ? icon("link", "size-4") : moduleIcon(key, "size-4")}</button>`).join("")}</div>
-                <div class="mt-2 flex justify-end"><button type="button" data-link-ok class="${btn("primary", "sm")}">${icon("check", "size-4")} ${esc(t("home.save"))}</button></div>
+                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                  <button type="button" data-pick-color="" title="${esc(t("home.iconAuto"))}" class="size-6 rounded-full border-2 ${l && l.color ? "border-slate-200" : "border-slate-900 dark:border-white"} bg-gradient-to-br from-slate-300 to-slate-500"></button>
+                  ${Object.keys(PALETTE).map((c) => `<button type="button" data-pick-color="${c}" title="${c}" class="size-6 rounded-full border-2 ${l && l.color === c ? "border-slate-900 dark:border-white" : "border-white dark:border-slate-700"} shadow" style="background:${PALETTE[c][1]}"></button>`).join("")}
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-2">
+                  <span class="flex gap-1">
+                    <label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(t("home.linkPhoto"))}<input type="file" data-link-photo accept="image/*" class="hidden"></label>
+                    ${l && l.image_url ? `<button type="button" data-link-nophoto class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("image-off", "size-4")}</button>` : ""}
+                  </span>
+                  <button type="button" data-link-ok class="${btn("primary", "sm")}">${icon("check", "size-4")} ${esc(t("home.save"))}</button>
+                </div>
               </div>`;
         }
         const bullet = n.bullet ? `<span class="absolute top-1/2 -left-5 size-2.5 -translate-y-1/2 rounded-full bg-slate-500 dark:bg-slate-300"></span>` : "";
@@ -2608,7 +2623,7 @@ window.GWHome = (function () {
         colorsEl.classList.toggle("hidden", !hasShape);
         colorsEl.classList.toggle("flex", hasShape);
         delBtn.disabled = !(selEdge || hasShape || selLinks().length);
-        $$("[data-tool]", host).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.tool === "line" && lineMode) || (b.dataset.tool === "all" && selSet.size && selSet.size === nodes.length) ? "true" : "false"));
+        $$("[data-tool]", host).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.tool === "line" && lineMode) || (b.dataset.tool === "hand" && panMode) || (b.dataset.tool === "all" && selSet.size && selSet.size === nodes.length) ? "true" : "false"));
         if (lineMode) status.textContent = lineFrom ? t("home.mapLinePick") : t("home.mapLineStart");
       }
       const paint = () => (drawNodes(), drawEdges());
@@ -2686,6 +2701,9 @@ window.GWHome = (function () {
           if ((ev.key === "Enter" && !ev.shiftKey) || ev.key === "Escape") (ev.preventDefault(), el.blur());
         });
       }
+      nodesEl.addEventListener("change", (e) => {
+        if (e.target.matches("[data-link-photo]") && e.target.files[0]) uploadLinkPhoto(e.target.files[0]);
+      });
       nodesEl.addEventListener("keydown", (ev) => {
         if (!ev.target.matches("[data-link-name]")) return;
         ev.stopPropagation();
@@ -2706,18 +2724,37 @@ window.GWHome = (function () {
         }
         paint();
       }
-      async function pickLinkIcon(key) {
+      // 改连结的图示 / 颜色 / 照片（马上写入 gw_user_links）
+      const editingLink = () => {
         const n = linkEdit && byId(linkEdit);
-        const l = n && links.find((x) => x.id === n.ref);
-        if (!l || l.icon === key) return;
-        const { error } = await sb.from("gw_user_links").update({ icon: key }).eq("id", l.id);
-        if (error) return toast(t("home.saveFailed"));
-        l.icon = key;
+        return n && links.find((x) => x.id === n.ref);
+      };
+      async function patchLink(patch) {
+        const l = editingLink();
+        if (!l) return;
+        const { error } = await sb.from("gw_user_links").update(patch).eq("id", l.id);
+        if (error) return toast(t("home.saveFailed") + (error.message ? " (" + error.message + ")" : ""));
+        Object.assign(l, patch);
         draw();
         paint();
       }
+      const pickLinkIcon = (key) => patchLink({ icon: key });
+      async function uploadLinkPhoto(file) {
+        const l = editingLink();
+        if (!l || !file) return;
+        if (file.size > 2 * 1024 * 1024) return toast(t("home.linkPhotoTooBig"));
+        const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
+        const path = `${data.profile.id}/${l.id}-${Date.now()}.${ext}`;
+        const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type, upsert: true });
+        if (up.error) return toast(t("home.saveFailed") + " (" + (up.error.message || "") + ")");
+        const { data: pub } = sb.storage.from("link-icons").getPublicUrl(path);
+        await patchLink({ image_url: pub.publicUrl });
+      }
+      const onKeyUp = (e) => e.key === " " && (spaceHeld = false);
+      document.addEventListener("keyup", onKeyUp);
       const onKey = (e) => {
         if (!document.body.contains(host) || (e.target && e.target.isContentEditable) || document.querySelector(".gw-modal")) return;
+        if (e.key === " " && !spaceHeld) ((spaceHeld = true), e.preventDefault());
         if ((e.key === "Delete" || e.key === "Backspace") && (selEdge || selShapes().length || selLinks().length)) (e.preventDefault(), delSel());
       };
       document.addEventListener("keydown", onKey);
@@ -2725,6 +2762,8 @@ window.GWHome = (function () {
         const b = e.target.closest("button");
         if (!b) return;
         if (b.dataset.pickIcon) return pickLinkIcon(b.dataset.pickIcon);
+        if ("pickColor" in b.dataset) return patchLink({ color: b.dataset.pickColor || null });
+        if ("linkNophoto" in b.dataset) return patchLink({ image_url: null });
         if ("linkOk" in b.dataset) return finishLinkEdit();
         if (b.dataset.tool === "text") return shapePop(pop.classList.contains("hidden"), b);
         if (b.dataset.tool === "grid") {
@@ -2766,6 +2805,11 @@ window.GWHome = (function () {
           if (!lineMode) status.textContent = "";
           return paint();
         }
+        if (b.dataset.tool === "hand") {
+          panMode = !panMode;
+          canvasEl.style.cursor = panMode ? "grab" : "";
+          return paint();
+        }
         if (b.dataset.tool === "all") {
           selSet = selSet.size === nodes.length ? new Set() : new Set(nodes.map((n) => n.id));
           selEdge = null;
@@ -2781,10 +2825,57 @@ window.GWHome = (function () {
       });
       const pt = (e) => {
         const r = canvasEl.getBoundingClientRect();
-        return [e.clientX - r.left, e.clientY - r.top];
+        return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale];
+      };
+      const zoomEl = $("[data-zoom]", host);
+      // 缩放：以滑鼠所在的点为中心
+      function setScale(next, cx, cy) {
+        next = Math.max(0.4, Math.min(2.5, next));
+        if (next === scale) return;
+        const px = (scrollEl.scrollLeft + cx) / scale, py = (scrollEl.scrollTop + cy) / scale;
+        scale = next;
+        canvasEl.style.transform = `scale(${scale})`;
+        zoomEl.style.width = Math.round(W * scale) + "px";
+        zoomEl.style.height = Math.round(H * scale) + "px";
+        scrollEl.scrollLeft = px * scale - cx;
+        scrollEl.scrollTop = py * scale - cy;
+      }
+      scrollEl.addEventListener(
+        "wheel",
+        (e) => {
+          if (!e.ctrlKey && !e.metaKey) return; // 普通滚轮 = 上下 / 左右移动画面
+          e.preventDefault();
+          const r = scrollEl.getBoundingClientRect();
+          setScale(scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientX - r.left, e.clientY - r.top);
+        },
+        { passive: false },
+      );
+      // 手机 / 平板：两指捏合缩放
+      const touches = new Map();
+      let pinch = null;
+      scrollEl.addEventListener("pointerdown", (e) => e.pointerType === "touch" && touches.set(e.pointerId, [e.clientX, e.clientY]));
+      scrollEl.addEventListener("pointermove", (e) => {
+        if (e.pointerType !== "touch" || !touches.has(e.pointerId)) return;
+        touches.set(e.pointerId, [e.clientX, e.clientY]);
+        if (touches.size !== 2) return;
+        const [a, b] = [...touches.values()];
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const r = scrollEl.getBoundingClientRect();
+        if (pinch) setScale(pinch.s * (d / pinch.d), (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top);
+        else pinch = { d, s: scale };
+      });
+      ["pointerup", "pointercancel"].forEach((ev) => scrollEl.addEventListener(ev, (e) => (touches.delete(e.pointerId), touches.size < 2 && (pinch = null))));
+      const startPan = (e) => {
+        drag = { kind: "pan", cx: e.clientX, cy: e.clientY, sl: scrollEl.scrollLeft, st: scrollEl.scrollTop };
+        canvasEl.setPointerCapture(e.pointerId);
+        canvasEl.style.cursor = "grabbing";
+        e.preventDefault();
       };
       canvasEl.addEventListener("pointerdown", (e) => {
-        if (e.button || !canEdit) return;
+        if (e.button) return;
+        if (touches.size > 1) return; // 两指 = 缩放，不拖东西
+        if (!canEdit) return e.target.closest("[data-node]") ? undefined : startPan(e);
+        if (panMode || spaceHeld) return startPan(e);
         if (linkEdit) {
           // 正在改连结图示：点它自己里面不动；点别处 = 存
           if (e.target.closest(`[data-node="${linkEdit}"]`)) return;
@@ -2845,7 +2936,7 @@ window.GWHome = (function () {
         if (edgeEl) return ((selEdge = edgeEl.dataset.edge), (selSet = new Set()), paint());
         if (selSet.size || selEdge || lineFrom) ((selSet = new Set()), (selEdge = null), (lineFrom = null), paint());
         if (lineMode) return;
-        // 空白处按住拖：拉一个框选好几个
+        // 空白处按住拖：拉一个框选好几个（手形工具 / 按住空白键 = 移动画面）
         const [x, y] = pt(e);
         drag = { kind: "box", x0: x, y0: y, moved: false };
         canvasEl.setPointerCapture(e.pointerId);
@@ -2854,6 +2945,11 @@ window.GWHome = (function () {
       const boxRect = (x, y) => ({ x: Math.min(drag.x0, x), y: Math.min(drag.y0, y), w: Math.abs(x - drag.x0), h: Math.abs(y - drag.y0) });
       canvasEl.addEventListener("pointermove", (e) => {
         if (!drag) return;
+        if (drag.kind === "pan") {
+          scrollEl.scrollLeft = drag.sl - (e.clientX - drag.cx);
+          scrollEl.scrollTop = drag.st - (e.clientY - drag.cy);
+          return;
+        }
         const [x, y] = pt(e);
         if (drag.kind === "resize") {
           const n = byId(drag.id);
@@ -2892,8 +2988,19 @@ window.GWHome = (function () {
         clearTimeout(lp);
         lp = null;
         if (!drag) return;
+        if (drag.kind === "pan") {
+          canvasEl.style.cursor = "";
+          drag = null;
+          return;
+        }
         if (drag.kind === "move" || drag.kind === "resize") {
           if (drag.moved) markDirty();
+          else if (drag.kind === "move" && !lineMode && !linkEdit) {
+            // 点一下（没有拖）App / 连结图示 = 打开它
+            const n = byId(drag.id);
+            if (n && n.type !== "shape") ((drag = null), paint(), openNode(n));
+            if (!drag) return;
+          }
         } else if (drag.kind === "box") {
           marquee.classList.add("hidden");
           if (drag.moved) {
@@ -2925,22 +3032,31 @@ window.GWHome = (function () {
       };
       canvasEl.addEventListener("pointerup", endDrag);
       canvasEl.addEventListener("pointercancel", () => ((drag = null), (temp.style.display = "none"), paint()));
+      function openNode(n) {
+        if (n.type === "app") return hooks.openApp(n.ref);
+        const l = links.find((x) => x.id === n.ref);
+        if (l) window.open(l.url, "_blank", "noopener,noreferrer");
+      }
       canvasEl.addEventListener("dblclick", (e) => {
         if (lineMode || linkEdit) return;
         const nodeEl = e.target.closest("[data-node]");
         if (!nodeEl) return;
         const n = byId(nodeEl.dataset.node);
-        if (!n) return;
-        if (n.type === "shape") return canEdit && editText(n.id);
-        if (n.type === "app") return hooks.openApp(n.ref);
-        const l = links.find((x) => x.id === n.ref);
-        if (l) window.open(l.url, "_blank", "noopener,noreferrer");
+        if (n && n.type === "shape") canEdit && editText(n.id);
+      });
+      // 只能看的人：点图示就打开
+      canvasEl.addEventListener("click", (e) => {
+        if (canEdit) return;
+        const nodeEl = e.target.closest("[data-node]");
+        const n = nodeEl && byId(nodeEl.dataset.node);
+        if (n && n.type !== "shape") openNode(n);
       });
       paint();
       if (canEdit && !cv.map) markDirty(); // 第一次打开心智图：记下来，之后这个文件夹一打开就是心智图
       return {
         flush: () => {
           document.removeEventListener("keydown", onKey);
+          document.removeEventListener("keyup", onKeyUp);
           clearTimeout(saveTimer);
           if (dirty) save();
         },

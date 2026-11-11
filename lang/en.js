@@ -69,6 +69,9 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "linkPhoto": "Photo",
+    "linkPhotoTooBig": "Photo must be under 2 MB.",
+    "mapHand": "Hand",
     "mapText": "Text",
     "mapToGridTitle": "Back to grid view?",
     "mapToGridBody": "The mind map layout in this folder will be removed. This cannot be undone; the folder will open as icons again.",

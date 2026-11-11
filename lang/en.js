@@ -69,6 +69,8 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "mapDeleteIconTitle": "Delete icon",
+    "mapDeleteIconBody": "Delete {count} link icon(s) from this folder? This removes the link itself.",
     "shareRole": "Access",
     "shareRoleView": "Can view",
     "shareRoleEdit": "Can edit",

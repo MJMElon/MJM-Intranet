@@ -2449,7 +2449,8 @@ window.GWHome = (function () {
       violet: "border-violet-300 bg-violet-100 text-violet-900",
     };
     const MAP_SWATCH = { slate: "#94a3b8", sky: "#38bdf8", emerald: "#34d399", amber: "#fbbf24", rose: "#fb7185", violet: "#a78bfa" };
-    const NODE_W = 120, NODE_H = 100, ROW_W = 240, ROW_H = 56;
+    const NODE_W = 120, NODE_H = 108, ROW_W = 240, ROW_H = 48, GRID = 24;
+    const snap = (v) => Math.round(v / GRID) * GRID; // 位置都对齐点点格子，排起来才整齐
     function mountMindMap(f, host, hooks) {
       const W = 1600, H = 1200;
       const uid = () => Math.random().toString(36).slice(2, 10);
@@ -2463,7 +2464,7 @@ window.GWHome = (function () {
       let k = nodes.length;
       const place = (type, ref) => {
         if (nodes.some((n) => n.type === type && n.ref === ref)) return;
-        nodes.push({ id: uid(), type, ref, x: 40 + (k % 6) * 160, y: 40 + Math.floor(k / 6) * 140, w: NODE_W, h: NODE_H });
+        nodes.push({ id: uid(), type, ref, x: snap(48 + (k % 6) * 168), y: snap(48 + Math.floor(k / 6) * 144), w: NODE_W, h: NODE_H });
         k++;
       };
       apps.forEach((id) => place("app", id));
@@ -2486,7 +2487,8 @@ window.GWHome = (function () {
                 <g data-edge-layer></g>
                 <path data-temp fill="none" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="6 4" style="display:none"/>
               </svg>
-              <div data-nodes class="absolute inset-0"></div>
+              <div data-nodes class="absolute inset-0" style="pointer-events:none"></div>
+              <div data-marquee class="pointer-events-none absolute hidden rounded border-2 border-dashed border-sky-500 bg-sky-500/10"></div>
             </div>
           </div>
           <div data-tools class="${canEdit ? "flex" : "hidden"} w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
@@ -2502,7 +2504,7 @@ window.GWHome = (function () {
             <span data-status class="mt-auto px-1 pb-1 text-center text-[10px] leading-tight text-slate-400"></span>
           </div>
         </div>`;
-      const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host);
+      const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host), marquee = $("[data-marquee]", host);
       const status = $("[data-status]", host), colorsEl = $("[data-colors]", host), delBtn = $("[data-del]", host), scrollEl = $("[data-scroll]", host);
       const byId = (id) => nodes.find((n) => n.id === id);
       const port = (n, side) => (side === "t" ? [n.x + n.w / 2, n.y] : side === "b" ? [n.x + n.w / 2, n.y + n.h] : side === "l" ? [n.x, n.y + n.h / 2] : [n.x + n.w, n.y + n.h / 2]);
@@ -2553,12 +2555,14 @@ window.GWHome = (function () {
         } else {
           const m = n.type === "app" ? modules.get(n.ref) : null;
           const l = n.type === "link" ? links.find((x) => x.id === n.ref) : null;
-          const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, n.bullet ? "size-9" : "size-12");
+          const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, n.bullet ? "size-8" : "size-12");
           const label = m ? m.name : l ? l.name : "";
-          const nameAttr = editing ? `data-link-name contenteditable="true" class="min-w-0 rounded bg-white px-1 text-sm font-medium outline-none ring-2 ring-sky-400 dark:bg-slate-900"` : "";
+          const nameAttr = editing ? `data-link-name contenteditable="true" class="min-w-0 max-w-full rounded bg-white px-1 text-xs font-medium outline-none ring-2 ring-sky-400 dark:bg-slate-900"` : "";
+          const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800";
+          // 抖动只抖图示和名字（换图示的小面板不抖）
           body = n.bullet
-            ? `<div class="flex h-full w-full items-center gap-3 rounded-2xl border-2 border-white/70 bg-white/80 px-3 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span ${nameAttr || 'class="min-w-0 flex-1 truncate text-sm font-medium"'}>${esc(label)}</span></div>`
-            : `<div class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/70 bg-white/80 p-2 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span ${nameAttr || 'class="w-full truncate text-center text-xs font-medium"'}>${esc(label)}</span></div>`;
+            ? `<div class="flex h-full w-full items-center gap-3 px-3 ${card} ${editing ? "gw-node-edit" : ""}">${ic}<span ${nameAttr || 'class="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100"'}>${esc(label)}</span></div>`
+            : `<div class="flex h-full w-full flex-col items-center justify-center gap-1.5 p-2 ${card} ${editing ? "gw-node-edit" : ""}">${ic}<span ${nameAttr || 'class="line-clamp-2 w-full text-center text-[11px] leading-tight font-medium text-slate-800 dark:text-slate-100"'}>${esc(label)}</span></div>`;
           // 换图示的小面板（挂在图示下面）
           if (editing)
             body += `<div data-link-pop class="absolute top-full left-0 z-20 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900" style="cursor:default">
@@ -2567,16 +2571,17 @@ window.GWHome = (function () {
               </div>`;
         }
         const bullet = n.bullet ? `<span class="absolute top-1/2 -left-5 size-2.5 -translate-y-1/2 rounded-full bg-slate-500 dark:bg-slate-300"></span>` : "";
-        return `<div data-node="${n.id}" class="group absolute rounded-xl select-none ${editing ? "gw-node-edit z-20" : ""} ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;touch-action:none;cursor:${!canEdit ? "pointer" : lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}</div>`;
+        return `<div data-node="${n.id}" class="group absolute rounded-2xl select-none ${editing ? "z-20" : ""} ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;pointer-events:auto;touch-action:none;cursor:${!canEdit ? "pointer" : lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}</div>`;
       };
       const selShapes = () => [...selSet].map(byId).filter((n) => n && n.type === "shape");
+      const selLinks = () => (hooks.canEditLinks ? [...selSet].map(byId).filter((n) => n && n.type === "link") : []);
       function drawNodes() {
         nodesEl.innerHTML = nodes.map(nodeHtml).join("");
         refreshIcons();
         const hasShape = selShapes().length > 0;
         colorsEl.classList.toggle("hidden", !hasShape);
         colorsEl.classList.toggle("flex", hasShape);
-        delBtn.disabled = !(selEdge || hasShape);
+        delBtn.disabled = !(selEdge || hasShape || selLinks().length);
         $$("[data-tool]", host).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.tool === "line" && lineMode) || (b.dataset.tool === "all" && selSet.size && selSet.size === nodes.length) ? "true" : "false"));
         if (lineMode) status.textContent = lineFrom ? t("home.mapLinePick") : t("home.mapLineStart");
       }
@@ -2597,9 +2602,19 @@ window.GWHome = (function () {
         clearTimeout(saveTimer);
         saveTimer = setTimeout(save, 800);
       };
-      function delSel() {
+      async function delSel() {
         if (selEdge) edges = edges.filter((e) => e.id !== selEdge);
-        selShapes().forEach((n) => {
+        const dropNodes = selShapes();
+        // 连结图示：整个连结删掉（拥有者）；先问一下
+        const lk = selLinks();
+        if (lk.length) {
+          const ok = await confirmDialog(t("home.mapDeleteIconTitle"), t("home.mapDeleteIconBody", { count: lk.length }), t("home.delete"), t("home.cancel"));
+          if (ok) {
+            dropNodes.push(...lk);
+            lk.forEach((n) => removeLink(n.ref));
+          }
+        }
+        dropNodes.forEach((n) => {
           nodes.splice(nodes.indexOf(n), 1);
           edges = edges.filter((e) => e.from.n !== n.id && e.to.n !== n.id);
         });
@@ -2613,11 +2628,11 @@ window.GWHome = (function () {
         const targets = (selSet.size ? nodes.filter((n) => selSet.has(n.id)) : nodes.slice()).sort((a, b) => a.y - b.y || a.x - b.x);
         if (!targets.length) return;
         const undo = targets.every((n) => n.bullet);
-        let y = 40;
+        let y = 48;
         targets.forEach((n) => {
           n.bullet = !undo;
           if (n.type !== "shape") ((n.w = undo ? NODE_W : ROW_W), (n.h = undo ? NODE_H : ROW_H));
-          if (!undo) ((n.x = 60), (n.y = y), (y += n.h + 14));
+          if (!undo) ((n.x = 72), (n.y = y), (y = snap(y + n.h + 16)));
         });
         markDirty();
         paint();
@@ -2677,7 +2692,7 @@ window.GWHome = (function () {
       }
       const onKey = (e) => {
         if (!document.body.contains(host) || (e.target && e.target.isContentEditable) || document.querySelector(".gw-modal")) return;
-        if ((e.key === "Delete" || e.key === "Backspace") && (selEdge || selShapes().length)) (e.preventDefault(), delSel());
+        if ((e.key === "Delete" || e.key === "Backspace") && (selEdge || selShapes().length || selLinks().length)) (e.preventDefault(), delSel());
       };
       document.addEventListener("keydown", onKey);
       host.addEventListener("click", (e) => {
@@ -2687,7 +2702,16 @@ window.GWHome = (function () {
         if ("linkOk" in b.dataset) return finishLinkEdit();
         if (b.dataset.add) {
           const shape = b.dataset.add;
-          const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x: Math.round(scrollEl.scrollLeft + 60 + (nodes.length % 5) * 30), y: Math.round(scrollEl.scrollTop + 60 + (nodes.length % 5) * 30), w: shape === "diamond" ? 150 : 160, h: shape === "diamond" ? 110 : 64 };
+          const w = shape === "diamond" ? 144 : 168, h = shape === "diamond" ? 96 : 72;
+          // 放在看得到的范围里第一个没被盖到的格子
+          const free = (x, y) => !nodes.some((o) => x < o.x + o.w + GRID && x + w + GRID > o.x && y < o.y + o.h + GRID && y + h + GRID > o.y);
+          let x = snap(scrollEl.scrollLeft + 48), y = snap(scrollEl.scrollTop + 48);
+          const right = Math.min(W - w, scrollEl.scrollLeft + scrollEl.clientWidth - w - 24);
+          for (let tries = 0; tries < 400 && !free(x, y); tries++) {
+            x += GRID * 2;
+            if (x > right) ((x = snap(scrollEl.scrollLeft + 48)), (y += GRID * 2));
+          }
+          const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x, y: Math.min(y, H - h), w, h };
           nodes.push(n);
           selSet = new Set([n.id]);
           selEdge = null;
@@ -2772,7 +2796,14 @@ window.GWHome = (function () {
         const edgeEl = e.target.closest("[data-edge]");
         if (edgeEl) return ((selEdge = edgeEl.dataset.edge), (selSet = new Set()), paint());
         if (selSet.size || selEdge || lineFrom) ((selSet = new Set()), (selEdge = null), (lineFrom = null), paint());
+        if (lineMode) return;
+        // 空白处按住拖：拉一个框选好几个
+        const [x, y] = pt(e);
+        drag = { kind: "box", x0: x, y0: y, moved: false };
+        canvasEl.setPointerCapture(e.pointerId);
+        e.preventDefault();
       });
+      const boxRect = (x, y) => ({ x: Math.min(drag.x0, x), y: Math.min(drag.y0, y), w: Math.abs(x - drag.x0), h: Math.abs(y - drag.y0) });
       canvasEl.addEventListener("pointermove", (e) => {
         if (!drag) return;
         const [x, y] = pt(e);
@@ -2782,13 +2813,18 @@ window.GWHome = (function () {
           drag.start.forEach((s0, id) => {
             const n = byId(id);
             if (!n) return;
-            n.x = Math.max(0, Math.min(W - n.w, Math.round(s0.x + dx)));
-            n.y = Math.max(0, Math.min(H - n.h, Math.round(s0.y + dy)));
+            n.x = Math.max(0, Math.min(W - n.w, snap(s0.x + dx)));
+            n.y = Math.max(0, Math.min(H - n.h, snap(s0.y + dy)));
             const el = $(`[data-node="${n.id}"]`, nodesEl);
             if (el) ((el.style.left = n.x + "px"), (el.style.top = n.y + "px"));
           });
           drag.moved = true;
           drawEdges();
+        } else if (drag.kind === "box") {
+          const r = boxRect(x, y);
+          drag.moved = drag.moved || r.w > 4 || r.h > 4;
+          marquee.style.cssText = `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px`;
+          marquee.classList.toggle("hidden", !drag.moved);
         } else {
           const [x1, y1] = port(byId(drag.from.n), drag.from.s);
           temp.setAttribute("d", `M${x1} ${y1} L${x} ${y}`);
@@ -2801,6 +2837,14 @@ window.GWHome = (function () {
         if (!drag) return;
         if (drag.kind === "move") {
           if (drag.moved) markDirty();
+        } else if (drag.kind === "box") {
+          marquee.classList.add("hidden");
+          if (drag.moved) {
+            const [x, y] = pt(e);
+            const r = boxRect(x, y);
+            selSet = new Set(nodes.filter((n) => n.x < r.x + r.w && n.x + n.w > r.x && n.y < r.y + r.h && n.y + n.h > r.y).map((n) => n.id));
+            selEdge = null;
+          }
         } else {
           temp.style.display = "none";
           const under = document.elementFromPoint(e.clientX, e.clientY);

@@ -69,6 +69,8 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "mapDeleteIconTitle": "删除图示",
+    "mapDeleteIconBody": "把 {count} 个连结图示从这个文件夹删掉？连结本身也会删除。",
     "shareRole": "权限",
     "shareRoleView": "可以看",
     "shareRoleEdit": "可以改",

@@ -69,6 +69,9 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "shareRole": "Access",
+    "shareRoleView": "Can view",
+    "shareRoleEdit": "Can edit",
     "mapGrid": "Grid",
     "mapSelectAll": "Select all",
     "mapBullets": "Bullets",

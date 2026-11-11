@@ -135,10 +135,9 @@ window.GWHome = (function () {
     async function loadShared() {
       if (readOnly) return;
       const me = data.profile.id;
-      const [mineRes, shareRes] = await Promise.all([
-        sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me),
-        sb.from("gw_folder_shares").select("folder_id, sort_order").eq("user_id", me),
-      ]);
+      const mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me);
+      let shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order, role").eq("user_id", me);
+      if (shareRes.error && /role/.test(shareRes.error.message || "")) shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order").eq("user_id", me); // 还没套用 role 的资料库：当作可以改
       if (mineRes.error || shareRes.error) return; // 资料库还没更新：没有分享功能，其他照常
       (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas }));
       const shares = shareRes.data || [];
@@ -152,7 +151,7 @@ window.GWHome = (function () {
         fs.forEach((f) => {
           if (folders.some((x) => x.id === f.id)) return;
           const sh = shares.find((x) => x.folder_id === f.id);
-          folders.push({ ...f, shared_by: f.user_id, sort_order: sh ? sh.sort_order : 0 });
+          folders.push({ ...f, shared_by: f.user_id, sort_order: sh ? sh.sort_order : 0, share_role: sh && sh.role ? sh.role : "edit" });
         });
         ls.forEach((l) => !links.some((x) => x.id === l.id) && links.push({ ...l }));
         ly.forEach((l) => sharedApps.set(l.folder_id, [...(sharedApps.get(l.folder_id) || []), l.module_id]));
@@ -2308,7 +2307,7 @@ window.GWHome = (function () {
     function openFolder(fid, mode) {
       const f = folders.find((x) => x.id === fid);
       if (!f) return;
-      mode = mode || "grid";
+      mode = mode || (f.canvas && f.canvas.map ? "map" : "grid"); // 画过心智图的文件夹一打开就是心智图
       const ids = folderApps(fid);
       const lks = folderLinks(fid);
       const mineF = !f.shared_by;
@@ -2329,7 +2328,9 @@ window.GWHome = (function () {
           : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`;
       const pill = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon(ic, "size-4")} ${esc(label)}</button>`;
       wrap.innerHTML = `
-        <h2 data-title class="mb-4 max-w-full truncate px-4 text-3xl font-bold text-white drop-shadow select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
+        <div class="mb-4 flex max-w-full items-center gap-2 px-4">
+          <h2 data-title class="min-w-0 truncate text-3xl font-bold text-white drop-shadow outline-none select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
+        </div>
         <div data-win class="relative w-full ${mode === "map" ? "max-w-5xl" : "max-w-md"} rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
           ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
           ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
@@ -2351,15 +2352,54 @@ window.GWHome = (function () {
         close();
       };
       document.addEventListener("keydown", onKey);
-      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), canAddLink: canOut });
-      // 长按名字 → 改名
+      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), canAddLink: canOut, canEditLinks: canOut, canEdit: !readOnly && (mineF || f.share_role === "edit") });
+      // 长按名字 → 名字原地变成可以打字；按 ✓、Enter 或点别的地方就存，Esc 取消
       if (canRename) {
         const h = $("[data-title]", wrap);
-        let timer = null;
+        let timer = null, renaming = false;
         const stop = () => (clearTimeout(timer), (timer = null));
-        h.addEventListener("pointerdown", () => ((timer = setTimeout(() => ((timer = null), close(), folderDialog(f)), 600)), undefined));
+        const finish = async (commit) => {
+          if (!renaming) return;
+          renaming = false;
+          h.contentEditable = "false";
+          h.classList.remove("rounded-xl", "bg-white/20", "ring-2", "ring-white/80", "px-2");
+          const ok = $("[data-rename-ok]", wrap);
+          if (ok) ok.remove();
+          const name = (h.innerText || "").trim().slice(0, 40);
+          if (!commit || !name || name === f.name) return (h.textContent = f.name);
+          h.textContent = name;
+          const { error } = await sb.from("gw_user_folders").update({ name }).eq("id", f.id);
+          if (error) return ((h.textContent = f.name), toast(t("home.saveFailed")));
+          f.name = name;
+          draw();
+        };
+        const start = () => {
+          if (renaming) return;
+          renaming = true;
+          h.contentEditable = "true";
+          h.classList.add("rounded-xl", "bg-white/20", "ring-2", "ring-white/80", "px-2");
+          h.insertAdjacentHTML("afterend", `<button type="button" data-rename-ok aria-label="${esc(t("home.save"))}" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-slate-900 shadow">${icon("check", "size-5")}</button>`);
+          refreshIcons();
+          h.focus();
+          const r = document.createRange();
+          r.selectNodeContents(h);
+          const s0 = getSelection();
+          s0.removeAllRanges();
+          s0.addRange(r);
+        };
+        h.addEventListener("pointerdown", () => {
+          if (!renaming) timer = setTimeout(() => ((timer = null), start()), 600);
+        });
         ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => h.addEventListener(ev, stop));
         h.addEventListener("contextmenu", (e) => e.preventDefault());
+        h.addEventListener("keydown", (e) => {
+          if (!renaming) return;
+          e.stopPropagation();
+          if (e.key === "Enter") (e.preventDefault(), finish(true));
+          if (e.key === "Escape") (e.preventDefault(), finish(false));
+        });
+        h.addEventListener("blur", () => setTimeout(() => renaming && finish(true), 150));
+        wrap.addEventListener("click", (e) => e.target.closest("[data-rename-ok]") && finish(true));
       }
       wrap.addEventListener("click", async (e) => {
         if (!e.target.isConnected) return; // 里面的工具刚重画过（图示换掉了）：不是点外面
@@ -2368,7 +2408,7 @@ window.GWHome = (function () {
           if (!e.target.closest("[data-win]") && !e.target.closest("[data-title]")) close();
           return;
         }
-        if (!wrap.contains(b) || b.closest("[data-map-host]")) return;
+        if (!wrap.contains(b) || b.closest("[data-map-host]") || "renameOk" in b.dataset) return;
         if (b.dataset.open) return close(), open(b.dataset.open);
         if (b.dataset.openLink) {
           const l = links.find((x) => x.id === b.dataset.openLink);
@@ -2434,6 +2474,8 @@ window.GWHome = (function () {
       let selSet = new Set(), selEdge = null;
       let lineMode = false, lineFrom = null;
       let dirty = false, saveTimer = null, drag = null;
+      let linkEdit = null, lp = null; // 长按连结图示：改名字 / 换图示（只有拥有者）
+      const canEdit = !!hooks.canEdit;
       const tool = (attr, ic, label, extra) =>
         `<button type="button" ${attr} class="flex w-full flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-white aria-pressed:bg-slate-900 aria-pressed:text-white disabled:opacity-40 dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900 ${extra || ""}">${icon(ic, "size-5")}<span class="leading-tight">${esc(label)}</span></button>`;
       host.innerHTML = `<div class="flex h-full gap-3">
@@ -2447,7 +2489,7 @@ window.GWHome = (function () {
               <div data-nodes class="absolute inset-0"></div>
             </div>
           </div>
-          <div data-tools class="flex w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
+          <div data-tools class="${canEdit ? "flex" : "hidden"} w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
             ${hooks.canAddLink ? tool('data-tool="icon"', "link", t("home.mapIcon")) : ""}
             ${tool('data-add="rect"', "square", t("home.mapAddBox"))}
             ${tool('data-add="round"', "circle", t("home.mapAddRound"))}
@@ -2494,7 +2536,8 @@ window.GWHome = (function () {
       }
       const nodeHtml = (n) => {
         const on = selSet.has(n.id) || lineFrom === n.id;
-        const ports = ["t", "r", "b", "l"]
+        const editing = linkEdit === n.id;
+        const ports = (canEdit && !editing ? ["t", "r", "b", "l"] : [])
           .map(
             (sd) => `<span data-port="${n.id}:${sd}" class="absolute z-10 size-4 rounded-full border-2 border-white bg-sky-500 shadow ${on ? "" : "opacity-0 group-hover:opacity-100"} ${
               sd === "t" ? "-top-2 left-1/2 -translate-x-1/2" : sd === "b" ? "-bottom-2 left-1/2 -translate-x-1/2" : sd === "l" ? "top-1/2 -left-2 -translate-y-1/2" : "top-1/2 -right-2 -translate-y-1/2"
@@ -2512,12 +2555,19 @@ window.GWHome = (function () {
           const l = n.type === "link" ? links.find((x) => x.id === n.ref) : null;
           const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null }, n.bullet ? "size-9" : "size-12");
           const label = m ? m.name : l ? l.name : "";
+          const nameAttr = editing ? `data-link-name contenteditable="true" class="min-w-0 rounded bg-white px-1 text-sm font-medium outline-none ring-2 ring-sky-400 dark:bg-slate-900"` : "";
           body = n.bullet
-            ? `<div class="flex h-full w-full items-center gap-3 rounded-2xl border-2 border-white/70 bg-white/80 px-3 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(label)}</span></div>`
-            : `<div class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/70 bg-white/80 p-2 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span class="w-full truncate text-center text-xs font-medium">${esc(label)}</span></div>`;
+            ? `<div class="flex h-full w-full items-center gap-3 rounded-2xl border-2 border-white/70 bg-white/80 px-3 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span ${nameAttr || 'class="min-w-0 flex-1 truncate text-sm font-medium"'}>${esc(label)}</span></div>`
+            : `<div class="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-white/70 bg-white/80 p-2 backdrop-blur dark:border-white/10 dark:bg-white/10">${ic}<span ${nameAttr || 'class="w-full truncate text-center text-xs font-medium"'}>${esc(label)}</span></div>`;
+          // 换图示的小面板（挂在图示下面）
+          if (editing)
+            body += `<div data-link-pop class="absolute top-full left-0 z-20 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900" style="cursor:default">
+                <div class="flex flex-wrap gap-1">${["link", ...Object.keys(GW.MODULE_ICONS)].filter((v, i, a) => a.indexOf(v) === i).map((key) => `<button type="button" data-pick-icon="${key}" class="flex size-8 items-center justify-center rounded-lg border ${(l ? l.icon : "link") === key ? "border-brand-500 bg-brand-50 text-brand-600" : "border-slate-200 text-slate-500 dark:border-slate-700"}">${key === "link" ? icon("link", "size-4") : moduleIcon(key, "size-4")}</button>`).join("")}</div>
+                <div class="mt-2 flex justify-end"><button type="button" data-link-ok class="${btn("primary", "sm")}">${icon("check", "size-4")} ${esc(t("home.save"))}</button></div>
+              </div>`;
         }
         const bullet = n.bullet ? `<span class="absolute top-1/2 -left-5 size-2.5 -translate-y-1/2 rounded-full bg-slate-500 dark:bg-slate-300"></span>` : "";
-        return `<div data-node="${n.id}" class="group absolute rounded-xl select-none ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;touch-action:none;cursor:${lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}</div>`;
+        return `<div data-node="${n.id}" class="group absolute rounded-xl select-none ${editing ? "gw-node-edit z-20" : ""} ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;touch-action:none;cursor:${!canEdit ? "pointer" : lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}</div>`;
       };
       const selShapes = () => [...selSet].map(byId).filter((n) => n && n.type === "shape");
       function drawNodes() {
@@ -2534,7 +2584,7 @@ window.GWHome = (function () {
       async function save() {
         if (!dirty) return;
         clearTimeout(saveTimer);
-        const canvas = { nodes, edges };
+        const canvas = { nodes, edges, map: true }; // map: 这个文件夹有心智图 → 一打开就显示心智图
         const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
         if (error) return ((status.textContent = t("home.saveFailed")), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
         dirty = false;
@@ -2595,6 +2645,36 @@ window.GWHome = (function () {
           if ((ev.key === "Enter" && !ev.shiftKey) || ev.key === "Escape") (ev.preventDefault(), el.blur());
         });
       }
+      nodesEl.addEventListener("keydown", (ev) => {
+        if (!ev.target.matches("[data-link-name]")) return;
+        ev.stopPropagation();
+        if (ev.key === "Enter" || ev.key === "Escape") (ev.preventDefault(), finishLinkEdit());
+      });
+      // 长按连结图示：抖动 + 名字可以打字 + 换图示；按 ✓ 或点别的地方就存（App 的名字不能改）
+      async function finishLinkEdit() {
+        if (!linkEdit) return;
+        const n = byId(linkEdit);
+        const el = $(`[data-node="${linkEdit}"] [data-link-name]`, nodesEl);
+        linkEdit = null;
+        const l = n && links.find((x) => x.id === n.ref);
+        const name = el ? (el.innerText || "").trim().slice(0, 40) : "";
+        if (l && name && name !== l.name) {
+          const { error } = await sb.from("gw_user_links").update({ name }).eq("id", l.id);
+          if (error) toast(t("home.saveFailed"));
+          else ((l.name = name), draw());
+        }
+        paint();
+      }
+      async function pickLinkIcon(key) {
+        const n = linkEdit && byId(linkEdit);
+        const l = n && links.find((x) => x.id === n.ref);
+        if (!l || l.icon === key) return;
+        const { error } = await sb.from("gw_user_links").update({ icon: key }).eq("id", l.id);
+        if (error) return toast(t("home.saveFailed"));
+        l.icon = key;
+        draw();
+        paint();
+      }
       const onKey = (e) => {
         if (!document.body.contains(host) || (e.target && e.target.isContentEditable) || document.querySelector(".gw-modal")) return;
         if ((e.key === "Delete" || e.key === "Backspace") && (selEdge || selShapes().length)) (e.preventDefault(), delSel());
@@ -2603,6 +2683,8 @@ window.GWHome = (function () {
       host.addEventListener("click", (e) => {
         const b = e.target.closest("button");
         if (!b) return;
+        if (b.dataset.pickIcon) return pickLinkIcon(b.dataset.pickIcon);
+        if ("linkOk" in b.dataset) return finishLinkEdit();
         if (b.dataset.add) {
           const shape = b.dataset.add;
           const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x: Math.round(scrollEl.scrollLeft + 60 + (nodes.length % 5) * 30), y: Math.round(scrollEl.scrollTop + 60 + (nodes.length % 5) * 30), w: shape === "diamond" ? 150 : 160, h: shape === "diamond" ? 110 : 64 };
@@ -2638,7 +2720,12 @@ window.GWHome = (function () {
         return [e.clientX - r.left, e.clientY - r.top];
       };
       canvasEl.addEventListener("pointerdown", (e) => {
-        if (e.button) return;
+        if (e.button || !canEdit) return;
+        if (linkEdit) {
+          // 正在改连结图示：点它自己里面不动；点别处 = 存
+          if (e.target.closest(`[data-node="${linkEdit}"]`)) return;
+          return finishLinkEdit();
+        }
         const portEl = e.target.closest("[data-port]");
         if (portEl && !lineMode) {
           const [n, sd] = portEl.dataset.port.split(":");
@@ -2665,6 +2752,21 @@ window.GWHome = (function () {
           if (!selSet.has(n.id)) ((selSet = new Set([n.id])), (selEdge = null), paint());
           drag = { kind: "move", id: n.id, x0: x, y0: y, start: new Map([...selSet].map((id) => [id, { x: byId(id).x, y: byId(id).y }])), moved: false };
           canvasEl.setPointerCapture(e.pointerId);
+          if (hooks.canEditLinks && n.type === "link") {
+            clearTimeout(lp);
+            const pid = e.pointerId;
+            lp = setTimeout(() => {
+              lp = null;
+              if (!drag || drag.moved) return;
+              drag = null;
+              try { canvasEl.releasePointerCapture(pid); } catch (_e) { /* 忽略 */ }
+              linkEdit = n.id;
+              selSet = new Set();
+              paint();
+              const el = $(`[data-node="${n.id}"] [data-link-name]`, nodesEl);
+              if (el) el.focus();
+            }, 600);
+          }
           return e.preventDefault();
         }
         const edgeEl = e.target.closest("[data-edge]");
@@ -2676,6 +2778,7 @@ window.GWHome = (function () {
         const [x, y] = pt(e);
         if (drag.kind === "move") {
           const dx = x - drag.x0, dy = y - drag.y0;
+          if (lp && Math.hypot(dx, dy) > 6) (clearTimeout(lp), (lp = null));
           drag.start.forEach((s0, id) => {
             const n = byId(id);
             if (!n) return;
@@ -2693,6 +2796,8 @@ window.GWHome = (function () {
         }
       });
       const endDrag = (e) => {
+        clearTimeout(lp);
+        lp = null;
         if (!drag) return;
         if (drag.kind === "move") {
           if (drag.moved) markDirty();
@@ -2720,17 +2825,18 @@ window.GWHome = (function () {
       canvasEl.addEventListener("pointerup", endDrag);
       canvasEl.addEventListener("pointercancel", () => ((drag = null), (temp.style.display = "none"), paint()));
       canvasEl.addEventListener("dblclick", (e) => {
-        if (lineMode) return;
+        if (lineMode || linkEdit) return;
         const nodeEl = e.target.closest("[data-node]");
         if (!nodeEl) return;
         const n = byId(nodeEl.dataset.node);
         if (!n) return;
-        if (n.type === "shape") return editText(n.id);
+        if (n.type === "shape") return canEdit && editText(n.id);
         if (n.type === "app") return hooks.openApp(n.ref);
         const l = links.find((x) => x.id === n.ref);
         if (l) window.open(l.url, "_blank", "noopener,noreferrer");
       });
       paint();
+      if (canEdit && !cv.map) markDirty(); // 第一次打开心智图：记下来，之后这个文件夹一打开就是心智图
       return {
         flush: () => {
           document.removeEventListener("keydown", onKey);
@@ -2738,6 +2844,7 @@ window.GWHome = (function () {
           if (dirty) save();
         },
         onEscape: () => {
+          if (linkEdit) return (finishLinkEdit(), true);
           if (!lineMode) return false;
           lineMode = false;
           lineFrom = null;
@@ -2951,12 +3058,20 @@ window.GWHome = (function () {
       });
     }
 
-    // 分享给谁：同 Business 的在职同事（gw_folder_share_candidates），勾选 → 存 gw_folder_shares
+    // 分享给谁（像 Google Drive）：同 Business 的在职同事（gw_folder_share_candidates），勾选 + 每个人 Can view / Can edit → 存 gw_folder_shares
     async function sharePicker(f) {
-      const [cand, cur] = await Promise.all([sb.rpc("gw_folder_share_candidates"), sb.from("gw_folder_shares").select("user_id").eq("folder_id", f.id)]);
+      const cand = await sb.rpc("gw_folder_share_candidates");
+      let cur = await sb.from("gw_folder_shares").select("user_id, role").eq("folder_id", f.id);
+      const rolesOn = !(cur.error && /role/.test(cur.error.message || ""));
+      if (!rolesOn) cur = await sb.from("gw_folder_shares").select("user_id").eq("folder_id", f.id);
       if (cand.error || cur.error) return toast(t("home.sharedNeedsDb"));
-      const list = cand.data || [];
-      const on = new Set((cur.data || []).map((x) => x.user_id));
+      const on = new Map((cur.data || []).map((x) => [x.user_id, x.role || "edit"]));
+      // 已经分享的排前面
+      const list = (cand.data || []).slice().sort((x, y) => (on.has(y.id) ? 1 : 0) - (on.has(x.id) ? 1 : 0) || (x.full_name || "").localeCompare(y.full_name || ""));
+      const roleSel = (id, role, show) => `<select data-role="${id}" aria-label="${esc(t("home.shareRole"))}" class="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900 ${show ? "" : "invisible"}">
+          <option value="view" ${role === "view" ? "selected" : ""}>${esc(t("home.shareRoleView"))}</option>
+          <option value="edit" ${role === "edit" ? "selected" : ""}>${esc(t("home.shareRoleEdit"))}</option>
+        </select>`;
       const dlg = modal(
         t("home.shareTitle", { name: f.name }),
         `<div class="space-y-3">
@@ -2965,10 +3080,13 @@ window.GWHome = (function () {
             list.length
               ? list
                   .map(
-                    (u) => `<label data-row="${esc(((u.full_name || "") + " " + (u.email || "")).toLowerCase())}" class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
-                      <input type="checkbox" data-pick="${u.id}" ${on.has(u.id) ? "checked" : ""} class="size-4 accent-emerald-600">
-                      <span class="min-w-0 flex-1"><span class="block truncate font-medium">${esc(u.full_name || "")}</span><span class="block truncate text-xs text-slate-500">${esc(u.email || "")}</span></span>
-                    </label>`,
+                    (u) => `<div data-row="${esc(((u.full_name || "") + " " + (u.email || "")).toLowerCase())}" class="flex items-center gap-3 px-3 py-2 text-sm">
+                      <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                        <input type="checkbox" data-pick="${u.id}" ${on.has(u.id) ? "checked" : ""} class="size-4 accent-emerald-600">
+                        <span class="min-w-0 flex-1"><span class="block truncate font-medium">${esc(u.full_name || "")}</span><span class="block truncate text-xs text-slate-500">${esc(u.email || "")}</span></span>
+                      </label>
+                      ${rolesOn ? roleSel(u.id, on.get(u.id) || "view", on.has(u.id)) : ""}
+                    </div>`,
                   )
                   .join("")
               : `<p class="px-3 py-6 text-center text-sm text-slate-400">${esc(t("home.shareNone"))}</p>`
@@ -2984,18 +3102,29 @@ window.GWHome = (function () {
       $("[data-cancel]", dlg.el).onclick = dlg.close;
       const q = $("[data-q]", dlg.el);
       if (q) q.addEventListener("input", () => { const v = q.value.trim().toLowerCase(); $$("[data-row]", dlg.el).forEach((r) => r.classList.toggle("hidden", !!v && !r.dataset.row.includes(v))); });
+      dlg.el.addEventListener("change", (e) => {
+        if (!e.target.dataset.pick) return;
+        const sel = $(`[data-role="${e.target.dataset.pick}"]`, dlg.el);
+        if (sel) sel.classList.toggle("invisible", !e.target.checked);
+      });
       $("[data-save]", dlg.el).onclick = async () => {
-        const picked = new Set($$("[data-pick]:checked", dlg.el).map((x) => x.dataset.pick));
-        const add = [...picked].filter((id) => !on.has(id));
-        const drop = [...on].filter((id) => !picked.has(id));
+        const picked = new Map($$("[data-pick]:checked", dlg.el).map((x) => [x.dataset.pick, rolesOn ? $(`[data-role="${x.dataset.pick}"]`, dlg.el).value : "edit"]));
+        const add = [...picked.keys()].filter((id) => !on.has(id));
+        const drop = [...on.keys()].filter((id) => !picked.has(id));
+        const changed = [...picked].filter(([id, role]) => on.has(id) && on.get(id) !== role);
+        const fail = (error) => (($("[data-save]", dlg.el).disabled = false), toast(t("home.saveFailed") + (error && error.message ? " (" + error.message + ")" : "")));
         $("[data-save]", dlg.el).disabled = true;
         if (add.length) {
-          const { error } = await sb.from("gw_folder_shares").insert(add.map((user_id) => ({ folder_id: f.id, user_id })));
-          if (error) return (($("[data-save]", dlg.el).disabled = false), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
+          const { error } = await sb.from("gw_folder_shares").insert(add.map((user_id) => ({ folder_id: f.id, user_id, ...(rolesOn ? { role: picked.get(user_id) } : {}) })));
+          if (error) return fail(error);
+        }
+        for (const [id, role] of changed) {
+          const { error } = await sb.from("gw_folder_shares").update({ role }).eq("folder_id", f.id).eq("user_id", id);
+          if (error) return fail(error);
         }
         if (drop.length) {
           const { error } = await sb.from("gw_folder_shares").delete().eq("folder_id", f.id).in("user_id", drop);
-          if (error) return (($("[data-save]", dlg.el).disabled = false), toast(t("home.saveFailed")));
+          if (error) return fail(error);
         }
         dlg.close();
         toast(t("home.shareSaved", { count: picked.size }));

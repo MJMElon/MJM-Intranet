@@ -69,6 +69,9 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "shareRole": "权限",
+    "shareRoleView": "可以看",
+    "shareRoleEdit": "可以改",
     "mapGrid": "格子",
     "mapSelectAll": "全选",
     "mapBullets": "条列",

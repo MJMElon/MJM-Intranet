@@ -640,6 +640,26 @@ window.GWHome = (function () {
       const v = estateSel.get(gid);
       return list.find((x) => x.id === v) || list[0];
     };
+    // 从别的系统（CMMS 2）回来时网址带 gw_company：每个有这家 Company 的 Business 区块都切到它，
+    // 这样 Intranet 的 Company 跟模块里最后用的一样。记下来后把参数从网址拿掉。
+    (function companyFromUrl() {
+      let u;
+      try { u = new URL(location.href); } catch (e) { return; }
+      const asks = ["gw_company", "gw_company_name", "gw_company_short"].map((k) => (u.searchParams.get(k) || "").trim().toLowerCase()).filter(Boolean);
+      if (!asks.length) return;
+      ["gw_company", "gw_company_name", "gw_company_short"].forEach((k) => u.searchParams.delete(k));
+      try { history.replaceState(null, "", u.toString()); } catch (e) { /* 忽略 */ }
+      const hit = S.companies.find((c) => [c.code, c.name, c.short_name, c.id].some((v) => v && asks.includes(String(v).trim().toLowerCase())));
+      if (!hit) return;
+      let changed = false;
+      S.bizCompanies.filter((x) => x.company_id === hit.id).forEach((x) => {
+        if (companySel.get(x.group_id) !== hit.id) { companySel.set(x.group_id, hit.id); changed = true; }
+      });
+      const w = board();
+      if (!changed || !w) return;
+      w.config = { ...(w.config || {}), companies: Object.fromEntries(companySel) };
+      sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+    })();
     // 模块有标 Company 的，只在选了那个 Company（或选全部）时显示；没标 Company 的模块一律显示
     const shownFor = (gid, moduleId) => {
       const sel = selectedCompany(gid);

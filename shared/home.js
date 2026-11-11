@@ -324,7 +324,7 @@ window.GWHome = (function () {
       return `<div data-kind="link" data-id="${l.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-open-link="${l.id}" class="flex flex-col items-center gap-1.5" title="${esc(l.url)}">
           ${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color })}
-          <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(l.name)}</span>
+          <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(l.name)}</span>
         </button>
         ${editing ? badge(`data-remove-link="${l.id}"`, "minus", t("home.removeFromHome"), "top-0 left-1/2 -translate-x-[2.4rem]") + badge(`data-edit-link="${l.id}"`, "pencil", t("home.editLink"), "top-0 left-1/2 translate-x-[1rem]") : ""}
       </div>`;
@@ -335,7 +335,7 @@ window.GWHome = (function () {
       return `<div data-kind="app" data-id="${id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-open="${id}" class="flex flex-col items-center gap-1.5" title="${esc(m.description || m.name)}">
           ${appIcon(m)}
-          <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(m.name)}</span>
+          <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(m.name)}</span>
         </button>
         ${editing ? badge(`data-remove-app="${id}"`, "minus", t("home.removeFromHome"), "top-0 left-1/2 -translate-x-[2.4rem]") + badge(`data-app-menu="${id}"`, "ellipsis", t("home.cardMenu"), "top-0 left-1/2 translate-x-[1rem]") : ""}
       </div>`;
@@ -350,7 +350,7 @@ window.GWHome = (function () {
       return `<div data-kind="folder" data-id="${f.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-folder="${f.id}" class="flex flex-col items-center gap-1.5">
           <span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>
-          <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(f.name)}</span>
+          <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(f.name)}</span>
         </button>
         ${editing ? badge(`data-remove-folder="${f.id}"`, "minus", t("home.deleteFolder"), "top-0 left-1/2 -translate-x-[2.4rem]") : ""}
       </div>`;
@@ -664,8 +664,8 @@ window.GWHome = (function () {
        所以区块和页面上的小工具都在同一个格线上，彼此之间的空隙一样（16px）。 */
     const MET = () =>
       matchMedia("(min-width: 640px)").matches
-        ? { cw: 104, rh: 110, lw: 80, icon: 64, px: 17, pt: 20, th: 24, tg: 24, pb: 24 }
-        : { cw: 88, rh: 94, lw: 72, icon: 56, px: 13, pt: 14, th: 24, tg: 18, pb: 20 };
+        ? { cw: 104, rh: 124, lw: 80, icon: 64, px: 17, pt: 20, th: 24, tg: 24, pb: 24 }
+        : { cw: 88, rh: 108, lw: 72, icon: 56, px: 13, pt: 14, th: 24, tg: 18, pb: 20 };
     // 页面格线：以半格为单位，页面宽度 = 整数个半格（置中）
     const pageGeo = () => {
       const m = MET();
@@ -759,7 +759,7 @@ window.GWHome = (function () {
     }
 
     // ---- 区块外观
-    const LABEL = "w-[72px] truncate text-center text-xs font-medium text-slate-700 sm:w-20 dark:text-slate-200";
+    const LABEL = "w-[72px] text-center text-xs leading-tight font-medium break-words text-slate-700 sm:w-20 dark:text-slate-200"; // 名字太长就换行，整个名字都要看得到
     // 编辑时图示左上角 / 右上角的小圆钮（对准图示的角）
     const BADGE_L = "top-0 left-[calc(50%-36px)] sm:top-1 sm:left-[calc(50%-40px)]";
     const BADGE_R = "top-0 right-[calc(50%-36px)] sm:top-1 sm:right-[calc(50%-40px)]";
@@ -1901,7 +1901,7 @@ window.GWHome = (function () {
               ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${kids
                   .map(
                     (k) => `<div class="relative flex flex-col items-center gap-1.5">
-                      <button type="button" data-open="${k.module_id}" class="flex flex-col items-center gap-1.5">${appIcon(modules.get(k.module_id), "size-14 sm:size-16")}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(modules.get(k.module_id).name)}</span></button>
+                      <button type="button" data-open="${k.module_id}" class="flex flex-col items-center gap-1.5">${appIcon(modules.get(k.module_id), "size-14 sm:size-16")}<span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(modules.get(k.module_id).name)}</span></button>
                       <button type="button" data-out="${k.id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>
                     </div>`,
                   )
@@ -2356,7 +2356,7 @@ window.GWHome = (function () {
       wrap.setAttribute("role", "dialog");
       wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md sm:p-6";
       const tile = (btnAttr, iconHtml, label, title, outAttr) => `<div class="relative flex flex-col items-center gap-1.5">
-          <button type="button" ${btnAttr} ${title ? `title="${esc(title)}"` : ""} class="flex flex-col items-center gap-1.5">${iconHtml}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(label)}</span></button>
+          <button type="button" ${btnAttr} ${title ? `title="${esc(title)}"` : ""} class="flex flex-col items-center gap-1.5">${iconHtml}<span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(label)}</span></button>
           ${canOut ? `<button type="button" ${outAttr} title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
         </div>`;
       const grid =

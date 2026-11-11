@@ -439,6 +439,17 @@
       return null;
     };
 
+    // Business 只有一个 Company：加进 Business 时顺便加进那个 Company（一般用户），不用再另外勾
+    const autoCompany = async (gid) => {
+      const cos = cosOfBiz(gid);
+      if (cos.length !== 1 || mcRow(gid, cos[0].id)) return;
+      const cid = cos[0].id;
+      let { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
+      if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid }));
+      if (error) return fail(error);
+      mcs.push({ group_id: gid, company_id: cid, role_id: null });
+    };
+
     // + Add business：列还没加进去、而且我能加人的 Business
     function addBusinessDialog() {
       const list = addableBiz();
@@ -461,6 +472,7 @@
         b.disabled = true;
         const e1 = await ensureMember(b.dataset.pickBiz);
         if (e1) return ((b.disabled = false), fail(e1));
+        await autoCompany(b.dataset.pickBiz);
         pm.close();
         draw();
       });

@@ -46,9 +46,10 @@ window.GWHome = (function () {
 
   // 小工具种类与可选大小
   const WIDGETS = {
-    greeting: { sizes: ["medium"], icon: "sun" },
+    // 问候、搜寻：已停用（不再提供，主页上旧的也不显示）
+    greeting: { sizes: ["medium"], icon: "sun", hidden: true, retired: true },
     clock: { sizes: ["small", "medium"], icon: "clock" },
-    search: { sizes: ["medium"], icon: "search" },
+    search: { sizes: ["medium"], icon: "search", hidden: true, retired: true },
     // 最近打开：已停用（不再提供，主页上旧的也不显示）
     recent: { sizes: ["small", "medium"], icon: "history", hidden: true, retired: true },
     // Notice Board：固定在最上面，只能调大小，不能移动、不能删除，也不能再加第二个

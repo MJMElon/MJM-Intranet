@@ -69,6 +69,10 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "mapText": "Text",
+    "mapToGridTitle": "Back to grid view?",
+    "mapToGridBody": "The mind map layout in this folder will be removed. This cannot be undone; the folder will open as icons again.",
+    "mapToGrid": "Change to grid",
     "mapDeleteIconTitle": "Delete icon",
     "mapDeleteIconBody": "Delete {count} link icon(s) from this folder? This removes the link itself.",
     "shareRole": "Access",

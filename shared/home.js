@@ -2336,7 +2336,7 @@ window.GWHome = (function () {
           ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
           ${mode === "map" ? `<div data-map-host class="h-[72vh] min-h-[420px]"></div>` : grid}
         </div>
-        ${readOnly ? "" : `<div class="mt-4 flex flex-wrap justify-center gap-2">${mode === "map" ? pill("data-grid", "layout-grid", t("home.mapGrid")) : pill("data-map", "git-fork", t("home.mindMap"))}</div>`}`;
+        ${readOnly || mode === "map" ? "" : `<div class="mt-4 flex flex-wrap justify-center gap-2">${pill("data-map", "git-fork", t("home.mindMap"))}</div>`}`;
       document.body.appendChild(wrap);
       refreshIcons();
       let mapCtl = null;
@@ -2352,7 +2352,7 @@ window.GWHome = (function () {
         close();
       };
       document.addEventListener("keydown", onKey);
-      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), canAddLink: canOut, canEditLinks: canOut, canEdit: !readOnly && (mineF || f.share_role === "edit") });
+      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), toGrid: () => (close(), openFolder(fid, "grid")), canAddLink: canOut, canEditLinks: canOut, canEdit: !readOnly && (mineF || f.share_role === "edit") });
       // 长按名字 → 名字原地变成可以打字；按 ✓、Enter 或点别的地方就存，Esc 取消
       if (canRename) {
         const h = $("[data-title]", wrap);
@@ -2493,15 +2493,19 @@ window.GWHome = (function () {
           </div>
           <div data-tools class="${canEdit ? "flex" : "hidden"} w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
             ${hooks.canAddLink ? tool('data-tool="icon"', "link", t("home.mapIcon")) : ""}
-            ${tool('data-add="rect"', "square", t("home.mapAddBox"))}
-            ${tool('data-add="round"', "circle", t("home.mapAddRound"))}
-            ${tool('data-add="diamond"', "diamond", t("home.mapAddDiamond"))}
+            ${tool('data-tool="text"', "type", t("home.mapText"))}
+            <div data-shape-pop class="hidden w-full flex-col gap-0.5 rounded-xl bg-slate-100 p-1 dark:bg-white/10">
+              ${tool('data-add="rect"', "square", t("home.mapAddBox"))}
+              ${tool('data-add="round"', "circle", t("home.mapAddRound"))}
+              ${tool('data-add="diamond"', "diamond", t("home.mapAddDiamond"))}
+            </div>
             ${tool('data-tool="line"', "spline", t("home.mapLine"))}
             ${tool('data-tool="all"', "box-select", t("home.mapSelectAll"))}
             ${tool('data-tool="bullets"', "list", t("home.mapBullets"))}
             <span data-colors class="hidden w-full flex-wrap justify-center gap-1 px-1 py-1">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
             ${tool("data-del", "trash-2", t("home.mapDelete"), "text-red-600 dark:text-red-400")}
             <span data-status class="mt-auto px-1 pb-1 text-center text-[10px] leading-tight text-slate-400"></span>
+            ${tool('data-tool="grid"', "layout-grid", t("home.mapGrid"))}
           </div>
         </div>`;
       const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host), marquee = $("[data-marquee]", host);
@@ -2700,7 +2704,27 @@ window.GWHome = (function () {
         if (!b) return;
         if (b.dataset.pickIcon) return pickLinkIcon(b.dataset.pickIcon);
         if ("linkOk" in b.dataset) return finishLinkEdit();
+        if (b.dataset.tool === "text") {
+          const pop = $("[data-shape-pop]", host);
+          pop.classList.toggle("hidden");
+          pop.classList.toggle("flex", !pop.classList.contains("hidden"));
+          return;
+        }
+        if (b.dataset.tool === "grid") {
+          // 换回格子：心智图的排法会不见，而且不能复原 → 先问
+          return confirmDialog(t("home.mapToGridTitle"), t("home.mapToGridBody"), t("home.mapToGrid"), t("home.cancel")).then(async (ok) => {
+            if (!ok) return;
+            clearTimeout(saveTimer);
+            dirty = false;
+            const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: null });
+            if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
+            f.canvas = null;
+            hooks.toGrid();
+          });
+        }
         if (b.dataset.add) {
+          $("[data-shape-pop]", host).classList.add("hidden");
+          $("[data-shape-pop]", host).classList.remove("flex");
           const shape = b.dataset.add;
           const w = shape === "diamond" ? 144 : 168, h = shape === "diamond" ? 96 : 72;
           // 放在看得到的范围里第一个没被盖到的格子

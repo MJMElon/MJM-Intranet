@@ -69,6 +69,10 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "mapText": "文字",
+    "mapToGridTitle": "换回格子？",
+    "mapToGridBody": "这个文件夹的心智图排法会被删掉，而且不能复原；之后打开就是图示格子。",
+    "mapToGrid": "换回格子",
     "mapDeleteIconTitle": "删除图示",
     "mapDeleteIconBody": "把 {count} 个连结图示从这个文件夹删掉？连结本身也会删除。",
     "shareRole": "权限",

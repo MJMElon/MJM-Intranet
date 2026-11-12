@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
     supabase.from("gw_groups").select("id, name, description, sort_order").order("sort_order").order("name"),
     supabase
       .from("gw_companies")
-      .select("id, code, name, short_name, registration_no, description, is_active, sort_order, opispro_id, has_locations")
+      .select("id, code, name, short_name, registration_no, description, is_active, sort_order, opispro_id, has_locations, billing_address, phone, fax, email")
       .order("sort_order")
       .order("name"),
     supabase.from("gw_business_companies").select("group_id, company_id"),
@@ -37,10 +37,14 @@ Deno.serve(async (req) => {
     supabase.from("gw_profiles").select("id, email, full_name, role, status").eq("status", "active"),
     supabase.from("gw_company_locations").select("id, company_id, location_id, name, is_active, sort_order").order("sort_order"),
   ]);
-  // Database without the 20261129 company columns yet: fall back to the old column list
-  const companies = companies0.error && /opispro_id|has_locations/.test(companies0.error.message ?? "")
-    ? await supabase.from("gw_companies").select("id, code, name, short_name, registration_no, description, is_active, sort_order").order("sort_order").order("name")
+  // Database without the 20261130 billing columns yet (or the 20261129 company
+  // columns): fall back to the older column lists
+  const companies1 = companies0.error && /billing_address|phone|fax|email/.test(companies0.error.message ?? "")
+    ? await supabase.from("gw_companies").select("id, code, name, short_name, registration_no, description, is_active, sort_order, opispro_id, has_locations").order("sort_order").order("name")
     : companies0;
+  const companies = companies1.error && /opispro_id|has_locations/.test(companies1.error.message ?? "")
+    ? await supabase.from("gw_companies").select("id, code, name, short_name, registration_no, description, is_active, sort_order").order("sort_order").order("name")
+    : companies1;
   const failed = [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles].find((r) => r.error);
   if (failed?.error) return json({ error: "query_failed", detail: failed.error.message }, 500);
 
@@ -64,7 +68,8 @@ Deno.serve(async (req) => {
     businesses: businesses.data ?? [],
     companies: companies.data ?? [],
     links: links.data ?? [],
-    // Opispro ID / has_locations come with each company; locations is empty until the 20261129 migration has run
+    // Opispro ID / has_locations and the billing details (billing_address, phone,
+    // fax, email) come with each company; locations is empty until the 20261129 migration has run
     locations: locations.error ? [] : (locations.data ?? []),
     module_company_ids: (tagged.data ?? []).map((r) => r.company_id),
     module_business_ids: (taggedBiz.data ?? []).map((r) => r.group_id),

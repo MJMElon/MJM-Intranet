@@ -445,8 +445,9 @@ window.GW = (function () {
       u.searchParams.set("gw_company", ctx.company);
       if (ctx.company_name && ctx.company_name !== ctx.company) u.searchParams.set("gw_company_name", ctx.company_name);
       if (ctx.company_short) u.searchParams.set("gw_company_short", ctx.company_short);
-      if (ctx.estate) u.searchParams.set("gw_estate", ctx.estate);
-      if (ctx.estate_short) u.searchParams.set("gw_estate_short", ctx.estate_short);
+      if (ctx.opispro) u.searchParams.set("gw_opispro", ctx.opispro);
+      if (ctx.location) u.searchParams.set("gw_location", ctx.location);
+      if (ctx.location_id) u.searchParams.set("gw_location_id", ctx.location_id);
       return u.toString();
     } catch (e) {
       return url;

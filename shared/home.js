@@ -608,10 +608,10 @@ window.GWHome = (function () {
     let sItems = S ? S.items.map((x) => ({ ...x })) : [];
     const expanded = new Map(S ? S.state.map((x) => [x.group_id, !!x.expanded]) : []);
     let companyMenuGid = null; // 打开着 Company 选单的区块
-    let estateMenuGid = null; // 打开着 Estate 选单的区块
-    // 每个区块选的 Estate：记在 Notice Board 小工具的 config.estates
-    const estateSel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.estates || {}));
-    const estatesOf = (cid) => (S && S.estates ? S.estates : []).filter((x) => x.company_id === cid);
+    let estateMenuGid = null; // 打开着 Location 选单的区块
+    // 每个区块选的 Location：记在 Notice Board 小工具的 config.locations
+    const estateSel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.locations || {}));
+    const estatesOf = (cid) => (S && S.locations ? S.locations : []).filter((x) => x.company_id === cid);
     // 每个区块选的 Company（"all" = 全部）：记在 Notice Board 小工具的 config.companies；没选过就用自己在那个 Business 的 Company
     const companySel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companies || {}));
     const companiesOf = (gid) => {
@@ -631,7 +631,7 @@ window.GWHome = (function () {
       const sel = selectedCompany(gid);
       return sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel) || null;
     };
-    // 区块里选的 Estate：公司只有一个（或没有）Estate 就是那一个；多于一个时用选过的，没选过用第一个
+    // 区块里选的 Location：公司只有一个（或没有）Location 就是那一个；多于一个时用选过的，没选过用第一个
     const selectedEstate = (gid) => {
       const c = currentCompany(gid);
       if (!c) return null;
@@ -895,16 +895,16 @@ window.GWHome = (function () {
       </div>`;
     };
 
-    // 区块标题旁边的 Estate 选择（公司有多于一个 Estate 才出现，例如 MJM Plantation 1 / 2 / 3）
+    // 区块标题旁边的 Location 选择（公司有多于一个 Location 才出现）
     const estatePicker = (gid) => {
       const c = currentCompany(gid);
       const list = c ? estatesOf(c.id) : [];
       if (list.length < 2) return "";
       const cur = selectedEstate(gid);
-      const label = cur ? cur.short_name || cur.name : list[0].name;
+      const label = cur ? cur.name : list[0].name;
       const row = (x) => `<button type="button" data-estate-pick="${x.id}" data-gid="${gid}" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"><span class="truncate">${esc(x.name)}</span>${cur && cur.id === x.id ? icon("check", "size-4 text-emerald-600") : ""}</button>`;
       return `<div class="relative min-w-0">
-        <button type="button" data-estate-menu="${gid}" title="${esc(t("home.estate"))}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("map-pin", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
+        <button type="button" data-estate-menu="${gid}" title="${esc(t("home.location"))}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("map-pin", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
         ${estateMenuGid === gid ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-64 w-60 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map(row).join("")}</div>` : ""}
       </div>`;
     };
@@ -3490,7 +3490,7 @@ window.GWHome = (function () {
       const maps = (S.companyMappings || []).filter((x) => x.company_id === c.id);
       const map = maps.find((x) => x.module_id === moduleId) || maps.find((x) => modules.has(x.module_id) && origin(x.module_id) && origin(x.module_id) === origin(moduleId));
       const est = selectedEstate(gid);
-      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "", estate: est ? est.name : "", estate_short: est ? est.short_name || "" : "" };
+      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "", opispro: c.opispro_id || "", location: est ? est.name : "", location_id: est ? est.location_id || "" : "" };
     }
 
     async function open(id, gid) {
@@ -3549,7 +3549,7 @@ window.GWHome = (function () {
           draw();
           const w = board();
           if (!w) return;
-          w.config = { ...(w.config || {}), estates: Object.fromEntries(estateSel) };
+          w.config = { ...(w.config || {}), locations: Object.fromEntries(estateSel) };
           return sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
         }
         if ("companyPick" in d) {

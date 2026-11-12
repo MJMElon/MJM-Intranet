@@ -1155,20 +1155,17 @@
     const sectorRes = await sb.from("gw_sectors").select("*").order("sort_order").order("name");
     const sectorsReady = !sectorRes.error;
     const sectors = sectorsReady ? sectorRes.data || [] : [];
-    const [groups, companies, links, mappings, modules, bizTags, coTags, people, estateRows, locationRows] = await Promise.all([
+    const [groups, companies, links, modules, bizTags, coTags, people, locationRows] = await Promise.all([
       sb.from("gw_groups").select("*").order("sort_order").order("name"),
       sb.from("gw_companies").select("*").order("sort_order").order("name"),
       sb.from("gw_business_companies").select("group_id, company_id, area, area_unit"),
-      sb.from("gw_company_mappings").select("*").order("created_at"),
       sb.from("gw_modules").select("*").eq("kind", "system").order("sort_order").order("name"),
       sb.from("gw_group_modules").select(sectorsReady ? "group_id, module_id, sector_id, lead_user_id" : "group_id, module_id"),
       sb.from("gw_module_companies").select("module_id, company_id"),
       sb.from("gw_profiles").select("id, full_name").eq("status", "active").order("full_name"),
-      sb.from("gw_company_estates").select("*").order("sort_order").order("name"), // 资料库还没更新时就是空的
       sb.from("gw_company_locations").select("*").order("sort_order").order("name"), // 资料库还没更新时就是空的
     ]).then((r) => r.map((x) => x.data || []));
     if (stale(seq)) return;
-    const estates = estateRows; // 每家 Company 的 Estate（没有就是「整家公司一个 Estate」）
     const locations = locationRows; // 每家 Company 的 Location（勾了 has_locations 的公司才有）
 
     const modById = new Map(modules.map((m) => [m.id, m]));
@@ -1456,7 +1453,6 @@
             <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
             <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3"></div>
           </div>
-          ${c ? `<div data-estates></div><div data-maps></div>` : ""}
           <div class="flex justify-between gap-2">
             ${c && canDelCo ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
             <div class="flex gap-2"><button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button><button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button></div>
@@ -1494,7 +1490,7 @@
                     </div>`,
                   )
                   .join("")}</div>`
-              : `<p class="mb-2 text-xs text-slate-500">${esc(tc("locationsHint"))}</p>`
+              : ""
           }
             <div data-loc-err></div>
             <div class="grid gap-2 sm:grid-cols-[9rem_1fr_auto]">
@@ -1532,123 +1528,14 @@
         });
       }
 
-      // Estate（只有已存在的 Company 才能加）：直接在编辑窗里加 / 删；一个都不加 = 整家公司就是一个 Estate
-      if (c) {
-        const ebox = $("[data-estates]", m.el);
-        const drawEstates = () => {
-          const list = estates.filter((x) => x.company_id === c.id);
-          ebox.innerHTML = `<p class="mb-1 ${cls.label}">${esc(tc("estates"))}</p>
-            <p class="mb-1.5 text-xs text-slate-500">${esc(tc("estatesHint"))}</p>
-            ${
-              list.length
-                ? `<div class="mb-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">${list
-                    .map(
-                      (x) => `<div class="flex items-center gap-2 px-3 py-1.5">
-                        <span class="min-w-0 flex-1 truncate"><span class="font-medium">${esc(x.name)}</span>${x.short_name ? ` <span class="text-slate-500">(${esc(x.short_name)})</span>` : ""}${x.area != null ? ` <span class="text-slate-500">· ${esc(String(x.area))} ${esc(x.area_unit || "ha")}</span>` : ""}</span>
-                        <button type="button" data-est-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
-                      </div>`,
-                    )
-                    .join("")}</div>`
-                : ""
-            }
-            <div data-est-err></div>
-            <div class="grid gap-2 sm:grid-cols-[1fr_8rem_7rem_auto]">
-              <input data-est-name maxlength="100" placeholder="${esc(tc("estateName"))}" class="${cls.input}">
-              <input data-est-short maxlength="40" placeholder="${esc(tc("shortName"))}" class="${cls.input}">
-              <input data-est-area type="number" min="0" step="0.01" placeholder="${esc(tc("area"))} (ha)" class="${cls.input}">
-              <button type="button" data-est-add class="${btn("secondary")}">${icon("map-pin")} ${esc(tc("addEstate"))}</button>
-            </div>`;
-          refreshIcons();
-        };
-        drawEstates();
-        ebox.addEventListener("click", async (e) => {
-          const b = e.target.closest("button");
-          if (!b) return;
-          if (b.dataset.estDel) {
-            const { error } = await sb.from("gw_company_estates").delete().eq("id", b.dataset.estDel);
-            if (error) return ($("[data-est-err]", ebox).innerHTML = alertBox(tg("saveFailed")));
-            estates.splice(estates.findIndex((x) => x.id === b.dataset.estDel), 1);
-            return drawEstates();
-          }
-          if ("estAdd" in b.dataset) {
-            const name = $("[data-est-name]", ebox).value.trim();
-            if (!name) return $("[data-est-name]", ebox).focus();
-            const area = $("[data-est-area]", ebox).value;
-            const { data, error } = await sb
-              .from("gw_company_estates")
-              .insert({ company_id: c.id, name, short_name: $("[data-est-short]", ebox).value.trim() || null, area: area === "" ? null : Number(area), sort_order: estates.filter((x) => x.company_id === c.id).length })
-              .select()
-              .single();
-            if (error) return ($("[data-est-err]", ebox).innerHTML = alertBox(error.code === "23505" ? tc("estateDuplicate") : error.code === "42P01" ? tc("estatesNotReady") : tg("saveFailed")));
-            estates.push(data);
-            drawEstates();
-          }
-        });
-      }
-
-      // 对应到现有系统（只有已存在的 Company 才能加）：直接在编辑窗里加 / 删
-      if (c) {
-        const box = $("[data-maps]", m.el);
-        const drawMaps = () => {
-          const maps = mappings.filter((x) => x.company_id === c.id);
-          box.innerHTML = `<p class="mb-1.5 ${cls.label}">${esc(tc("mappings"))}</p>
-            ${
-              maps.length
-                ? `<div class="mb-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">${maps
-                    .map((x) => {
-                      const mod = modById.get(x.module_id);
-                      return `<div class="flex items-center gap-2 px-3 py-1.5">
-                        <span class="min-w-0 flex-1 truncate"><span class="font-medium">${esc(mod ? mod.name : "—")}</span> → <span class="font-mono">${esc(x.external_id)}</span>${x.external_name ? ` <span class="text-slate-500">(${esc(x.external_name)})</span>` : ""}</span>
-                        <button type="button" data-map-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
-                      </div>`;
-                    })
-                    .join("")}</div>`
-                : ""
-            }
-            <div data-map-err></div>
-            ${
-              modules.length
-                ? `<div class="grid gap-2 sm:grid-cols-[1fr_8rem_1fr_auto]">
-                    ${select("map_module", modules.map((x) => [x.id, x.name + " (" + x.code + ")"]), "")}
-                    <input data-map-id maxlength="100" placeholder="${esc(tc("externalId"))}" class="${cls.input} font-mono">
-                    <input data-map-name maxlength="120" placeholder="${esc(tc("externalName"))}" class="${cls.input}">
-                    <button type="button" data-map-add class="${btn("secondary")}">${icon("link-2")} ${esc(tc("addMapping"))}</button>
-                  </div>`
-                : ""
-            }`;
-          refreshIcons();
-        };
-        drawMaps();
-        box.addEventListener("click", async (e) => {
-          const b = e.target.closest("button");
-          if (!b) return;
-          if (b.dataset.mapDel) {
-            const { error } = await sb.from("gw_company_mappings").delete().eq("id", b.dataset.mapDel);
-            if (error) return ($("[data-map-err]", box).innerHTML = alertBox(tg("saveFailed")));
-            mappings.splice(mappings.findIndex((x) => x.id === b.dataset.mapDel), 1);
-            return drawMaps();
-          }
-          if ("mapAdd" in b.dataset) {
-            const ext = $("[data-map-id]", box).value.trim();
-            if (!ext) return $("[data-map-id]", box).focus();
-            const { data, error } = await sb
-              .from("gw_company_mappings")
-              .insert({ company_id: c.id, module_id: $("[name=map_module]", box).value, external_id: ext, external_name: $("[data-map-name]", box).value.trim() || null })
-              .select()
-              .single();
-            if (error) return ($("[data-map-err]", box).innerHTML = alertBox(tc(error.code === "23505" ? "mappingDuplicate" : "saveFailed")));
-            mappings.push(data);
-            drawMaps();
-          }
-        });
-        if ($("[data-del]", m.el)) $("[data-del]", m.el).onclick = async () => {
+      if (c && $("[data-del]", m.el))
+        $("[data-del]", m.el).onclick = async () => {
           if (!(await confirmDialog(tc("deleteTitle"), tc("deleteBody", { name: c.name }), tg("delete"), tg("cancel")))) return;
           const { error } = await sb.from("gw_companies").delete().eq("id", c.id);
           if (error) return ($("[data-err]", m.el).innerHTML = alertBox(tc("inUse")));
           m.close();
           structureTab();
         };
-      }
 
       $("form", m.el).addEventListener("submit", async (e) => {
         e.preventDefault();

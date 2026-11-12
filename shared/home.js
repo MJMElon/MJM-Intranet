@@ -95,9 +95,9 @@ window.GWHome = (function () {
     {
       const ic = ((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements");
       const saved = ic && ic.config && ic.config.icons;
-      // 以前存的「calm」是旧的预设（动过图示颜色就会被存下来）：换成新的白色 glass 一次；之后存的都带 v: 2，照用户选的
-      const oldDefault = saved && saved.v !== 2 && (!saved.style || saved.style === "calm");
-      ICON = { style: oldDefault ? "glass" : (saved && saved.style) || "glass", apps: { ...((saved && saved.apps) || {}) } };
+      // 新设计（白色 glass）之前存的图示设定（任何风格、每个 App 的颜色）都换成 glass 一次；之后存的都带 v: 2，照用户选的
+      const fresh = saved && saved.v === 2;
+      ICON = fresh ? { style: saved.style || "glass", apps: { ...(saved.apps || {}) } } : { style: "glass", apps: {} };
     }
     let folders = data.folders.map((f) => ({ ...f }));
     let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })).filter((w) => !(WIDGETS[w.widget_type] || {}).retired) : [];

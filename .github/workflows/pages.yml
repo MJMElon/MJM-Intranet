@@ -31,6 +31,8 @@ jobs:
       # 样式事先编译（取代浏览器里的 Tailwind），确保发布的 app.css 一定是最新的
       - run: npm ci
       - run: npm run build:css
+      # 每次发布的版本号（commit 前 8 码）：网页引用的 js / css 都带 ?v=…，浏览器才不会一直用旧的
+      - run: grep -rlF "__GW_VERSION__" --include=*.html --include=*.js . | grep -v node_modules | xargs -r sed -i "s/__GW_VERSION__/${GITHUB_SHA::8}/g"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

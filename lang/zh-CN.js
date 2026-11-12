@@ -468,7 +468,7 @@ window.GW_LANG["zh-CN"] = {
       "phone": "电话",
       "fax": "传真",
       "email": "电邮",
-      "billingNotReady": "账单资料需要先更新资料库（20261130 company billing）。",
+      "billingNotReady": "账单资料需要先更新资料库（20261130110000 company billing）。",
       "locationsSaveFirst": "先存公司，再回来这里加 Location。",
       "estates": "Estate",
       "estatesHint": "只有一家公司管好几个 Estate 时才要加（例如 MJM Plantation 1、2、3）。每个 Estate 在主画面有自己的下拉、有自己的报表。公司本身就是一个 Estate 的话留空。",

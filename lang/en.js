@@ -468,7 +468,7 @@ window.GW_LANG["en"] = {
       "phone": "Tel",
       "fax": "Fax",
       "email": "Email",
-      "billingNotReady": "Billing details need the database update (20261130 company billing) first.",
+      "billingNotReady": "Billing details need the database update (20261130110000 company billing) first.",
       "locationsSaveFirst": "Save the company first, then add its locations here.",
       "estates": "Estates",
       "estatesHint": "Only for a company that runs more than one estate (e.g. MJM Plantation 1, 2, 3). Each estate gets its own dropdown on the home page and its own report. Leave empty when the company is one estate.",

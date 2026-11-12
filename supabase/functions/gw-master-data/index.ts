@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     supabase.from("gw_profiles").select("id, email, full_name, role, status").eq("status", "active"),
     supabase.from("gw_company_locations").select("id, company_id, location_id, name, is_active, sort_order").order("sort_order"),
   ]);
-  // Database without the 20261130 billing columns yet (or the 20261129 company
+  // Database without the 20261130110000 billing columns yet (or the 20261129 company
   // columns): fall back to the older column lists
   const companies1 = companies0.error && /billing_address|phone|fax|email/.test(companies0.error.message ?? "")
     ? await supabase.from("gw_companies").select("id, code, name, short_name, registration_no, description, is_active, sort_order, opispro_id, has_locations").order("sort_order").order("name")

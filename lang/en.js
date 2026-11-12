@@ -34,8 +34,6 @@ window.GW_LANG["en"] = {
     "forgot": "Forgot password?",
     "errors": {
       "invalid": "Incorrect email or password.",
-      "invalidRemaining": "Incorrect email or password. {remaining} more attempts before the account is locked for 15 minutes.",
-      "locked": "Too many failed attempts. The account is locked. Try again in {minutes} minutes.",
       "disabled": "This account has been disabled. Please contact your administrator.",
       "noAccess": "This account does not have Gateway access yet. Please contact your administrator.",
       "unknown": "Sign-in failed. Please try again later.",
@@ -455,6 +453,16 @@ window.GW_LANG["en"] = {
       "notReady": "The database has not been updated for sectors yet."
     },
     "company": {
+      "opisproId": "Opispro company ID",
+      "opisproHint": "The company's ID in Opispro, used to link to the old system.",
+      "hasLocations": "This company has locations",
+      "locationsHint": "Add each location with its Location ID. A company can have just one.",
+      "locationId": "Location ID",
+      "locationName": "Location name",
+      "addLocation": "Add location",
+      "locationDuplicate": "That Location ID or name already exists for this company.",
+      "locationsNotReady": "Locations and the Opispro ID need the database update (20261129 company locations) first.",
+      "locationsSaveFirst": "Save the company first, then add its locations here.",
       "estates": "Estates",
       "estatesHint": "Only for a company that runs more than one estate (e.g. MJM Plantation 1, 2, 3). Each estate gets its own dropdown on the home page and its own report. Leave empty when the company is one estate.",
       "estateName": "Estate name",

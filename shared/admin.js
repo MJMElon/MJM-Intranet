@@ -1155,7 +1155,7 @@
     const sectorRes = await sb.from("gw_sectors").select("*").order("sort_order").order("name");
     const sectorsReady = !sectorRes.error;
     const sectors = sectorsReady ? sectorRes.data || [] : [];
-    const [groups, companies, links, mappings, modules, bizTags, coTags, people, estateRows] = await Promise.all([
+    const [groups, companies, links, mappings, modules, bizTags, coTags, people, estateRows, locationRows] = await Promise.all([
       sb.from("gw_groups").select("*").order("sort_order").order("name"),
       sb.from("gw_companies").select("*").order("sort_order").order("name"),
       sb.from("gw_business_companies").select("group_id, company_id, area, area_unit"),
@@ -1165,9 +1165,11 @@
       sb.from("gw_module_companies").select("module_id, company_id"),
       sb.from("gw_profiles").select("id, full_name").eq("status", "active").order("full_name"),
       sb.from("gw_company_estates").select("*").order("sort_order").order("name"), // 资料库还没更新时就是空的
+      sb.from("gw_company_locations").select("*").order("sort_order").order("name"), // 资料库还没更新时就是空的
     ]).then((r) => r.map((x) => x.data || []));
     if (stale(seq)) return;
     const estates = estateRows; // 每家 Company 的 Estate（没有就是「整家公司一个 Estate」）
+    const locations = locationRows; // 每家 Company 的 Location（勾了 has_locations 的公司才有）
 
     const modById = new Map(modules.map((m) => [m.id, m]));
     const coById = new Map(companies.map((c) => [c.id, c]));
@@ -1411,7 +1413,7 @@
 
     // ---------------------------------------------------------- Company 新增 / 修改（含属于哪些 Business、面积、对应到现有系统）
     function companyDialog(c, presetGroupId) {
-      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "" };
+      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false };
       const mine = c ? linksOf(c.id) : [];
       const link = (gid) => mine.find((l) => l.group_id === gid);
       const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
@@ -1447,7 +1449,12 @@
             ${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}
             ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
             ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
+            ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`, tc("opisproHint"))}
             ${field(tc("descriptionLabel"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+          </div>
+          <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
+            <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3"></div>
           </div>
           ${c ? `<div data-estates></div><div data-maps></div>` : ""}
           <div class="flex justify-between gap-2">
@@ -1469,6 +1476,61 @@
         box.classList.toggle("flex", b.checked);
         if (b.checked) $("input[data-area]", box).focus();
       });
+
+      // Location（勾了「有 Location」才出现；只有已存在的 Company 才能加）：Location ID + 名称，直接加 / 删
+      {
+        const lbox = $("[data-locations]", m.el);
+        const drawLocations = () => {
+          if (!c) return (lbox.innerHTML = `<p class="text-xs text-slate-500">${esc(tc("locationsSaveFirst"))}</p>`);
+          const list = locations.filter((x) => x.company_id === c.id);
+          lbox.innerHTML = `${
+            list.length
+              ? `<div class="mb-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">${list
+                  .map(
+                    (x) => `<div class="flex items-center gap-2 px-3 py-1.5">
+                      <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(x.location_id)}</span>
+                      <span class="min-w-0 flex-1 truncate font-medium">${esc(x.name)}</span>
+                      <button type="button" data-loc-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
+                    </div>`,
+                  )
+                  .join("")}</div>`
+              : `<p class="mb-2 text-xs text-slate-500">${esc(tc("locationsHint"))}</p>`
+          }
+            <div data-loc-err></div>
+            <div class="grid gap-2 sm:grid-cols-[9rem_1fr_auto]">
+              <input data-loc-id maxlength="40" placeholder="${esc(tc("locationId"))}" class="${cls.input} font-mono">
+              <input data-loc-name maxlength="100" placeholder="${esc(tc("locationName"))}" class="${cls.input}">
+              <button type="button" data-loc-add class="${btn("secondary")}">${icon("map-pin")} ${esc(tc("addLocation"))}</button>
+            </div>`;
+          refreshIcons();
+        };
+        drawLocations();
+        $("[name=has_locations]", m.el).addEventListener("change", (e) => lbox.classList.toggle("hidden", !e.target.checked));
+        lbox.addEventListener("click", async (e) => {
+          const b = e.target.closest("button");
+          if (!b || !c) return;
+          if (b.dataset.locDel) {
+            const { error } = await sb.from("gw_company_locations").delete().eq("id", b.dataset.locDel);
+            if (error) return ($("[data-loc-err]", lbox).innerHTML = alertBox(tg("saveFailed")));
+            locations.splice(locations.findIndex((x) => x.id === b.dataset.locDel), 1);
+            return drawLocations();
+          }
+          if ("locAdd" in b.dataset) {
+            const location_id = $("[data-loc-id]", lbox).value.trim();
+            const name = $("[data-loc-name]", lbox).value.trim();
+            if (!location_id) return $("[data-loc-id]", lbox).focus();
+            if (!name) return $("[data-loc-name]", lbox).focus();
+            const { data, error } = await sb
+              .from("gw_company_locations")
+              .insert({ company_id: c.id, location_id, name, sort_order: locations.filter((x) => x.company_id === c.id).length })
+              .select()
+              .single();
+            if (error) return ($("[data-loc-err]", lbox).innerHTML = alertBox(error.code === "23505" ? tc("locationDuplicate") : error.code === "42P01" ? tc("locationsNotReady") : tg("saveFailed")));
+            locations.push(data);
+            drawLocations();
+          }
+        });
+      }
 
       // Estate（只有已存在的 Company 才能加）：直接在编辑窗里加 / 删；一个都不加 = 整家公司就是一个 Estate
       if (c) {
@@ -1600,8 +1662,10 @@
           short_name: f.short_name.value.trim() || null,
           registration_no: f.registration_no.value.trim() || null,
           description: f.description.value.trim() || null,
+          opispro_id: f.opispro_id.value.trim() || null,
+          has_locations: f.has_locations.checked,
         };
-        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(tc(error.code === "23505" ? "duplicate" : error.code === "23514" ? "badCode" : "saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
+        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /opispro_id|has_locations/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
         const saved = c ? await sb.from("gw_companies").update(row).eq("id", c.id).select().single() : await sb.from("gw_companies").insert({ ...row, sort_order: companies.length }).select().single();
         if (saved.error) return fail(saved.error);
         const id = saved.data.id;

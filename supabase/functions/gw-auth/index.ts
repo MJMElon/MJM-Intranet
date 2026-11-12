@@ -6,7 +6,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, getCaller, json, logEvent, serviceClient } from "../_shared/gw.ts";
 
-const minutesUntil = (iso: string) => Math.max(1, Math.ceil((new Date(iso).getTime() - Date.now()) / 60000));
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -19,9 +18,6 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? "");
     if (!email || !password) return json({ error: "invalid" });
 
-    const { data: lockedUntil } = await admin.rpc("gw_login_locked_until", { p_email: email });
-    if (lockedUntil) return json({ error: "locked", minutes: minutesUntil(lockedUntil) });
-
     const auth = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -29,13 +25,10 @@ Deno.serve(async (req) => {
 
     if (error || !data.session) {
       if (error?.code === "user_banned") return json({ error: "disabled" });
-      const { data: result } = await admin.rpc("gw_login_failed", { p_email: email });
+      // 密码打错只记一笔，不锁帐号（没有 15 分钟冷却）
+      await admin.rpc("gw_login_failed", { p_email: email });
       await logEvent(null, "auth.login_failed", "auth", null, email);
-      if (result?.locked_until) {
-        await logEvent(null, "auth.locked", "auth", null, email, { minutes: 15 });
-        return json({ error: "locked", minutes: 15 });
-      }
-      return json({ error: "invalid", remaining: result?.remaining });
+      return json({ error: "invalid" });
     }
 
     await admin.rpc("gw_login_succeeded", { p_email: email });

@@ -128,9 +128,7 @@ function showLogin(errorText) {
     }
     const err = (r && r.error) || "unknown";
     const msg =
-      err === "invalid" && r.remaining != null ? t("login.errors.invalidRemaining", { remaining: r.remaining })
-      : err === "invalid" ? t("login.errors.invalid")
-      : err === "locked" ? t("login.errors.locked", { minutes: r.minutes || 15 })
+      err === "invalid" ? t("login.errors.invalid")
       : err === "disabled" ? t("login.errors.disabled")
       : err === "no_access" ? t("login.errors.noAccess")
       : t("login.errors.unknown");

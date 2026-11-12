@@ -34,8 +34,6 @@ window.GW_LANG["zh-CN"] = {
     "forgot": "忘记密码？",
     "errors": {
       "invalid": "Email 或密码错误。",
-      "invalidRemaining": "Email 或密码错误。再错 {remaining} 次将锁定 15 分钟。",
-      "locked": "错误次数太多，帐号已暂时锁定。请在 {minutes} 分钟后再试。",
       "disabled": "此帐号已停用，请联系管理员。",
       "noAccess": "此帐号尚未开通 Gateway，请联系管理员。",
       "unknown": "登录失败，请稍后再试。",
@@ -455,6 +453,16 @@ window.GW_LANG["zh-CN"] = {
       "notReady": "数据库还没更新到支持 Sector。"
     },
     "company": {
+      "opisproId": "Opispro 公司编号",
+      "opisproHint": "这家公司在 Opispro 的编号，之后接旧系统用。",
+      "hasLocations": "这家公司有 Location",
+      "locationsHint": "每个 Location 都要有自己的 Location ID。一家公司只加一个也可以。",
+      "locationId": "Location ID",
+      "locationName": "Location 名称",
+      "addLocation": "新增 Location",
+      "locationDuplicate": "这家公司已经有同样的 Location ID 或名称。",
+      "locationsNotReady": "Location 和 Opispro 编号需要先更新资料库（20261129 company locations）。",
+      "locationsSaveFirst": "先存公司，再回来这里加 Location。",
       "estates": "Estate",
       "estatesHint": "只有一家公司管好几个 Estate 时才要加（例如 MJM Plantation 1、2、3）。每个 Estate 在主画面有自己的下拉、有自己的报表。公司本身就是一个 Estate 的话留空。",
       "estateName": "Estate 名称",

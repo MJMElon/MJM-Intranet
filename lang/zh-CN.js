@@ -659,6 +659,7 @@ window.GW_LANG["zh-CN"] = {
       "save": "保存"
     },
     "modules": {
+      "removeBusinessBody": "把「{module}」从 {business} 拿掉？{business} 的人都会看不到这个图示，要再加回来并按 Save 才会恢复。",
       "searchName": "搜寻姓名…",
       "editTitleNamed": "编辑「{name}」模块",
       "removeBusiness": "从这个 Business 移除",

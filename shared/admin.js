@@ -1805,11 +1805,16 @@
           m.close();
           structureTab();
         };
-      m.el.addEventListener("click", (e) => {
+      m.el.addEventListener("click", async (e) => {
         if (!e.target.closest("[data-lead-box]")) hideLeadLists();
         const b = e.target.closest("button[type=button]");
         if (!b || !bizArea || !bizArea.contains(b)) return;
         const d = b.dataset;
+        // 从 Business 拿掉模块：那个 Business 的人都会看不到这个图示 → 先问一下
+        if (d.bizOff) {
+          const g = groups.find((x) => x.id === d.bizOff);
+          if (!(await confirmDialog(tmod("removeBusiness"), tmod("removeBusinessBody", { module: mod.name, business: g ? g.name : "" }), tmod("removeBusiness"), tg("cancel")))) return;
+        }
         if (d.leadPick) {
           const [gid, uid] = d.leadPick.split(":");
           leadOf.set(gid, uid);

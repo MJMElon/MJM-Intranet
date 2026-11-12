@@ -1418,6 +1418,15 @@
       const link = (gid) => mine.find((l) => l.group_id === gid);
       const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
       const myLocs = c ? locations.filter((x) => x.company_id === c.id) : [];
+      // 还没分 Business 的旧 Location：先放在第一个勾的 Business 底下（按 Save 就记下来）
+      const firstBiz = (groups.find((g) => ticked(g.id)) || {}).id;
+      const locsOf = (gid) => myLocs.filter((x) => x.group_id === gid || (!x.group_id && gid === firstBiz));
+      const locBlock = (g) => `<div data-loc-biz="${g.id}" class="${ticked(g.id) ? "" : "hidden"} rounded-lg bg-slate-50 p-2.5 dark:bg-white/5">
+          <p class="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${esc(g.name)}</p>
+          <div class="mb-1 grid grid-cols-[9rem_1fr_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span class="w-8"></span></div>
+          <div data-loc-rows class="space-y-2">${(locsOf(g.id).length ? locsOf(g.id) : [null]).map(locRow).join("")}</div>
+          <button type="button" data-loc-row-add="${g.id}" class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">${icon("plus", "size-3.5")} ${esc(tc("addRow"))}</button>
+        </div>`;
       const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[9rem_1fr_auto] items-center gap-2">
           <input data-loc-id maxlength="40" value="${esc(x ? x.location_id || "" : "")}" placeholder="${esc(tc("opisproLocationId"))}" class="${cls.input} font-mono">
           <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" placeholder="${esc(tc("locationName"))}" class="${cls.input}">
@@ -1475,10 +1484,9 @@
           </div>
           <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
             <label class="flex cursor-pointer items-center gap-2 text-sm font-semibold"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
-            <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3">
-              <div class="mb-1 grid grid-cols-[9rem_1fr_auto] gap-2 text-xs font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span class="w-8"></span></div>
-              <div data-loc-rows class="space-y-2">${(myLocs.length ? myLocs : [null]).map(locRow).join("")}</div>
-              <button type="button" data-loc-row-add class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">${icon("plus", "size-3.5")} ${esc(tc("addRow"))}</button>
+            <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3 space-y-2.5">
+              ${groups.map(locBlock).join("")}
+              <p data-loc-nobiz class="${groups.some((g) => ticked(g.id)) ? "hidden" : ""} text-xs text-slate-500">${esc(tc("locationsTickBusiness"))}</p>
             </div>
           </div>
           <div class="flex justify-between gap-2">
@@ -1502,14 +1510,16 @@
           return;
         }
         if ("locRowAdd" in b.dataset) {
-          $("[data-loc-rows]", m.el).insertAdjacentHTML("beforeend", locRow(null));
+          const host = $(`[data-loc-biz="${b.dataset.locRowAdd}"] [data-loc-rows]`, m.el);
+          host.insertAdjacentHTML("beforeend", locRow(null));
           refreshIcons();
-          const rows = $$("[data-loc-row]", m.el);
+          const rows = $$("[data-loc-row]", host);
           return $("[data-loc-id]", rows[rows.length - 1]).focus();
         }
         if ("locRowDel" in b.dataset) {
+          const host = b.closest("[data-loc-rows]");
           b.closest("[data-loc-row]").remove();
-          if (!$("[data-loc-row]", m.el)) $("[data-loc-rows]", m.el).insertAdjacentHTML("beforeend", locRow(null));
+          if (!$("[data-loc-row]", host)) host.insertAdjacentHTML("beforeend", locRow(null));
           refreshIcons();
         }
       });
@@ -1521,6 +1531,10 @@
         const box = $(`[data-area-box="${b.dataset.biz}"]`, m.el);
         box.classList.toggle("hidden", !b.checked);
         box.classList.toggle("flex", b.checked);
+        // 这个 Business 的 Location 表也跟着出现 / 收起
+        const lb = $(`[data-loc-biz="${b.dataset.biz}"]`, m.el);
+        if (lb) lb.classList.toggle("hidden", !b.checked);
+        $("[data-loc-nobiz]", m.el).classList.toggle("hidden", $$("input[data-biz]", m.el).some((x) => x.checked));
         if (b.checked) $("input[data-area]", box).focus();
       });
 
@@ -1537,12 +1551,16 @@
         e.preventDefault();
         const f = e.target;
         const submit = $("button[type=submit]", f);
-        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "loc-dup" ? tc("locationDuplicate") : error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations|gw_company_locations/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
+        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "loc-dup" ? tc("locationDuplicate") : error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations|gw_company_locations|group_id/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
         // Location 列：两栏都要填（整行空白的略过）
         const hasLoc = f.has_locations.checked;
+        // 只收勾着的 Business 底下的 Location
         const locRows = hasLoc
-          ? $$("[data-loc-row]", f)
-              .map((r) => ({ id: r.dataset.locRowid || null, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim() }))
+          ? $$("[data-loc-biz]", f)
+              .filter((bx) => !bx.classList.contains("hidden"))
+              .flatMap((bx) =>
+                $$("[data-loc-row]", bx).map((r) => ({ id: r.dataset.locRowid || null, group_id: bx.dataset.locBiz, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim() })),
+              )
               .filter((r) => r.location_id || r.name)
           : [];
         if (locRows.some((r) => !r.name)) return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
@@ -1587,12 +1605,12 @@
         // Location：画面上有的新增 / 更新，画面上没有的（或整段没勾）删掉
         const keepIds = new Set(locRows.filter((r) => r.id).map((r) => r.id));
         const gone = myLocs.filter((x) => !keepIds.has(x.id)).map((x) => x.id);
-        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, location_id: r.location_id || null, name: r.name, sort_order: myLocs.length + i }));
-        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && ((x.location_id || "") !== r.location_id || x.name !== r.name)));
+        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, group_id: r.group_id, location_id: r.location_id || null, name: r.name, sort_order: myLocs.length + i }));
+        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && ((x.location_id || "") !== r.location_id || x.name !== r.name || x.group_id !== r.group_id)));
         const ops = [];
         if (gone.length) ops.push(sb.from("gw_company_locations").delete().in("id", gone));
         if (adds.length) ops.push(sb.from("gw_company_locations").insert(adds));
-        edits.forEach((r) => ops.push(sb.from("gw_company_locations").update({ location_id: r.location_id || null, name: r.name }).eq("id", r.id)));
+        edits.forEach((r) => ops.push(sb.from("gw_company_locations").update({ group_id: r.group_id, location_id: r.location_id || null, name: r.name }).eq("id", r.id)));
         const bad = (await Promise.all(ops)).find((r) => r.error);
         if (bad) return fail(bad.error.code === "23505" ? { code: "loc-dup" } : bad.error);
         m.close();

@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
     supabase.from("gw_module_members").select("user_id, group_id, is_admin").eq("module_id", module.id),
     supabase.from("gw_group_members").select("user_id, group_id"),
     supabase.from("gw_profiles").select("id, email, full_name, role, status").eq("status", "active"),
-    supabase.from("gw_company_locations").select("id, company_id, location_id, name, is_active, sort_order").order("sort_order"),
+    supabase.from("gw_company_locations").select("*").order("sort_order"),
   ]);
   // Database without the 20261130110000 billing columns yet (or the 20261129 company
   // columns): fall back to the older column lists

@@ -454,6 +454,7 @@ window.GW_LANG["en"] = {
       "notReady": "The database has not been updated for sectors yet."
     },
     "company": {
+      "locationsTickBusiness": "Tick a business above first; each business has its own locations.",
       "remark": "Remark",
       "opisproLocationId": "Opispro Location ID",
       "addRow": "Add row",

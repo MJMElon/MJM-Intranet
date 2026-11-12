@@ -622,7 +622,7 @@ window.GWHome = (function () {
     let estateMenuGid = null; // 打开着 Location 选单的区块
     // 每个区块选的 Location：记在 Notice Board 小工具的 config.locations
     const estateSel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.locations || {}));
-    const estatesOf = (cid) => (S && S.locations ? S.locations : []).filter((x) => x.company_id === cid);
+    const estatesOf = (cid, gid) => (S && S.locations ? S.locations : []).filter((x) => x.company_id === cid && (!x.group_id || x.group_id === gid));
     // 每个区块选的 Company（"all" = 全部）：记在 Notice Board 小工具的 config.companies；没选过就用自己在那个 Business 的 Company
     const companySel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companies || {}));
     const companiesOf = (gid) => {
@@ -646,7 +646,7 @@ window.GWHome = (function () {
     const selectedEstate = (gid) => {
       const c = currentCompany(gid);
       if (!c) return null;
-      const list = estatesOf(c.id);
+      const list = estatesOf(c.id, gid);
       if (list.length < 2) return list[0] || null;
       const v = estateSel.get(gid);
       return list.find((x) => x.id === v) || list[0];
@@ -909,7 +909,7 @@ window.GWHome = (function () {
     // 区块标题旁边的 Location 选择（公司有多于一个 Location 才出现）
     const estatePicker = (gid) => {
       const c = currentCompany(gid);
-      const list = c ? estatesOf(c.id) : [];
+      const list = c ? estatesOf(c.id, gid) : [];
       if (list.length < 2) return "";
       const cur = selectedEstate(gid);
       const label = cur ? cur.name : list[0].name;

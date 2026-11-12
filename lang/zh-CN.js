@@ -454,6 +454,7 @@ window.GW_LANG["zh-CN"] = {
       "notReady": "数据库还没更新到支持 Sector。"
     },
     "company": {
+      "locationsTickBusiness": "先在上面勾 Business；每个 Business 有自己的 Location。",
       "remark": "备注",
       "opisproLocationId": "Opispro Location ID",
       "addRow": "新增一行",

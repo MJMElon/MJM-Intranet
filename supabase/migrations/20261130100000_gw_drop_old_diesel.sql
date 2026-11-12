@@ -5,7 +5,7 @@
 -- =====================================================================
 -- 清掉旧的 Diesel Claims（已经搬到 CMMS 2 / Machinery Portal 自己的资料库）
 --  先看第 1 段的数量；确定不要这些旧资料了，再把第 2 段前面的 /* */ 拿掉执行。
---  这会删掉：diesel_* 六张表、它们的函数和 RLS、收据的 storage bucket（diesel-receipts）。
+--  这会删掉：diesel_* 六张表、它们的函数和 RLS。收据的 storage bucket 要在 Storage 画面手动删。
 --  删掉就不能复原：要留底的话，先在 Table Editor 把每张表 Export 成 CSV。
 -- =====================================================================
 
@@ -33,7 +33,6 @@ drop function if exists public.diesel_can_claim() cascade;
 drop function if exists public.diesel_can_report() cascade;
 drop function if exists public.diesel_people() cascade;
 drop function if exists public.diesel_claims_guard() cascade;
-delete from storage.objects where bucket_id = 'diesel-receipts';
-delete from storage.buckets where id = 'diesel-receipts';
-select 'old diesel removed' as done;
+select 'old diesel tables removed' as done;
+-- 收据的 storage bucket（diesel-receipts）不能用 SQL 删：到 Supabase → Storage，把档案全选删掉，再删 bucket。
 */

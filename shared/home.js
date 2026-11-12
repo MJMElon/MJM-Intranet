@@ -9,7 +9,7 @@ window.GWHome = (function () {
   const { sb, t, esc, $, $$, icon, moduleIcon, cls, btn, modal, confirmDialog, toast, openModule, refreshIcons } = GW;
 
   /* App 图标底色。每个人可以自己选（记在 Notice Board 小工具的 config.icons，不用改数据库）：
-       style：calm（预设，柔和低调）/ colorful（原本的多彩）/ 或固定一个颜色（全部图示同一个颜色）
+       style：glass（预设，白色毛玻璃，像 iPhone 锁定画面的按钮）/ calm（柔和低调）/ colorful（原本的多彩）/ 或固定一个颜色（全部图示同一个颜色）
        apps：个别 App 自己指定的颜色（优先） */
   const PALETTE = {
     slate: ["from-slate-400 to-slate-600", "#64748b"],
@@ -33,16 +33,22 @@ window.GWHome = (function () {
   ];
   // 预设「calm」：低饱和的几个蓝灰色调
   const CALM = ["from-slate-400 to-slate-600", "from-sky-400 to-sky-600", "from-slate-500 to-slate-700", "from-teal-400 to-teal-600", "from-indigo-300 to-indigo-500"];
-  let ICON = { style: "calm", apps: {} };
+  let ICON = { style: "glass", apps: {} };
   const hashOf = (code) => [...String(code)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  // 渐层色的 class；白色（glass）风格而且没有自己选颜色时回 null
   const tileColor = (code, id, color) => {
     if (color && PALETTE[color]) return PALETTE[color][0]; // 连结自己选的颜色
     const own = id && ICON.apps[id];
     if (own && PALETTE[own]) return PALETTE[own][0];
     if (PALETTE[ICON.style]) return PALETTE[ICON.style][0];
+    if (ICON.style === "glass") return null;
     const list = ICON.style === "colorful" ? COLORFUL : CALM;
     return list[hashOf(code) % list.length];
   };
+  // 文件夹里的小方块一定要有颜色
+  const miniColor = (code, id, color) => tileColor(code, id, color) || "from-slate-300 to-slate-500";
+  // 白色毛玻璃图示（预设）：白底、细边、深色符号
+  const GLASS = "gw-icon-glass border border-white/80 bg-white/75 text-slate-700 backdrop-blur-md dark:border-white/15 dark:bg-white/15 dark:text-white";
 
   // 小工具种类与可选大小
   const WIDGETS = {
@@ -89,7 +95,7 @@ window.GWHome = (function () {
     {
       const ic = ((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements");
       const saved = ic && ic.config && ic.config.icons;
-      ICON = { style: (saved && saved.style) || "calm", apps: { ...((saved && saved.apps) || {}) } };
+      ICON = { style: (saved && saved.style) || "glass", apps: { ...((saved && saved.apps) || {}) } };
     }
     let folders = data.folders.map((f) => ({ ...f }));
     let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })).filter((w) => !(WIDGETS[w.widget_type] || {}).retired) : [];
@@ -314,8 +320,11 @@ window.GWHome = (function () {
     function appIcon(m, size) {
       if (m.image_url)
         return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} overflow-hidden rounded-[26%] bg-white"><img src="${esc(m.image_url)}" alt="" class="size-full object-cover">${newDot(m)}</span>`;
-      return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} items-center justify-center rounded-[26%] bg-gradient-to-br ${tileColor(m.code, m.id, m.color)} text-white">
-        ${m.icon === "link" ? icon("link", "size-7 sm:size-8") : moduleIcon(m.icon, "size-7 sm:size-8")}${newDot(m)}
+      const grad = tileColor(m.code, m.id, m.color);
+      const skin = grad ? `bg-gradient-to-br ${grad} text-white` : GLASS;
+      const sym = size ? "size-[46%]" : "size-6 sm:size-7";
+      return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} items-center justify-center rounded-[26%] ${skin}">
+        ${m.icon === "link" ? icon("link", sym) : moduleIcon(m.icon, sym)}${newDot(m)}
       </span>`;
     }
 
@@ -344,8 +353,8 @@ window.GWHome = (function () {
     function folderTile(f) {
       const ids = folderApps(f.id);
       const minis = [
-        ...ids.map((id) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${tileColor(modules.get(id).code, id)}"></span>`),
-        ...folderLinks(f.id).map((l) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${tileColor(l.name)}"></span>`),
+        ...ids.map((id) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${miniColor(modules.get(id).code, id)}"></span>`),
+        ...folderLinks(f.id).map((l) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${miniColor(l.name)}"></span>`),
       ].slice(0, 9).join("");
       return `<div data-kind="folder" data-id="${f.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-folder="${f.id}" class="flex flex-col items-center gap-1.5">
@@ -797,7 +806,7 @@ window.GWHome = (function () {
     const cellCss = (p) => `grid-column:${p.c + 1} / span ${p.w};grid-row:${p.r + 1} / span ${p.h}`;
     const folderIcon = (minis) => `<span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>`;
     function cellTile({ key, kind, p, btnAttr, iconHtml, label, title, badges }) {
-      return `<div data-key="${key}" data-kind="${kind}" style="${cellCss(p)}" class="gw-item relative flex flex-col items-center justify-center ${editing ? "touch-none" : ""}">
+      return `<div data-key="${key}" data-kind="${kind}" style="${cellCss(p)}" class="gw-item relative flex flex-col items-center justify-start pt-2.5 sm:pt-3 ${editing ? "touch-none" : ""}">
         <button type="button" ${btnAttr} class="flex flex-col items-center gap-1.5" ${title ? `title="${esc(title)}"` : ""}>${iconHtml}<span class="${LABEL}">${esc(label)}</span></button>${editing ? badges || "" : ""}</div>`;
     }
     // Business 区块里的一个东西
@@ -808,7 +817,7 @@ window.GWHome = (function () {
       }
       const del = badge(`data-del-item="${it.id}"`, "minus", t("home.delete"), BADGE_L);
       if (it.kind === "folder") {
-        const minis = folderKids(it.id).slice(0, 9).map((k) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${tileColor(modules.get(k.module_id).code, k.module_id)}"></span>`).join("");
+        const minis = folderKids(it.id).slice(0, 9).map((k) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${miniColor(modules.get(k.module_id).code, k.module_id)}"></span>`).join("");
         return cellTile({ key: it.id, kind: "folder", p, btnAttr: `data-open-folder="${it.id}"`, iconHtml: folderIcon(minis), label: it.name || "", badges: del });
       }
       // 便条（占两格宽）
@@ -830,7 +839,7 @@ window.GWHome = (function () {
       }
       if (it.kind === "folder") {
         const f = folders.find((x) => x.id === it.id);
-        const minis = [...folderApps(f.id).map((id) => tileColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => tileColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
+        const minis = [...folderApps(f.id).map((id) => miniColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => miniColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
         const shared = f.is_shared || f.shared_by;
         const iconHtml = shared ? `<span class="relative">${folderIcon(minis)}<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-sky-500 text-white ring-2 ring-white dark:ring-slate-900">${icon("users", "size-3")}</span></span>` : folderIcon(minis);
         return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
@@ -978,7 +987,7 @@ window.GWHome = (function () {
     const LONG_PRESS = 500;
     root.addEventListener("pointerdown", (e) => {
       if (!sectionsOn || editing || e.button !== 0) return;
-      const el = e.target.closest(".gw-item, [data-fw], [data-box]");
+      const el = e.target.closest(".gw-item, .gw-pinned, [data-fw], [data-box]");
       if (!el || e.target.closest("input, textarea, select, a, [data-company-menu], [data-estate-menu], [data-mode], .gw-sheet, .sec-grip")) return; // 握把直接拖区块，不算长按
       lp = { x: e.clientX, y: e.clientY, id: e.pointerId };
       lp.timer = setTimeout(() => {
@@ -3177,7 +3186,7 @@ window.GWHome = (function () {
           <div>
             <p class="mb-2 ${cls.label}">${esc(t("home.iconAll"))}</p>
             <div class="flex flex-wrap items-center gap-2">
-              ${styleBtn("calm", t("home.iconCalm"), ICON.style === "calm")}${styleBtn("colorful", t("home.iconColorful"), ICON.style === "colorful")}
+              ${styleBtn("glass", t("home.iconGlass"), ICON.style === "glass")}${styleBtn("calm", t("home.iconCalm"), ICON.style === "calm")}${styleBtn("colorful", t("home.iconColorful"), ICON.style === "colorful")}
               <span class="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700"></span>
               ${Object.keys(PALETTE).map((k) => swatch(k, ICON.style === k, `data-ic-style="${k}"`, t("home.color." + k))).join("")}
             </div>

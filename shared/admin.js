@@ -1413,7 +1413,7 @@
 
     // ---------------------------------------------------------- Company 新增 / 修改（含属于哪些 Business、面积、对应到现有系统）
     function companyDialog(c, presetGroupId) {
-      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false };
+      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false, billing_address: "", phone: "", fax: "", email: "" };
       const mine = c ? linksOf(c.id) : [];
       const link = (gid) => mine.find((l) => l.group_id === gid);
       const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
@@ -1451,6 +1451,16 @@
             ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
             ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`, tc("opisproHint"))}
             ${field(tc("descriptionLabel"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+          </div>
+          <div class="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <p class="text-sm font-medium">${esc(tc("billing"))}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">${esc(tc("billingHint"))}</p>
+            ${field(tc("billingAddress"), `<textarea name="billing_address" rows="2" maxlength="400" class="${cls.input} h-auto py-2">${esc(v.billing_address || "")}</textarea>`)}
+            <div class="grid gap-3 sm:grid-cols-3">
+              ${field(tc("phone"), `<input name="phone" maxlength="60" value="${esc(v.phone || "")}" class="${cls.input}">`)}
+              ${field(tc("fax"), `<input name="fax" maxlength="60" value="${esc(v.fax || "")}" class="${cls.input}">`)}
+              ${field(tc("email"), `<input name="email" type="email" maxlength="120" value="${esc(v.email || "")}" class="${cls.input}">`)}
+            </div>
           </div>
           <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
             <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
@@ -1664,8 +1674,12 @@
           description: f.description.value.trim() || null,
           opispro_id: f.opispro_id.value.trim() || null,
           has_locations: f.has_locations.checked,
+          billing_address: f.billing_address.value.trim() || null,
+          phone: f.phone.value.trim() || null,
+          fax: f.fax.value.trim() || null,
+          email: f.email.value.trim() || null,
         };
-        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /opispro_id|has_locations/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
+        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax|email/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
         const saved = c ? await sb.from("gw_companies").update(row).eq("id", c.id).select().single() : await sb.from("gw_companies").insert({ ...row, sort_order: companies.length }).select().single();
         if (saved.error) return fail(saved.error);
         const id = saved.data.id;

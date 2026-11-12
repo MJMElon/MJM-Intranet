@@ -184,6 +184,7 @@ window.GW_LANG["zh-CN"] = {
     "myHome": "我的主页",
     "moveSection": "拖拉调整区块顺序",
     "iconAll": "全部图示",
+    "iconGlass": "白色",
     "iconCalm": "柔和",
     "iconColorful": "多彩",
     "iconEach": "个别 App",

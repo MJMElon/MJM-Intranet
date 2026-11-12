@@ -184,6 +184,7 @@ window.GW_LANG["en"] = {
     "myHome": "My Home",
     "moveSection": "Drag to move this section",
     "iconAll": "All icons",
+    "iconGlass": "White",
     "iconCalm": "Calm",
     "iconColorful": "Colourful",
     "iconEach": "Each app",

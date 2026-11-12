@@ -1408,60 +1408,78 @@
       };
     }
 
-    // ---------------------------------------------------------- Company 新增 / 修改（含属于哪些 Business、面积、对应到现有系统）
+    // ---------------------------------------------------------- Company 新增 / 修改
+    /* 第 1 段：公司名（标题，旁边铅笔才能改）＋ 注册号码；短名、备注；公司代码、Opispro 公司编号；属于哪些 Business（含面积）
+       第 2 段：Billing details（地址、电话、传真）
+       第 3 段：这家公司有多个 Location → 一行一个（Opispro Location ID、名称），「+ Add row」再加；按 Save 一起存 */
     function companyDialog(c, presetGroupId) {
-      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false, billing_address: "", phone: "", fax: "", email: "" };
+      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false, billing_address: "", phone: "", fax: "" };
       const mine = c ? linksOf(c.id) : [];
       const link = (gid) => mine.find((l) => l.group_id === gid);
       const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
+      const myLocs = c ? locations.filter((x) => x.company_id === c.id) : [];
+      const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[9rem_1fr_auto] items-center gap-2">
+          <input data-loc-id maxlength="40" value="${esc(x ? x.location_id : "")}" placeholder="${esc(tc("opisproLocationId"))}" class="${cls.input} font-mono">
+          <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" placeholder="${esc(tc("locationName"))}" class="${cls.input}">
+          <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
+        </div>`;
       const m = modal(
-        c ? tc("editTitle") : tc("addTitle"),
-        `<form class="space-y-4"><div data-err></div>
-          <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
-            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeAuto"))}
-            <div></div>
-          </div>
-          <div>
-            <p class="mb-1.5 ${cls.label}">${esc(tc("businesses"))}</p>
-            ${
-              groups.length
-                ? `<div class="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-800">${groups
-                    .map((g) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${ticked(g.id) ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white"><span class="font-medium">${esc(g.name)}</span></label>`)
-                    .join("")}</div>
-                  <div class="mt-2 grid gap-2 sm:grid-cols-2">${groups
-                    .map((g) => {
-                      const l = link(g.id);
-                      return `<label data-area-box="${g.id}" class="${ticked(g.id) ? "flex" : "hidden"} items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 text-sm dark:bg-white/5">
-                        <span class="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">${esc(g.name)} · ${esc(tc("area"))}</span>
-                        <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 max-w-28 shrink-0">
-                        <span class="text-xs text-slate-400">ha</span>
-                        <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
-                      </label>`;
-                    })
-                    .join("")}</div>`
-                : `<p class="text-sm text-slate-400">${esc(tc("noBusiness"))}</p>`
-            }
-          </div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            ${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}
-            ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
-            ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
-            ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`, tc("opisproHint"))}
-            ${field(tc("descriptionLabel"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+        c ? c.name : tc("addTitle"),
+        `<form class="space-y-5"><div data-err></div>
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-end gap-3">
+              <div class="min-w-0 flex-1 basis-56">
+                <div data-name-view class="${c ? "flex" : "hidden"} items-center gap-1.5">
+                  <span data-name-text class="min-w-0 truncate text-xl font-semibold">${esc(v.name)}</span>
+                  <button type="button" data-name-edit aria-label="${esc(tc("editName"))}" title="${esc(tc("editName"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
+                </div>
+                <div data-name-box class="${c ? "hidden" : ""}">${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}</div>
+              </div>
+              <div class="w-full sm:w-56">${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}</div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
+              ${field(tc("remark"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+              ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
+              ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`)}
+            </div>
+            <div>
+              <p class="mb-1.5 ${cls.label}">${esc(tc("businesses"))}</p>
+              ${
+                groups.length
+                  ? `<div class="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-800">${groups
+                      .map((g) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${ticked(g.id) ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white"><span class="font-medium">${esc(g.name)}</span></label>`)
+                      .join("")}</div>
+                    <div class="mt-2 grid gap-2 sm:grid-cols-2">${groups
+                      .map((g) => {
+                        const l = link(g.id);
+                        return `<label data-area-box="${g.id}" class="${ticked(g.id) ? "flex" : "hidden"} items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 text-sm dark:bg-white/5">
+                          <span class="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">${esc(g.name)} · ${esc(tc("area"))}</span>
+                          <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 max-w-28 shrink-0">
+                          <span class="text-xs text-slate-400">ha</span>
+                          <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
+                        </label>`;
+                      })
+                      .join("")}</div>`
+                  : `<p class="text-sm text-slate-400">${esc(tc("noBusiness"))}</p>`
+              }
+            </div>
           </div>
           <div class="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-            <p class="text-sm font-medium">${esc(tc("billing"))}</p>
-            <p class="text-xs text-slate-500 dark:text-slate-400">${esc(tc("billingHint"))}</p>
+            <p class="text-sm font-semibold">${esc(tc("billing"))}</p>
             ${field(tc("billingAddress"), `<textarea name="billing_address" rows="2" maxlength="400" class="${cls.input} h-auto py-2">${esc(v.billing_address || "")}</textarea>`)}
-            <div class="grid gap-3 sm:grid-cols-3">
+            <div class="grid gap-3 sm:grid-cols-2">
               ${field(tc("phone"), `<input name="phone" maxlength="60" value="${esc(v.phone || "")}" class="${cls.input}">`)}
               ${field(tc("fax"), `<input name="fax" maxlength="60" value="${esc(v.fax || "")}" class="${cls.input}">`)}
-              ${field(tc("email"), `<input name="email" type="email" maxlength="120" value="${esc(v.email || "")}" class="${cls.input}">`)}
             </div>
           </div>
           <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-            <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
-            <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3"></div>
+            <label class="flex cursor-pointer items-center gap-2 text-sm font-semibold"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
+            <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3">
+              <div class="mb-1 grid grid-cols-[9rem_1fr_auto] gap-2 text-xs font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span class="w-8"></span></div>
+              <div data-loc-rows class="space-y-2">${(myLocs.length ? myLocs : [null]).map(locRow).join("")}</div>
+              <button type="button" data-loc-row-add class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">${icon("plus", "size-3.5")} ${esc(tc("addRow"))}</button>
+            </div>
           </div>
           <div class="flex justify-between gap-2">
             ${c && canDelCo ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
@@ -1472,9 +1490,32 @@
       );
       refreshIcons();
       $("[data-cancel]", m.el).onclick = m.close;
-      $("[name=name]", m.el).focus();
-      // 勾了 Business 才出现面积栏
+      if (!c) $("[name=name]", m.el).focus();
+      m.el.addEventListener("click", (e) => {
+        const b = e.target.closest("button[type=button]");
+        if (!b) return;
+        // 铅笔：公司名变成可以改
+        if ("nameEdit" in b.dataset) {
+          $("[data-name-view]", m.el).classList.add("hidden");
+          $("[data-name-box]", m.el).classList.remove("hidden");
+          $("[name=name]", m.el).focus();
+          return;
+        }
+        if ("locRowAdd" in b.dataset) {
+          $("[data-loc-rows]", m.el).insertAdjacentHTML("beforeend", locRow(null));
+          refreshIcons();
+          const rows = $$("[data-loc-row]", m.el);
+          return $("[data-loc-id]", rows[rows.length - 1]).focus();
+        }
+        if ("locRowDel" in b.dataset) {
+          b.closest("[data-loc-row]").remove();
+          if (!$("[data-loc-row]", m.el)) $("[data-loc-rows]", m.el).insertAdjacentHTML("beforeend", locRow(null));
+          refreshIcons();
+        }
+      });
+      // 勾了 Business 才出现面积栏；勾了「有多个 Location」才出现 Location 列
       m.el.addEventListener("change", (e) => {
+        if (e.target.name === "has_locations") return $("[data-locations]", m.el).classList.toggle("hidden", !e.target.checked);
         const b = e.target.closest("input[data-biz]");
         if (!b) return;
         const box = $(`[data-area-box="${b.dataset.biz}"]`, m.el);
@@ -1482,61 +1523,6 @@
         box.classList.toggle("flex", b.checked);
         if (b.checked) $("input[data-area]", box).focus();
       });
-
-      // Location（勾了「有 Location」才出现；只有已存在的 Company 才能加）：Location ID + 名称，直接加 / 删
-      {
-        const lbox = $("[data-locations]", m.el);
-        const drawLocations = () => {
-          if (!c) return (lbox.innerHTML = `<p class="text-xs text-slate-500">${esc(tc("locationsSaveFirst"))}</p>`);
-          const list = locations.filter((x) => x.company_id === c.id);
-          lbox.innerHTML = `${
-            list.length
-              ? `<div class="mb-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">${list
-                  .map(
-                    (x) => `<div class="flex items-center gap-2 px-3 py-1.5">
-                      <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(x.location_id)}</span>
-                      <span class="min-w-0 flex-1 truncate font-medium">${esc(x.name)}</span>
-                      <button type="button" data-loc-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
-                    </div>`,
-                  )
-                  .join("")}</div>`
-              : ""
-          }
-            <div data-loc-err></div>
-            <div class="grid gap-2 sm:grid-cols-[9rem_1fr_auto]">
-              <input data-loc-id maxlength="40" placeholder="${esc(tc("locationId"))}" class="${cls.input} font-mono">
-              <input data-loc-name maxlength="100" placeholder="${esc(tc("locationName"))}" class="${cls.input}">
-              <button type="button" data-loc-add class="${btn("secondary")}">${icon("map-pin")} ${esc(tc("addLocation"))}</button>
-            </div>`;
-          refreshIcons();
-        };
-        drawLocations();
-        $("[name=has_locations]", m.el).addEventListener("change", (e) => lbox.classList.toggle("hidden", !e.target.checked));
-        lbox.addEventListener("click", async (e) => {
-          const b = e.target.closest("button");
-          if (!b || !c) return;
-          if (b.dataset.locDel) {
-            const { error } = await sb.from("gw_company_locations").delete().eq("id", b.dataset.locDel);
-            if (error) return ($("[data-loc-err]", lbox).innerHTML = alertBox(tg("saveFailed")));
-            locations.splice(locations.findIndex((x) => x.id === b.dataset.locDel), 1);
-            return drawLocations();
-          }
-          if ("locAdd" in b.dataset) {
-            const location_id = $("[data-loc-id]", lbox).value.trim();
-            const name = $("[data-loc-name]", lbox).value.trim();
-            if (!location_id) return $("[data-loc-id]", lbox).focus();
-            if (!name) return $("[data-loc-name]", lbox).focus();
-            const { data, error } = await sb
-              .from("gw_company_locations")
-              .insert({ company_id: c.id, location_id, name, sort_order: locations.filter((x) => x.company_id === c.id).length })
-              .select()
-              .single();
-            if (error) return ($("[data-loc-err]", lbox).innerHTML = alertBox(error.code === "23505" ? tc("locationDuplicate") : error.code === "42P01" ? tc("locationsNotReady") : tg("saveFailed")));
-            locations.push(data);
-            drawLocations();
-          }
-        });
-      }
 
       if (c && $("[data-del]", m.el))
         $("[data-del]", m.el).onclick = async () => {
@@ -1551,6 +1537,15 @@
         e.preventDefault();
         const f = e.target;
         const submit = $("button[type=submit]", f);
+        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "loc-dup" ? tc("locationDuplicate") : error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations|gw_company_locations/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
+        // Location 列：两栏都要填（整行空白的略过）
+        const hasLoc = f.has_locations.checked;
+        const locRows = hasLoc
+          ? $$("[data-loc-row]", f)
+              .map((r) => ({ id: r.dataset.locRowid || null, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim() }))
+              .filter((r) => r.location_id || r.name)
+          : [];
+        if (locRows.some((r) => !r.location_id || !r.name)) return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
         submit.disabled = true;
         submit.innerHTML = `<span class="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>`;
         const row = {
@@ -1560,13 +1555,11 @@
           registration_no: f.registration_no.value.trim() || null,
           description: f.description.value.trim() || null,
           opispro_id: f.opispro_id.value.trim() || null,
-          has_locations: f.has_locations.checked,
+          has_locations: hasLoc,
           billing_address: f.billing_address.value.trim() || null,
           phone: f.phone.value.trim() || null,
           fax: f.fax.value.trim() || null,
-          email: f.email.value.trim() || null,
         };
-        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax|email/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
         const saved = c ? await sb.from("gw_companies").update(row).eq("id", c.id).select().single() : await sb.from("gw_companies").insert({ ...row, sort_order: companies.length }).select().single();
         if (saved.error) return fail(saved.error);
         const id = saved.data.id;
@@ -1591,6 +1584,17 @@
           rows.length ? sb.from("gw_business_companies").upsert(rows, { onConflict: "group_id,company_id" }) : Promise.resolve({}),
         ]);
         if (r1.error || r2.error) return fail(r1.error || r2.error);
+        // Location：画面上有的新增 / 更新，画面上没有的（或整段没勾）删掉
+        const keepIds = new Set(locRows.filter((r) => r.id).map((r) => r.id));
+        const gone = myLocs.filter((x) => !keepIds.has(x.id)).map((x) => x.id);
+        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, location_id: r.location_id, name: r.name, sort_order: myLocs.length + i }));
+        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && (x.location_id !== r.location_id || x.name !== r.name)));
+        const ops = [];
+        if (gone.length) ops.push(sb.from("gw_company_locations").delete().in("id", gone));
+        if (adds.length) ops.push(sb.from("gw_company_locations").insert(adds));
+        edits.forEach((r) => ops.push(sb.from("gw_company_locations").update({ location_id: r.location_id, name: r.name }).eq("id", r.id)));
+        const bad = (await Promise.all(ops)).find((r) => r.error);
+        if (bad) return fail(bad.error.code === "23505" ? { code: "loc-dup" } : bad.error);
         m.close();
         structureTab();
       });

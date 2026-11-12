@@ -95,7 +95,9 @@ window.GWHome = (function () {
     {
       const ic = ((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements");
       const saved = ic && ic.config && ic.config.icons;
-      ICON = { style: (saved && saved.style) || "glass", apps: { ...((saved && saved.apps) || {}) } };
+      // 以前存的「calm」是旧的预设（动过图示颜色就会被存下来）：换成新的白色 glass 一次；之后存的都带 v: 2，照用户选的
+      const oldDefault = saved && saved.v !== 2 && (!saved.style || saved.style === "calm");
+      ICON = { style: oldDefault ? "glass" : (saved && saved.style) || "glass", apps: { ...((saved && saved.apps) || {}) } };
     }
     let folders = data.folders.map((f) => ({ ...f }));
     let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })).filter((w) => !(WIDGETS[w.widget_type] || {}).retired) : [];
@@ -3172,7 +3174,7 @@ window.GWHome = (function () {
     async function saveIcons() {
       const w = board();
       if (!w) return;
-      w.config = { ...(w.config || {}), icons: { style: ICON.style, apps: ICON.apps } };
+      w.config = { ...(w.config || {}), icons: { v: 2, style: ICON.style, apps: ICON.apps } };
       const { error } = await sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id);
       if (error) toast(t("home.saveFailed"));
     }

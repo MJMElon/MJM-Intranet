@@ -458,7 +458,7 @@ window.GW_LANG["zh-CN"] = {
       "opisproLocationId": "Opispro Location ID",
       "addRow": "新增一行",
       "editName": "改公司名",
-      "locationIncomplete": "每个 Location 都要填 Opispro Location ID 和名称。",
+      "locationIncomplete": "每个 Location 都要有名称。Opispro Location ID 可以先空着。",
       "hasLocations": "这家公司有多个 Location",
       "opisproId": "Opispro 公司编号",
       "opisproHint": "这家公司在 Opispro 的编号，之后接旧系统用。",

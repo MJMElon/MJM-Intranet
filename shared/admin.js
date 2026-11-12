@@ -1419,7 +1419,7 @@
       const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
       const myLocs = c ? locations.filter((x) => x.company_id === c.id) : [];
       const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[9rem_1fr_auto] items-center gap-2">
-          <input data-loc-id maxlength="40" value="${esc(x ? x.location_id : "")}" placeholder="${esc(tc("opisproLocationId"))}" class="${cls.input} font-mono">
+          <input data-loc-id maxlength="40" value="${esc(x ? x.location_id || "" : "")}" placeholder="${esc(tc("opisproLocationId"))}" class="${cls.input} font-mono">
           <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" placeholder="${esc(tc("locationName"))}" class="${cls.input}">
           <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
         </div>`;
@@ -1545,7 +1545,7 @@
               .map((r) => ({ id: r.dataset.locRowid || null, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim() }))
               .filter((r) => r.location_id || r.name)
           : [];
-        if (locRows.some((r) => !r.location_id || !r.name)) return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
+        if (locRows.some((r) => !r.name)) return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
         submit.disabled = true;
         submit.innerHTML = `<span class="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>`;
         const row = {
@@ -1587,12 +1587,12 @@
         // Location：画面上有的新增 / 更新，画面上没有的（或整段没勾）删掉
         const keepIds = new Set(locRows.filter((r) => r.id).map((r) => r.id));
         const gone = myLocs.filter((x) => !keepIds.has(x.id)).map((x) => x.id);
-        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, location_id: r.location_id, name: r.name, sort_order: myLocs.length + i }));
-        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && (x.location_id !== r.location_id || x.name !== r.name)));
+        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, location_id: r.location_id || null, name: r.name, sort_order: myLocs.length + i }));
+        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && ((x.location_id || "") !== r.location_id || x.name !== r.name)));
         const ops = [];
         if (gone.length) ops.push(sb.from("gw_company_locations").delete().in("id", gone));
         if (adds.length) ops.push(sb.from("gw_company_locations").insert(adds));
-        edits.forEach((r) => ops.push(sb.from("gw_company_locations").update({ location_id: r.location_id, name: r.name }).eq("id", r.id)));
+        edits.forEach((r) => ops.push(sb.from("gw_company_locations").update({ location_id: r.location_id || null, name: r.name }).eq("id", r.id)));
         const bad = (await Promise.all(ops)).find((r) => r.error);
         if (bad) return fail(bad.error.code === "23505" ? { code: "loc-dup" } : bad.error);
         m.close();

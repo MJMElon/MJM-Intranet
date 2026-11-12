@@ -458,7 +458,7 @@ window.GW_LANG["en"] = {
       "opisproLocationId": "Opispro Location ID",
       "addRow": "Add row",
       "editName": "Edit company name",
-      "locationIncomplete": "Each location needs both an Opispro Location ID and a name.",
+      "locationIncomplete": "Each location needs a name. The Opispro Location ID can stay empty for now.",
       "hasLocations": "This company has multiple locations",
       "opisproId": "Opispro company ID",
       "opisproHint": "The company's ID in Opispro, used to link to the old system.",

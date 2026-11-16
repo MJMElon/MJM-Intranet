@@ -42,6 +42,7 @@ docs/                    目标系统接入说明、上线步骤
 - **Business**（`gw_groups`）底下有 Icon 和 Company
 - 用户放进 Business 后「有机会」用它的模块，但一开始看不到；要逐个模块打开（`gw_module_members`）
   - **有效权限** = 开给他的模块 ∩ 他所属 Business 的模块
+  - 例外：模块 `auto_access = true`（例如 MJMConnect，在 Business「HQ」底下）→ 放进那个 Business 就自动看得到，不用逐个勾 Access
   - 每个模块对每个人两个勾：**Access**（可以用）、**Admin**（模块管理员，一定也有 Access）
 - 帐号停用或模块下架 → 全部看不到；没有权限的模块连名字都不显示
 - 所有检查都在数据库 RLS / 函数里做；网页上的页面保护只负责导航，绕过前端也拿不到没权限的资料

@@ -1559,7 +1559,7 @@
   }
 
   // ================================================================ Module（Master Manage；只列 MJM Connect 旗下的系统模块）
-  /* 系统模块由开发时登录（例如 Diesel），这里不输入网址。
+  /* super_admin 可以「Add module」新增系统模块（例如 MJMConnect：代码、名称、网址、打开方式），也可以改网址。
      可以改：名称、说明、照片、Business 标签（勾了 Business 才出现它的 Company 标签）。
      外部网站的连结图示改由用户自己在主画面「Add Icon」加。 */
   async function modulesTab() {
@@ -1589,7 +1589,7 @@
 
     const state = { biz: new Set(), co: new Set() };
     view.innerHTML = `<div class="space-y-4">
-      <div class="flex items-center justify-end"><span id="mod-filter"></span></div>
+      <div class="flex items-center justify-end gap-2"><span id="mod-filter"></span>${isSuper ? `<button data-add class="${btn("primary", "sm")}">${icon("plus", "size-4")} ${esc(tmod("add"))}</button>` : ""}</div>
       <div id="mod-list"></div>
     </div>`;
     $("#mod-filter").replaceWith(
@@ -1629,11 +1629,13 @@
     drawList();
 
     function dialog(mod) {
+      let isNew = !mod;
+      mod = mod || { kind: "system", code: "", name: "", description: "", url: "https://", open_mode: "new_tab", icon: "app-window", is_active: true };
       const bizOn = new Set(bizTags.filter((x) => x.module_id === mod.id).map((x) => x.group_id));
       const coOn = new Set(coTags.filter((x) => x.module_id === mod.id).map((x) => x.company_id));
       let photo = null; // 新选的照片
       const m = modal(
-        tmod("editTitle"),
+        tmod(isNew ? "addTitle" : "editTitle"),
         `<form class="space-y-4">
           <div data-err></div>
           <div class="flex items-start gap-4">
@@ -1644,10 +1646,22 @@
             <div class="min-w-0 flex-1 space-y-3">
               <div class="grid gap-3 sm:grid-cols-[8rem_1fr]">
                 ${field(tmod("kind"), `<input value="${esc(tmod("kinds." + mod.kind))}" readonly class="${cls.input} bg-slate-50 dark:bg-slate-800">`)}
-                ${field(tmod("code"), `<input value="${esc(mod.code)}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
+                ${
+                  isNew
+                    ? field(tmod("code"), `<input name="code" required maxlength="40" placeholder="MJMCONNECT" title="${esc(tmod("codeHint"))}" class="${cls.input} font-mono uppercase">`)
+                    : field(tmod("code"), `<input value="${esc(mod.code)}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)
+                }
               </div>
               ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
+              ${
+                isSuper
+                  ? `<div class="grid gap-3 sm:grid-cols-[1fr_8rem]">
+                      ${field(tmod("url"), `<input name="url" required maxlength="500" value="${esc(mod.url || "")}" class="${cls.input}">`)}
+                      ${field(tmod("openMode"), `<select name="open_mode" class="${cls.input}"><option value="new_tab" ${mod.open_mode === "new_tab" ? "selected" : ""}>${esc(tmod("newTab"))}</option><option value="same_tab" ${mod.open_mode === "same_tab" ? "selected" : ""}>${esc(tmod("sameTab"))}</option></select>`)}
+                    </div>`
+                  : ""
+              }
               ${isSuper ? `<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : ""}
             </div>
           </div>
@@ -1706,9 +1720,31 @@
         const submit = $("button[type=submit]", f);
         submit.disabled = true;
         const err = (k) => (($("[data-err]", m.el).innerHTML = alertBox(tmod(k))), (submit.disabled = false));
-        // 名称 / 说明：经过 gw_rename_module（角色权限在数据库检查）
-        const { error } = await sb.rpc("gw_rename_module", { p_module: mod.id, p_name: f.name.value.trim(), p_description: f.description.value.trim() });
-        if (error) return err("saveFailed");
+        if (isSuper) {
+          // 网址：https:// 或站内路径（例如 diesel/index.html）；不接受 javascript: 之类
+          const url = f.url.value.trim();
+          if (!/^https:\/\//i.test(url) && /^[a-z][a-z0-9+.-]*:/i.test(url)) return err("badUrl");
+          if (isNew) {
+            const code = f.code.value.trim().toUpperCase();
+            if (!/^[A-Z0-9_-]{2,40}$/.test(code)) return err("badCode");
+            const ins = await sb
+              .from("gw_modules")
+              .insert({ code, name: f.name.value.trim(), description: f.description.value.trim() || null, url, open_mode: f.open_mode.value, kind: "system", access_level: 1, is_active: f.is_active.checked, sort_order: modules.length * 10 + 10 })
+              .select()
+              .single();
+            if (ins.error) return err(ins.error.code === "23505" ? "duplicate" : "saveFailed");
+            mod = ins.data;
+            isNew = false; // 后面步骤失败再按 Save 时改走修改，不会重复新增
+          } else if (url !== mod.url || f.open_mode.value !== mod.open_mode) {
+            const { error } = await sb.from("gw_modules").update({ url, open_mode: f.open_mode.value }).eq("id", mod.id);
+            if (error) return err("saveFailed");
+          }
+        }
+        if (!isNew) {
+          // 名称 / 说明：经过 gw_rename_module（角色权限在数据库检查）
+          const { error } = await sb.rpc("gw_rename_module", { p_module: mod.id, p_name: f.name.value.trim(), p_description: f.description.value.trim() });
+          if (error) return err("saveFailed");
+        }
         if (isSuper) {
           if (photo) {
             const ext = photo.type === "image/png" ? "png" : photo.type === "image/webp" ? "webp" : photo.type === "image/svg+xml" ? "svg" : "jpg";
@@ -1719,7 +1755,7 @@
             const { error: e2 } = await sb.from("gw_modules").update({ image_url: pub.publicUrl }).eq("id", mod.id);
             if (e2) return err("saveFailed");
           }
-          if (f.is_active.checked !== !!mod.is_active) {
+          if (!isNew && f.is_active.checked !== !!mod.is_active) {
             const { error: e3 } = await sb.from("gw_modules").update({ is_active: f.is_active.checked }).eq("id", mod.id);
             if (e3) return err("saveFailed");
           }
@@ -1745,6 +1781,7 @@
     }
 
     view.onclick = (e) => {
+      if (e.target.closest("[data-add]")) return dialog(null);
       const b = e.target.closest("[data-edit]");
       if (b) dialog(modules.find((x) => x.id === b.dataset.edit));
     };

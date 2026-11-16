@@ -18,7 +18,7 @@ library.html             模块库
 settings.html            个人设置（语言、浅色/深色、重设首页、改密码）
 diesel/index.html        Diesel Claims 模块：车辆、加油报销（收据照片）、审核、统计（说明见 docs/diesel.md）
 admin.html               设置页（右上角齿轮）：User & Group Manage（Group Manage、All users）＋ Master Manage（Role、Business、Company、Module）＋ Audit Log；公告在首页 Notice Board 直接发布 / 修改 / 删除
-                         Module 只列系统模块（照片、Business / Company 标签）；外部网站由用户在主画面「Add Icon」自己加（gw_user_links）
+                         Module 只列系统模块（照片、Business / Company 标签）；super_admin 用「Add module」新增系统模块（代码、名称、网址、打开方式）；外部网站由用户在主画面「Add Icon」自己加（gw_user_links）
 shared/head.js           每页第一个载入：主题、Tailwind、共用函式库（版本在这里统一改）
 shared/config.js         Supabase 网址与 anon key
 shared/core.js           登录检查、页面外框、对话框、Edge Function 调用、Excel
@@ -35,14 +35,13 @@ docs/                    目标系统接入说明、上线步骤
 
 ## 权限模型
 
-- **Icon**（`gw_modules`，以前叫「模块」）：`kind` = `system`（MJM Connect 旗下的系统，例如 Diesel、MJMConnect 办公室公告板 https://mjmconnect.opispro.com）或 `link`（现有系统、任何外部网站）
+- **Icon**（`gw_modules`，以前叫「模块」）：`kind` = `system`（MJM Connect 旗下的系统，例如 Diesel）或 `link`（现有系统、任何外部网站）
   - 标签：Business（`gw_group_modules`）＋ Company（`gw_module_companies`）
 - **Company**（`gw_companies`）是独立主资料：固定的代码（`code`）、简称、注册号码；可以属于多个 Business（`gw_business_companies`）
   - 对应到现有系统：`gw_company_mappings`（Company × 系统 Icon → 那个系统里的 ID / 名称），之后资料对接用
 - **Business**（`gw_groups`）底下有 Icon 和 Company
 - 用户放进 Business 后「有机会」用它的模块，但一开始看不到；要逐个模块打开（`gw_module_members`）
   - **有效权限** = 开给他的模块 ∩ 他所属 Business 的模块
-  - 例外：模块 `auto_access = true`（例如 MJMConnect，在 Business「HQ」底下）→ 放进那个 Business 就自动看得到，不用逐个勾 Access
   - 每个模块对每个人两个勾：**Access**（可以用）、**Admin**（模块管理员，一定也有 Access）
 - 帐号停用或模块下架 → 全部看不到；没有权限的模块连名字都不显示
 - 所有检查都在数据库 RLS / 函数里做；网页上的页面保护只负责导航，绕过前端也拿不到没权限的资料

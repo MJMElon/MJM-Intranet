@@ -35,7 +35,7 @@ docs/                    目标系统接入说明、上线步骤
 
 ## 权限模型
 
-- **Icon**（`gw_modules`，以前叫「模块」）：`kind` = `system`（MJM Connect 旗下的系统，例如 Diesel）或 `link`（现有系统、任何外部网站）
+- **Icon**（`gw_modules`，以前叫「模块」）：`kind` = `system`（MJM Connect 旗下的系统，例如 Diesel、MJMConnect 办公室公告板 https://mjmconnect.opispro.com）或 `link`（现有系统、任何外部网站）
   - 标签：Business（`gw_group_modules`）＋ Company（`gw_module_companies`）
 - **Company**（`gw_companies`）是独立主资料：固定的代码（`code`）、简称、注册号码；可以属于多个 Business（`gw_business_companies`）
   - 对应到现有系统：`gw_company_mappings`（Company × 系统 Icon → 那个系统里的 ID / 名称），之后资料对接用

@@ -67,6 +67,7 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "dragToSort": "拖拉排序",
     "location": "Location",
     "linkPhoto": "照片",
     "linkPhotoTooBig": "照片要小于 2 MB。",

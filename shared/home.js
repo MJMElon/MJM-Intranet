@@ -625,9 +625,14 @@ window.GWHome = (function () {
     const estatesOf = (cid, gid) => (S && S.locations ? S.locations : []).filter((x) => x.company_id === cid && (!x.group_id || x.group_id === gid));
     // 每个区块选的 Company（"all" = 全部）：记在 Notice Board 小工具的 config.companies；没选过就用自己在那个 Business 的 Company
     const companySel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companies || {}));
+    // 用户自己排的 Company 顺序：记在 Notice Board 小工具的 config.companyOrder（每个 Business 一份）
+    const companyOrder = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companyOrder || {}));
     const companiesOf = (gid) => {
       const ids = new Set(S.bizCompanies.filter((x) => x.group_id === gid).map((x) => x.company_id));
-      return S.companies.filter((c) => ids.has(c.id));
+      const list = S.companies.filter((c) => ids.has(c.id));
+      const ord = companyOrder.get(gid) || [];
+      const at = (id) => { const i = ord.indexOf(id); return i < 0 ? 1e6 : i; };
+      return list.map((c, i) => [c, i]).sort((a, b) => at(a[0].id) - at(b[0].id) || a[1] - b[1]).map((x) => x[0]);
     };
     const selectedCompany = (gid) => {
       const list = companiesOf(gid);
@@ -899,10 +904,13 @@ window.GWHome = (function () {
       const sel = selectedCompany(gid);
       const cur = list.find((c) => c.id === sel);
       const label = cur ? cur.short_name || cur.code || cur.name : list[0].name;
-      const row = (id, text) => `<button type="button" data-company-pick="${id}" data-gid="${gid}" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"><span class="truncate">${esc(text)}</span>${sel === id ? icon("check", "size-4 text-emerald-600") : ""}</button>`;
-      return `<div class="relative min-w-0">
+      const row = (id, text) => `<div data-co-row="${id}" class="flex items-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+          <span data-co-grip class="flex size-8 shrink-0 cursor-grab touch-none items-center justify-center text-slate-400 hover:text-slate-600 active:cursor-grabbing" title="${esc(t("home.dragToSort"))}">${icon("grip-vertical", "size-4")}</span>
+          <button type="button" data-company-pick="${id}" data-gid="${gid}" class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2.5 text-left text-sm"><span class="truncate">${esc(text)}</span>${sel === id ? icon("check", "size-4 shrink-0 text-emerald-600") : ""}</button>
+        </div>`;
+      return `<div data-pick-wrap class="relative min-w-0">
         <button type="button" data-company-menu="${gid}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
-        ${companyMenuGid === gid ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-64 w-60 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map((c) => row(c.id, c.name)).join("")}</div>` : ""}
+        ${companyMenuGid === gid ? `<div data-co-list="${gid}" class="absolute top-full left-0 z-30 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map((c) => row(c.id, c.name)).join("")}</div>` : ""}
       </div>`;
     };
 
@@ -914,7 +922,7 @@ window.GWHome = (function () {
       const cur = selectedEstate(gid);
       const label = cur ? cur.name : list[0].name;
       const row = (x) => `<button type="button" data-estate-pick="${x.id}" data-gid="${gid}" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"><span class="truncate">${esc(x.name)}</span>${cur && cur.id === x.id ? icon("check", "size-4 text-emerald-600") : ""}</button>`;
-      return `<div class="relative min-w-0">
+      return `<div data-pick-wrap class="relative min-w-0">
         <button type="button" data-estate-menu="${gid}" title="${esc(t("home.location"))}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("map-pin", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
         ${estateMenuGid === gid ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-64 w-60 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map(row).join("")}</div>` : ""}
       </div>`;
@@ -990,7 +998,7 @@ window.GWHome = (function () {
     root.addEventListener("pointerdown", (e) => {
       if (!sectionsOn || editing || e.button !== 0) return;
       const el = e.target.closest(".gw-item, .gw-pinned, [data-fw], [data-box]");
-      if (!el || e.target.closest("input, textarea, select, a, [data-company-menu], [data-estate-menu], [data-mode], .gw-sheet, .sec-grip")) return; // 握把直接拖区块，不算长按
+      if (!el || e.target.closest("input, textarea, select, a, [data-company-menu], [data-estate-menu], [data-pick-wrap], [data-mode], .gw-sheet, .sec-grip")) return; // 握把直接拖区块，不算长按
       lp = { x: e.clientX, y: e.clientY, id: e.pointerId };
       lp.timer = setTimeout(() => {
         lp.fired = true;
@@ -2114,6 +2122,25 @@ window.GWHome = (function () {
         lastGeo = geoSig();
         fitBoard();
         settlePage(false);
+      }
+      const coList = $("[data-co-list]", root);
+      if (coList && window.Sortable) {
+        Sortable.create(coList, {
+          handle: "[data-co-grip]",
+          draggable: "[data-co-row]",
+          animation: 150,
+          ghostClass: "opacity-40",
+          onEnd: () => {
+            const gid = coList.dataset.coList;
+            companyOrder.set(gid, $$("[data-co-row]", coList).map((x) => x.dataset.coRow));
+            lastDragEnd = Date.now();
+            draw();
+            const w = board();
+            if (!w) return;
+            w.config = { ...(w.config || {}), companyOrder: Object.fromEntries(companyOrder) };
+            sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+          },
+        });
       }
       if ($("[data-weather]", root)) loadWeather();
       aiAfterDraw();
@@ -3524,7 +3551,15 @@ window.GWHome = (function () {
       sheet = null;
       draw();
     });
+    // Company / Location 下拉开着时，点它以外任何地方（包括顶栏、空白处）都收起来
+    document.addEventListener("click", (e) => {
+      if (!(companyMenuGid || estateMenuGid) || (e.target.isConnected && e.target.closest("[data-pick-wrap]"))) return;
+      companyMenuGid = null;
+      estateMenuGid = null;
+      draw();
+    }, true);
     root.addEventListener("click", (e) => {
+      if (!e.target.isConnected) return; // 上面刚收起下拉、画面重画过：这一下只算收起
       if (Date.now() - lastDragEnd < 400) return; // 刚拖完，不算点击
       // 「新增小工具 / App」面板开着时，点面板外面就收起来
       if (sheet && !e.target.closest(".gw-sheet") && !e.target.closest("[data-fab], [data-fab-toggle]")) return ((sheet = null), draw());

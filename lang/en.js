@@ -67,6 +67,7 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "dragToSort": "Drag to reorder",
     "location": "Location",
     "linkPhoto": "Photo",
     "linkPhotoTooBig": "Photo must be under 2 MB.",

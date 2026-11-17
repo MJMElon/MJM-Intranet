@@ -2433,36 +2433,25 @@ window.GWHome = (function () {
     function openFolder(fid, mode) {
       const f = folders.find((x) => x.id === fid);
       if (!f) return;
-      mode = mode || (f.canvas && f.canvas.map ? "map" : "grid"); // 画过心智图的文件夹一打开就是心智图
-      const ids = folderApps(fid);
-      const lks = folderLinks(fid);
+      // 预设是「柜子」：分好几格（Section），每格有名字，图示放在下面；心智图是另一个看法
+      mode = mode === "map" ? "map" : "shelf";
       const mineF = !f.shared_by;
       const canOut = !readOnly && mineF;
       const canRename = mineF && !readOnly;
       const wrap = document.createElement("div");
       wrap.setAttribute("role", "dialog");
       wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md sm:p-6";
-      const tile = (btnAttr, iconHtml, label, title, outAttr) => `<div class="relative flex flex-col items-center gap-1.5">
-          <button type="button" ${btnAttr} ${title ? `title="${esc(title)}"` : ""} class="flex flex-col items-center gap-1.5">${iconHtml}<span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(label)}</span></button>
-          ${canOut ? `<button type="button" ${outAttr} title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>` : ""}
-        </div>`;
-      const grid =
-        ids.length || lks.length
-          ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${ids.map((id) => tile(`data-open="${id}"`, appIcon(modules.get(id), "size-14 sm:size-16"), modules.get(id).name, "", `data-out="${id}"`)).join("")}${lks
-              .map((l) => tile(`data-open-link="${l.id}"`, appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, "size-14 sm:size-16"), l.name, l.url, `data-out-link="${l.id}"`))
-              .join("")}</div>`
-          : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`;
       const pill = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon(ic, "size-4")} ${esc(label)}</button>`;
       wrap.innerHTML = `
         <div class="mb-4 flex max-w-full items-center gap-2 px-4">
           <h2 data-title class="min-w-0 truncate text-3xl font-bold text-white drop-shadow outline-none select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
         </div>
-        <div data-win class="relative w-full ${mode === "map" ? "max-w-5xl" : "max-w-md"} rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
+        <div data-win class="relative w-full ${mode === "map" ? "max-w-5xl" : "max-w-3xl"} rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
           ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
           ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
-          ${mode === "map" ? `<div data-map-host class="h-[72vh] min-h-[420px]"></div>` : grid}
+          ${mode === "map" ? `<div data-map-host class="h-[72vh] min-h-[420px]"></div>` : `<div data-shelf-host></div>`}
         </div>
-        ${readOnly || mode === "map" ? "" : `<div class="mt-4 flex flex-wrap justify-center gap-2">${pill("data-map", "git-fork", t("home.mindMap"))}</div>`}`;
+        ${readOnly ? "" : `<div class="mt-4 flex flex-wrap justify-center gap-2">${mode === "map" ? pill("data-grid", "library", t("home.shelfView")) : pill("data-map", "git-fork", t("home.mindMap"))}</div>`}`;
       document.body.appendChild(wrap);
       refreshIcons();
       let mapCtl = null;
@@ -2478,7 +2467,9 @@ window.GWHome = (function () {
         close();
       };
       document.addEventListener("keydown", onKey);
-      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), toGrid: () => (close(), openFolder(fid, "grid")), canAddLink: canOut, canEditLinks: canOut, canEdit: !readOnly && (mineF || f.share_role === "edit") });
+      const canEditF = !readOnly && (mineF || f.share_role === "edit");
+      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), toGrid: () => (close(), openFolder(fid)), canAddLink: canOut, canEditLinks: canOut, canEdit: canEditF });
+      else mountShelves(f, $("[data-shelf-host]", wrap), { canEdit: canEditF, isOwner: canOut, reopen: () => (close(), openFolder(fid)) });
       // 长按名字 → 名字原地变成可以打字；按 ✓、Enter 或点别的地方就存，Esc 取消
       if (canRename) {
         const h = $("[data-title]", wrap);
@@ -2560,6 +2551,190 @@ window.GWHome = (function () {
       });
     }
 
+    // ------------------------------------------------------------ 文件夹「柜子」看法（预设）
+    /* 一格一格的 Section（像柜子的层板）：每格有编号、名字，下面放图示（App / 连结）。
+       可以看成「图示」或「清单」（清单有 1.1、1.2 编号，像总表）。
+       能改的人（拥有者、被分享成 Can edit 的人）：拖图示换格 / 排顺序、拖 Section 的握把排 Section、按 Edit 改名字 / 删 Section。
+       拥有者另外可以加连结、改连结、把东西移出文件夹。
+       存在 gw_user_folders.canvas.shelves = [{ id, name, items: ["a:模块id" | "l:连结id"] }]（跟心智图同一栏，互不影响）；
+       没放进任何 Section 的在最下面「Not in a section」，顺序记在 canvas.loose。 */
+    function mountShelves(f, host, hooks) {
+      const canEdit = !!hooks.canEdit, isOwner = !!hooks.isOwner;
+      const uid = () => Math.random().toString(36).slice(2, 10);
+      const VKEY = "gw_shelf_view_" + f.id;
+      let view = "icons";
+      try {
+        view = localStorage.getItem(VKEY) === "list" ? "list" : "icons";
+      } catch (e) {
+        /* 忽略 */
+      }
+      let editMode = false;
+      const cv0 = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
+      let shelves = (Array.isArray(cv0.shelves) ? cv0.shelves : []).filter((x) => x && typeof x === "object").map((x) => ({ id: String(x.id || uid()), name: String(x.name || "").slice(0, 40), items: Array.isArray(x.items) ? x.items.map(String) : [] }));
+      let looseOrder = Array.isArray(cv0.loose) ? cv0.loose.map(String) : [];
+      const allKeys = () => [...folderApps(f.id).map((id) => "a:" + id), ...folderLinks(f.id).map((l) => "l:" + l.id)];
+      // 已经不在文件夹的拿掉；同一个东西只放一格；剩下的 = 还没分格
+      function loose() {
+        const have = new Set(allKeys());
+        const seen = new Set();
+        shelves.forEach((x) => (x.items = x.items.filter((k) => have.has(k) && !seen.has(k) && seen.add(k))));
+        const rest = allKeys().filter((k) => !seen.has(k));
+        const at = (k) => { const i = looseOrder.indexOf(k); return i < 0 ? 1e6 : i; };
+        return rest.map((k, i) => [k, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map((x) => x[0]);
+      }
+      const info = (k, size) => {
+        const id = k.slice(2);
+        if (k[0] === "a") {
+          const m = modules.get(id);
+          return { attr: `data-open="${id}"`, iconHtml: appIcon(m, size), name: m.name, title: m.description || m.name, sub: t("home.shelfApp") };
+        }
+        const l = links.find((x) => x.id === id);
+        let host_ = "";
+        try { host_ = new URL(l.url).host.replace(/^www\./, ""); } catch (e) { host_ = l.url; }
+        return { attr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, size), name: l.name, title: l.url, sub: host_ };
+      };
+      const mini = (attr, ic, label, extra) => `<button type="button" data-badge ${attr} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-6 shrink-0 items-center justify-center rounded-full shadow ring-2 ring-white dark:ring-slate-900 ${extra}">${icon(ic, "size-3.5")}</button>`;
+      const badges = (k) => {
+        if (!editMode || !isOwner) return "";
+        const id = k.slice(2);
+        return (k[0] === "l" ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700") : "") + mini(k[0] === "a" ? `data-out="${id}"` : `data-out-link="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700/90 text-white");
+      };
+      const tile = (k, num) => {
+        if (view === "list") {
+          const x = info(k, "size-8");
+          return `<div data-item="${k}" class="flex items-center gap-3 px-3 py-2 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}">
+            <span class="w-9 shrink-0 text-xs text-slate-400 tabular-nums">${num}</span>
+            <button type="button" ${x.attr} title="${esc(x.title)}" class="group flex min-w-0 flex-1 items-center gap-3 text-left">${x.iconHtml}<span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-800 group-hover:text-sky-700 group-hover:underline dark:text-slate-100 dark:group-hover:text-sky-300">${esc(x.name)}</span><span class="block truncate text-xs text-slate-400">${esc(x.sub)}</span></span></button>
+            ${editMode && isOwner ? `<span class="flex shrink-0 gap-1.5">${badges(k)}</span>` : ""}
+          </div>`;
+        }
+        const x = info(k, "size-12");
+        return `<div data-item="${k}" class="relative flex justify-center">
+          <button type="button" ${x.attr} title="${esc(x.title)}" class="flex w-full flex-col items-center gap-1.5 rounded-2xl px-1 py-2 hover:bg-white/80 dark:hover:bg-white/5">${x.iconHtml}<span class="line-clamp-2 w-full text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(x.name)}</span></button>
+          ${editMode && isOwner ? `<span class="absolute -top-1 right-0 flex gap-1">${badges(k)}</span>` : ""}
+        </div>`;
+      };
+      const itemsCls = () => (view === "list" ? "divide-y divide-slate-200/70 dark:divide-white/10" : "grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-1 p-2");
+      const emptyHint = (txt) => `<p data-empty class="col-span-full px-3 py-4 text-center text-xs text-slate-400">${esc(txt)}</p>`;
+      const card = (sh, i) => {
+        const n = sh.items.length;
+        return `<section data-shelf="${sh.id}" class="overflow-hidden rounded-2xl border border-white/80 bg-white/70 shadow-sm dark:border-white/10 dark:bg-slate-800/60">
+          <header class="flex items-center gap-2 border-b-4 border-slate-200/80 bg-gradient-to-b from-white/90 to-slate-50/80 px-3 py-2 dark:border-white/10 dark:from-slate-800 dark:to-slate-800/70">
+            ${canEdit ? `<span data-shelf-grip title="${esc(t("home.dragToSort"))}" class="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing dark:hover:bg-white/10">${icon("grip-vertical", "size-4")}</span>` : ""}
+            <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-slate-900 text-[11px] font-bold text-white dark:bg-white dark:text-slate-900">${i + 1}</span>
+            ${
+              editMode
+                ? `<input data-shelf-name="${sh.id}" value="${esc(sh.name)}" maxlength="40" placeholder="${esc(t("home.shelfName"))}" class="h-8 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:focus:border-white">`
+                : `<h3 class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(sh.name || t("home.shelfNew"))}</h3>`
+            }
+            <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-white/10 dark:text-slate-300">${n}</span>
+            ${editMode ? `<button type="button" data-shelf-del="${sh.id}" title="${esc(t("home.shelfDelete"))}" aria-label="${esc(t("home.shelfDelete"))}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
+          </header>
+          <div data-shelf-items="${sh.id}" class="min-h-[3.5rem] ${itemsCls()}">${sh.items.map((k, j) => tile(k, `${i + 1}.${j + 1}`)).join("")}${n ? "" : emptyHint(canEdit ? t("home.shelfDropHere") : t("home.shelfEmpty"))}</div>
+        </section>`;
+      };
+      function render() {
+        const rest = loose();
+        const seg = (v, ic, label) => `<button type="button" data-view="${v}" aria-pressed="${view === v}" class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 aria-pressed:bg-white aria-pressed:text-slate-900 aria-pressed:shadow-sm dark:text-slate-400 dark:aria-pressed:bg-slate-700 dark:aria-pressed:text-white">${icon(ic, "size-4")}${esc(label)}</button>`;
+        const tb = (attr, ic, label, primary) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm ${primary ? "bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"}">${icon(ic, "size-4")}${esc(label)}</button>`;
+        const showLoose = rest.length || !shelves.length || editMode;
+        const empty = !allKeys().length;
+        host.innerHTML = `
+          <div class="mb-3 flex flex-wrap items-center gap-2 ${f.is_shared || f.shared_by ? "pr-10" : ""}">
+            <div class="inline-flex rounded-xl bg-slate-200/60 p-0.5 dark:bg-white/10">${seg("icons", "layout-grid", t("home.shelfIcons"))}${seg("list", "list", t("home.shelfList"))}</div>
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+              ${isOwner ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : ""}
+              ${canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : ""}
+              ${canEdit && shelves.length ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""}
+            </div>
+          </div>
+          <div class="gw-noscroll -mx-1 max-h-[64vh] space-y-3 overflow-y-auto px-1 pb-1">
+            ${!shelves.length && canEdit && !empty ? `<p class="flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">${icon("lightbulb", "size-4 shrink-0")}${esc(t("home.shelfHint"))}</p>` : ""}
+            <div data-shelves class="space-y-3">${shelves.map(card).join("")}</div>
+            ${
+              showLoose
+                ? `<section class="overflow-hidden rounded-2xl border border-dashed border-slate-300/80 bg-white/40 dark:border-white/15 dark:bg-white/5">
+                    ${shelves.length ? `<header class="px-3 pt-2 text-xs font-semibold text-slate-500">${esc(t("home.shelfUnsorted"))}</header>` : ""}
+                    <div data-shelf-items="_" class="min-h-[3.5rem] ${itemsCls()}">${rest.map((k, j) => tile(k, shelves.length ? "–" : String(j + 1))).join("")}${rest.length ? "" : emptyHint(empty ? t("home.shelfFolderEmpty") : t("home.shelfDropHere"))}</div>
+                  </section>`
+                : ""
+            }
+          </div>`;
+        refreshIcons();
+        if (!canEdit || !window.Sortable) return;
+        const group = "shelf-" + f.id;
+        $$("[data-shelf-items]", host).forEach((el) =>
+          Sortable.create(el, { group, draggable: "[data-item]", filter: "[data-badge], input", preventOnFilter: false, animation: 150, delay: 180, delayOnTouchOnly: true, ghostClass: "opacity-40", onEnd: collect }),
+        );
+        const box = $("[data-shelves]", host);
+        if (box) Sortable.create(box, { handle: "[data-shelf-grip]", draggable: "[data-shelf]", animation: 150, ghostClass: "opacity-40", onEnd: collect });
+      }
+      // 拖完：照画面上的样子记下来
+      function collect() {
+        const byId = new Map(shelves.map((x) => [x.id, x]));
+        shelves = $$("[data-shelf]", host).map((sec) => {
+          const sh = byId.get(sec.dataset.shelf);
+          sh.items = $$("[data-item]", $("[data-shelf-items]", sec)).map((x) => x.dataset.item);
+          return sh;
+        });
+        const lz = $('[data-shelf-items="_"]', host);
+        if (lz) looseOrder = $$("[data-item]", lz).map((x) => x.dataset.item);
+        save();
+        render();
+      }
+      async function save() {
+        const canvas = { ...(f.canvas && typeof f.canvas === "object" ? f.canvas : {}), shelves, loose: looseOrder };
+        const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
+        if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
+        f.canvas = canvas;
+      }
+      host.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b || !host.contains(b)) return;
+        const d = b.dataset;
+        if (d.view) {
+          view = d.view;
+          try { localStorage.setItem(VKEY, view); } catch (err) { /* 忽略 */ }
+          return render();
+        }
+        if ("shelfLink" in d) return linkDialog(null, { folderId: f.id, onSaved: hooks.reopen });
+        if (d.shelfEditLink) return linkDialog(links.find((x) => x.id === d.shelfEditLink), { onSaved: hooks.reopen });
+        if ("shelfEdit" in d) return ((editMode = !editMode), render());
+        if ("shelfAdd" in d) {
+          shelves.push({ id: uid(), name: t("home.shelfNew") + " " + (shelves.length + 1), items: [] });
+          editMode = true;
+          save();
+          render();
+          const inp = $$("[data-shelf-name]", host).pop();
+          if (inp) (inp.focus(), inp.select(), inp.scrollIntoView({ block: "nearest" }));
+          return;
+        }
+        if (d.shelfDel) {
+          const sh = shelves.find((x) => x.id === d.shelfDel);
+          return confirmDialog(t("home.shelfDeleteTitle", { name: sh.name || t("home.shelfNew") }), t("home.shelfDeleteBody"), t("home.shelfDelete"), t("home.cancel")).then((ok) => {
+            if (!ok) return;
+            shelves = shelves.filter((x) => x.id !== d.shelfDel);
+            if (!shelves.length) editMode = false;
+            save();
+            render();
+          });
+        }
+      });
+      // 改 Section 名字：离开输入框或按 Enter 就存
+      host.addEventListener("change", (e) => {
+        const inp = e.target.closest("[data-shelf-name]");
+        if (!inp) return;
+        const sh = shelves.find((x) => x.id === inp.dataset.shelfName);
+        if (!sh) return;
+        sh.name = inp.value.trim().slice(0, 40);
+        save();
+      });
+      host.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.closest("[data-shelf-name]")) (e.preventDefault(), e.target.blur());
+      });
+      render();
+    }
+
     // ------------------------------------------------------------ 文件夹心智图（在文件夹浮动窗里，右边一排工具）
     /* 文件夹里的 App / 连结自动变成节点；工具：加连结图示（拥有者）、方块 / 圆角 / 菱形（打字用）、
        画线（点两个节点就连一条有箭头的线；也可以从节点四边的蓝点拖到另一个节点）、全选、条列（把选到的 / 全部排成一直栏，前面一个点）、
@@ -2636,7 +2811,7 @@ window.GWHome = (function () {
             <span data-colors class="hidden w-full flex-wrap justify-center gap-1 px-1 py-1">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
             ${tool("data-del", "trash-2", t("home.mapDelete"), "text-red-600 dark:text-red-400")}
             <span data-status class="mt-auto px-1 pb-1 text-center text-[10px] leading-tight text-slate-400"></span>
-            ${tool('data-tool="grid"', "layout-grid", t("home.mapGrid"))}
+            ${tool('data-tool="grid"', "library", t("home.shelfView"))}
           </div>
         </div>`;
       const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host), marquee = $("[data-marquee]", host);
@@ -2757,7 +2932,7 @@ window.GWHome = (function () {
       async function save() {
         if (!dirty) return;
         clearTimeout(saveTimer);
-        const canvas = { nodes, edges, map: true }; // map: 这个文件夹有心智图 → 一打开就显示心智图
+        const canvas = { ...(f.canvas && typeof f.canvas === "object" ? f.canvas : {}), nodes, edges, map: true }; // 柜子的 Section 一起留着
         const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
         if (error) return ((status.textContent = t("home.saveFailed")), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
         dirty = false;
@@ -2893,18 +3068,8 @@ window.GWHome = (function () {
         if ("linkNophoto" in b.dataset) return patchLink({ image_url: null });
         if ("linkOk" in b.dataset) return finishLinkEdit();
         if (b.dataset.tool === "text") return shapePop(pop.classList.contains("hidden"), b);
-        if (b.dataset.tool === "grid") {
-          // 换回格子：心智图的排法会不见，而且不能复原 → 先问
-          return confirmDialog(t("home.mapToGridTitle"), t("home.mapToGridBody"), t("home.mapToGrid"), t("home.cancel")).then(async (ok) => {
-            if (!ok) return;
-            clearTimeout(saveTimer);
-            dirty = false;
-            const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: null });
-            if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
-            f.canvas = null;
-            hooks.toGrid();
-          });
-        }
+        // 回到柜子看法（心智图照样留着，下次按 Mind map 还在）
+        if (b.dataset.tool === "grid") return hooks.toGrid();
         if (b.dataset.add) {
           shapePop(false);
           const shape = b.dataset.add;

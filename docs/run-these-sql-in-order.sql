@@ -4,6 +4,7 @@
 --   3) 角色按 Business ＋ Company 指派（20261119）：可以重复执行
 --   4) 谁可以删除 Business / Company / 模块（20261121）：可以重复执行
 --   5) Company 底下的 Estate（20261121110000）：可以重复执行
+--   6) Stock 图示改成 Plantation Operation 门户（20261121120000）：可以重复执行
 -- 只是新增 / 覆盖函数，不会改动或删除现有资料。
 
 -- ============ 20261116100000_gw_mcp ============
@@ -662,3 +663,19 @@ create policy gw_company_estates_write on public.gw_company_estates
   for all to authenticated
   using ((select public.gw_is_super_admin()))
   with check ((select public.gw_is_super_admin()));
+
+-- ============ 20261121120000_gw_module_plantation_operation（可以重复执行）============
+-- =====================================================================
+-- Intranet 的 Stock 图示改成 Plantation Operation 门户
+--   按进去先看到 Plantation Operation 首页（Stock、Management Report 等模块按钮），
+--   按 Stock 才进现在的 Stock 系统。代码仍是 STOCK（API key、权限都不用动）。
+-- 可以重复执行。
+-- =====================================================================
+
+update public.gw_modules
+   set name        = 'Plantation Operation',
+       icon        = 'tractor',
+       url         = 'https://oliviawsc.github.io/plantationstockmanagementsystem/portal/',
+       description = 'Plantation Operation portal: Stock, Management Report and the other estate modules',
+       category    = 'Plantation'
+ where code = 'STOCK';

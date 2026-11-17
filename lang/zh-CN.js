@@ -67,6 +67,7 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "noModulesInBusiness": "这个 Business 还没有模块。到 Admin Console → Master Manage 添加。",
     "dragToSort": "拖拉排序",
     "location": "Location",
     "linkPhoto": "照片",

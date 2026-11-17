@@ -67,6 +67,7 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "noModulesInBusiness": "No modules in this business yet. Add them in Admin Console → Master Manage.",
     "dragToSort": "Drag to reorder",
     "location": "Location",
     "linkPhoto": "Photo",

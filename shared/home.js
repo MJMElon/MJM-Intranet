@@ -877,7 +877,8 @@ window.GWHome = (function () {
       const mode = modeOf(key);
       const shownRows = mode === "full" ? B.rows : 1;
       const pad = mode === "title" ? `${g.pt + g.tg / 2}px ${g.px}px ${g.pb + g.tg / 2}px` : `${g.pt}px ${g.px}px ${g.pb}px`;
-      const body = tiles || `<p class="col-span-full row-start-1 self-center px-3 text-sm text-slate-500">${esc(t("home.noAppsForCompany"))}</p>`;
+      const emptyBiz = key !== "home" && !modsOfGroup(key).length && !sItems.some((x) => x.group_id === key);
+      const body = tiles || `<p class="col-span-full row-start-1 self-center px-3 text-sm text-slate-500">${esc(t(emptyBiz ? "home.noModulesInBusiness" : "home.noAppsForCompany"))}</p>`;
       const grid =
         mode === "title"
           ? ""
@@ -2049,7 +2050,8 @@ window.GWHome = (function () {
       const g = pageGeo();
       const parts = [];
       S.groups.forEach((grp) => {
-        if (!(modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id))) return;
+        // 一般人：Business 里有 App 才出现；super admin：新开的 Business 还没有模块也显示（空的区块）
+        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id))) return;
         const B = boxGeo(grp.id);
         parts.push([grp.id, boxShell(grp.id, grp.name, B, modeOf(grp.id) === "title" ? "" : boxTiles(grp.id, B))]);
       });

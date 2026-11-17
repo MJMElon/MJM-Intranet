@@ -473,7 +473,10 @@
         const e1 = await ensureMember(b.dataset.pickBiz);
         if (e1) return ((b.disabled = false), fail(e1));
         await autoCompany(b.dataset.pickBiz);
-        pm.close();
+        // 小窗不关：按钮变成「✓ Added」，可以继续加别的 Business
+        b.className = "pointer-events-none inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300";
+        b.innerHTML = `${icon("check", "size-4")} ${esc(ts("added"))}`;
+        refreshIcons();
         draw();
       });
     }

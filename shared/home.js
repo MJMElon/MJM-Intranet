@@ -2343,6 +2343,8 @@ window.GWHome = (function () {
     // o.folderId：直接建在这个文件夹里；o.onSaved：存好之后叫
     function linkDialog(link, o) {
       let chosen = link ? link.icon : "link";
+      let color = link ? link.color || "" : "";
+      let photo = link ? link.image_url || null : null;
       const dlg = modal(
         link ? t("home.editLink") : t("fab.addLink"),
         `<form class="space-y-4">
@@ -2352,6 +2354,15 @@ window.GWHome = (function () {
           <div>
             <p class="mb-1.5 ${cls.label}">${esc(t("home.linkIcon"))}</p>
             <div class="flex flex-wrap gap-1.5">${["link", ...Object.keys(GW.MODULE_ICONS)].filter((v, i, a) => a.indexOf(v) === i).map((k) => `<button type="button" data-pick-icon="${k}" class="flex size-9 items-center justify-center rounded-lg border"></button>`).join("")}</div>
+          </div>
+          <div>
+            <p class="mb-1.5 ${cls.label}">${esc(t("home.linkColor"))}</p>
+            <div class="flex flex-wrap gap-1.5">${["", ...Object.keys(PALETTE)].map((c) => `<button type="button" data-pick-color="${c}" title="${esc(c || t("home.iconAuto"))}" class="size-7 rounded-full border-2 shadow ${c ? "" : "bg-gradient-to-br from-slate-300 to-slate-500"}" style="${c ? `background:${PALETTE[c][1]}` : ""}"></button>`).join("")}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span data-photo-preview></span>
+            <label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(t("home.linkPhoto"))}<input type="file" data-photo accept="image/*" class="hidden"></label>
+            <button type="button" data-nophoto class="${btn("ghost", "sm")} hidden text-red-600 dark:text-red-400">${icon("image-off", "size-4")} ${esc(t("home.linkRemovePhoto"))}</button>
           </div>
           <div class="flex justify-end gap-2">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
@@ -2364,14 +2375,38 @@ window.GWHome = (function () {
           b.className = `flex size-9 items-center justify-center rounded-lg border ${b.dataset.pickIcon === chosen ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-700/20 dark:text-brand-100" : "border-slate-200 text-slate-500 dark:border-slate-700"}`;
           b.innerHTML = b.dataset.pickIcon === "link" ? icon("link", "size-4") : moduleIcon(b.dataset.pickIcon, "size-4");
         });
+      const paintExtra = () => {
+        $$("[data-pick-color]", dlg.el).forEach((b) => {
+          b.classList.toggle("border-slate-900", b.dataset.pickColor === color);
+          b.classList.toggle("dark:border-white", b.dataset.pickColor === color);
+          b.classList.toggle("border-white", b.dataset.pickColor !== color);
+        });
+        $("[data-photo-preview]", dlg.el).innerHTML = photo ? `<img src="${esc(photo)}" alt="" class="size-9 rounded-lg object-cover ring-1 ring-slate-200">` : "";
+        $("[data-nophoto]", dlg.el).classList.toggle("hidden", !photo);
+      };
       paint();
+      paintExtra();
       refreshIcons();
       $$("[data-pick-icon]", dlg.el).forEach((b) => b.addEventListener("click", () => ((chosen = b.dataset.pickIcon), paint(), refreshIcons())));
+      $$("[data-pick-color]", dlg.el).forEach((b) => b.addEventListener("click", () => ((color = b.dataset.pickColor), paintExtra())));
+      $("[data-nophoto]", dlg.el).addEventListener("click", () => ((photo = null), paintExtra()));
+      // 自己的照片当图示：先传到 link-icons，按 Save 才记到连结上
+      $("[data-photo]", dlg.el).addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) return toast(t("home.linkPhotoTooBig"));
+        const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
+        const path = `${data.profile.id}/${(link && link.id) || "new"}-${Date.now()}.${ext}`;
+        const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type, upsert: true });
+        if (up.error) return toast(t("home.saveFailed") + " (" + (up.error.message || "") + ")");
+        photo = sb.storage.from("link-icons").getPublicUrl(path).data.publicUrl;
+        paintExtra();
+      });
       $("[data-cancel]", dlg.el).onclick = dlg.close;
       $("form", dlg.el).addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
-        const row = { name: f.name.value.trim(), url: f.url.value.trim(), icon: chosen };
+        const row = { name: f.name.value.trim(), url: f.url.value.trim(), icon: chosen, color: color || null, image_url: photo };
         if (!/^https?:\/\//i.test(row.url)) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.badUrl")));
         if (link) {
           const { error } = await sb.from("gw_user_links").update(row).eq("id", link.id);
@@ -2430,11 +2465,9 @@ window.GWHome = (function () {
     /* mode = "grid"（图示格子）| "map"（心智图：视窗放大，右边一排工具；还是浮动窗，不换页）
        右上角小小的「两个人」= 分享给谁（分享用的文件夹、拥有者才有）；分享给我的文件夹右上角是淡蓝的「两个人」。
        分享给我的：不能移出里面的东西、不能改名。 */
-    function openFolder(fid, mode) {
+    function openFolder(fid) {
       const f = folders.find((x) => x.id === fid);
       if (!f) return;
-      // 预设是「柜子」：分好几格（Section），每格有名字，图示放在下面；心智图是另一个看法
-      mode = mode === "map" ? "map" : "shelf";
       const mineF = !f.shared_by;
       const canOut = !readOnly && mineF;
       const canRename = mineF && !readOnly;
@@ -2446,30 +2479,25 @@ window.GWHome = (function () {
         <div class="mb-4 flex max-w-full items-center gap-2 px-4">
           <h2 data-title class="min-w-0 truncate text-3xl font-bold text-white drop-shadow outline-none select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
         </div>
-        <div data-win class="relative w-full ${mode === "map" ? "max-w-5xl" : "max-w-3xl"} rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
+        <div data-win class="relative w-full max-w-5xl rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
           ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
           ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
-          ${mode === "map" ? `<div data-map-host class="h-[72vh] min-h-[420px]"></div>` : `<div data-shelf-host></div>`}
-        </div>
-        ${readOnly ? "" : `<div class="mt-4 flex flex-wrap justify-center gap-2">${mode === "map" ? pill("data-grid", "library", t("home.shelfView")) : pill("data-map", "git-fork", t("home.mindMap"))}</div>`}`;
+          <div data-shelf-host></div>
+        </div>`;
       document.body.appendChild(wrap);
       refreshIcons();
-      let mapCtl = null;
       const close = () => {
-        if (mapCtl) mapCtl.flush();
         wrap.remove();
         document.removeEventListener("keydown", onKey);
       };
-      // Esc：上面还有弹窗（分享名单、加连结）就不动；心智图在画线就先取消画线
+      // Esc：上面还有弹窗（分享名单、加连结）就不动
       const onKey = (e) => {
         if (e.key !== "Escape" || document.querySelector(".gw-modal")) return;
-        if (mapCtl && mapCtl.onEscape()) return;
         close();
       };
       document.addEventListener("keydown", onKey);
       const canEditF = !readOnly && (mineF || f.share_role === "edit");
-      if (mode === "map") mapCtl = mountMindMap(f, $("[data-map-host]", wrap), { openApp: (id) => (close(), open(id)), reopen: () => (close(), openFolder(fid, "map")), toGrid: () => (close(), openFolder(fid)), canAddLink: canOut, canEditLinks: canOut, canEdit: canEditF });
-      else mountShelves(f, $("[data-shelf-host]", wrap), { canEdit: canEditF, isOwner: canOut, reopen: () => (close(), openFolder(fid)) });
+      mountShelves(f, $("[data-shelf-host]", wrap), { canEdit: canEditF, isOwner: canOut, reopen: () => (close(), openFolder(fid)) });
       // 长按名字 → 名字原地变成可以打字；按 ✓、Enter 或点别的地方就存，Esc 取消
       if (canRename) {
         const h = $("[data-title]", wrap);
@@ -2525,7 +2553,7 @@ window.GWHome = (function () {
           if (!e.target.closest("[data-win]") && !e.target.closest("[data-title]")) close();
           return;
         }
-        if (!wrap.contains(b) || b.closest("[data-map-host]") || "renameOk" in b.dataset) return;
+        if (!wrap.contains(b) || "renameOk" in b.dataset) return;
         if (b.dataset.open) return close(), open(b.dataset.open);
         if (b.dataset.openLink) {
           const l = links.find((x) => x.id === b.dataset.openLink);
@@ -2546,34 +2574,27 @@ window.GWHome = (function () {
           return openFolder(fid);
         }
         if ("share" in b.dataset) return sharePicker(f);
-        if ("map" in b.dataset) return close(), openFolder(fid, "map");
-        if ("grid" in b.dataset) return close(), openFolder(fid, "grid");
       });
     }
 
-    // ------------------------------------------------------------ 文件夹「柜子」看法（预设）
-    /* 一格一格的 Section（像柜子的层板）：每格有编号、名字，下面放图示（App / 连结）。
-       可以看成「图示」或「清单」（清单有 1.1、1.2 编号，像总表）。
-       能改的人（拥有者、被分享成 Can edit 的人）：拖图示换格 / 排顺序、拖 Section 的握把排 Section、按 Edit 改名字 / 删 Section。
-       拥有者另外可以加连结、改连结、把东西移出文件夹。
-       存在 gw_user_folders.canvas.shelves = [{ id, name, items: ["a:模块id" | "l:连结id"] }]（跟心智图同一栏，互不影响）；
-       没放进任何 Section 的在最下面「Not in a section」，顺序记在 canvas.loose。 */
+    // ------------------------------------------------------------ 文件夹「柜子」看法
+    /* 一个文件夹 = 一个柜子，里面好几个标题（Section），每个标题下面一条条连结 / App（↳ 1.1、1.2…，像总表）。
+       电脑上标题排成两栏。能改的人（拥有者、被分享成 Can edit 的人）：
+         - 把连结拖到某个标题上（标题会亮起来）→ 放到那个标题下面
+         - 也可以拖到列表里任何位置排顺序；拖标题左边的握把排标题
+         - 按 Edit 改标题名字 / 删标题
+       拥有者另外可以加连结、改连结（名字、网址、图示、颜色、照片）、把东西移出文件夹。
+       存在 gw_user_folders.canvas.shelves = [{ id, name, items: ["a:模块id" | "l:连结id"] }]；
+       还没放到标题下的在最下面「Not in a section」，顺序记在 canvas.loose。 */
     function mountShelves(f, host, hooks) {
       const canEdit = !!hooks.canEdit, isOwner = !!hooks.isOwner;
       const uid = () => Math.random().toString(36).slice(2, 10);
-      const VKEY = "gw_shelf_view_" + f.id;
-      let view = "icons";
-      try {
-        view = localStorage.getItem(VKEY) === "list" ? "list" : "icons";
-      } catch (e) {
-        /* 忽略 */
-      }
       let editMode = false;
       const cv0 = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
       let shelves = (Array.isArray(cv0.shelves) ? cv0.shelves : []).filter((x) => x && typeof x === "object").map((x) => ({ id: String(x.id || uid()), name: String(x.name || "").slice(0, 40), items: Array.isArray(x.items) ? x.items.map(String) : [] }));
       let looseOrder = Array.isArray(cv0.loose) ? cv0.loose.map(String) : [];
       const allKeys = () => [...folderApps(f.id).map((id) => "a:" + id), ...folderLinks(f.id).map((l) => "l:" + l.id)];
-      // 已经不在文件夹的拿掉；同一个东西只放一格；剩下的 = 还没分格
+      // 已经不在文件夹的拿掉；同一个东西只放一个标题；剩下的 = 还没分
       function loose() {
         const have = new Set(allKeys());
         const seen = new Set();
@@ -2582,80 +2603,65 @@ window.GWHome = (function () {
         const at = (k) => { const i = looseOrder.indexOf(k); return i < 0 ? 1e6 : i; };
         return rest.map((k, i) => [k, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map((x) => x[0]);
       }
-      const info = (k, size) => {
+      const info = (k) => {
         const id = k.slice(2);
         if (k[0] === "a") {
           const m = modules.get(id);
-          return { attr: `data-open="${id}"`, iconHtml: appIcon(m, size), name: m.name, title: m.description || m.name, sub: t("home.shelfApp") };
+          return { attr: `data-open="${id}"`, iconHtml: appIcon(m, "size-7"), name: m.name, title: m.description || m.name, sub: t("home.shelfApp") };
         }
         const l = links.find((x) => x.id === id);
-        let host_ = "";
-        try { host_ = new URL(l.url).host.replace(/^www\./, ""); } catch (e) { host_ = l.url; }
-        return { attr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, size), name: l.name, title: l.url, sub: host_ };
+        let site = "";
+        try { site = new URL(l.url).host.replace(/^www\./, ""); } catch (e) { site = l.url; }
+        return { attr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, "size-7"), name: l.name, title: l.url, sub: site };
       };
-      const mini = (attr, ic, label, extra) => `<button type="button" data-badge ${attr} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-6 shrink-0 items-center justify-center rounded-full shadow ring-2 ring-white dark:ring-slate-900 ${extra}">${icon(ic, "size-3.5")}</button>`;
+      const mini = (attr, ic, label, extra) => `<button type="button" data-badge ${attr} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 ${extra}">${icon(ic, "size-3.5")}</button>`;
       const badges = (k) => {
-        if (!editMode || !isOwner) return "";
         const id = k.slice(2);
-        return (k[0] === "l" ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700") : "") + mini(k[0] === "a" ? `data-out="${id}"` : `data-out-link="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700/90 text-white");
+        return (k[0] === "l" ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200") : "") + mini(k[0] === "a" ? `data-out="${id}"` : `data-out-link="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700 text-white");
       };
-      const tile = (k, num) => {
-        if (view === "list") {
-          const x = info(k, "size-8");
-          return `<div data-item="${k}" class="flex items-center gap-3 px-3 py-2 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}">
-            <span class="w-9 shrink-0 text-xs text-slate-400 tabular-nums">${num}</span>
-            <button type="button" ${x.attr} title="${esc(x.title)}" class="group flex min-w-0 flex-1 items-center gap-3 text-left">${x.iconHtml}<span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-800 group-hover:text-sky-700 group-hover:underline dark:text-slate-100 dark:group-hover:text-sky-300">${esc(x.name)}</span><span class="block truncate text-xs text-slate-400">${esc(x.sub)}</span></span></button>
-            ${editMode && isOwner ? `<span class="flex shrink-0 gap-1.5">${badges(k)}</span>` : ""}
-          </div>`;
-        }
-        const x = info(k, "size-12");
-        return `<div data-item="${k}" class="relative flex justify-center">
-          <button type="button" ${x.attr} title="${esc(x.title)}" class="flex w-full flex-col items-center gap-1.5 rounded-2xl px-1 py-2 hover:bg-white/80 dark:hover:bg-white/5">${x.iconHtml}<span class="line-clamp-2 w-full text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(x.name)}</span></button>
-          ${editMode && isOwner ? `<span class="absolute -top-1 right-0 flex gap-1">${badges(k)}</span>` : ""}
+      // 一条：↳ 编号 图示 名字（下面小字是网站）
+      const row = (k, num) => {
+        const x = info(k);
+        return `<div data-item="${k}" class="flex items-center gap-2 py-1.5 pr-2 pl-3 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}">
+          <span class="flex shrink-0 items-center gap-1 text-slate-300 dark:text-slate-600">${icon("corner-down-right", "size-4")}<span class="w-7 text-[11px] text-slate-400 tabular-nums">${num}</span></span>
+          <button type="button" ${x.attr} title="${esc(x.title)}" class="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-0.5 text-left">${x.iconHtml}<span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-800 group-hover:text-sky-700 group-hover:underline dark:text-slate-100 dark:group-hover:text-sky-300">${esc(x.name)}</span><span class="block truncate text-[11px] text-slate-400">${esc(x.sub)}</span></span></button>
+          ${editMode && isOwner ? `<span class="flex shrink-0 gap-1">${badges(k)}</span>` : ""}
         </div>`;
       };
-      const itemsCls = () => (view === "list" ? "divide-y divide-slate-200/70 dark:divide-white/10" : "grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-1 p-2");
-      const emptyHint = (txt) => `<p data-empty class="col-span-full px-3 py-4 text-center text-xs text-slate-400">${esc(txt)}</p>`;
+      const emptyHint = (txt) => `<p data-empty class="px-3 py-3 text-center text-xs text-slate-400">${esc(txt)}</p>`;
       const card = (sh, i) => {
         const n = sh.items.length;
-        return `<section data-shelf="${sh.id}" class="overflow-hidden rounded-2xl border border-white/80 bg-white/70 shadow-sm dark:border-white/10 dark:bg-slate-800/60">
-          <header class="flex items-center gap-2 border-b-4 border-slate-200/80 bg-gradient-to-b from-white/90 to-slate-50/80 px-3 py-2 dark:border-white/10 dark:from-slate-800 dark:to-slate-800/70">
-            ${canEdit ? `<span data-shelf-grip title="${esc(t("home.dragToSort"))}" class="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing dark:hover:bg-white/10">${icon("grip-vertical", "size-4")}</span>` : ""}
+        return `<section data-shelf="${sh.id}" class="overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-800/70">
+          <header data-shelf-head="${sh.id}" class="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/90 px-3 py-2 transition dark:border-white/10 dark:bg-slate-800">
+            ${canEdit ? `<span data-shelf-grip title="${esc(t("home.dragToSort"))}" class="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 active:cursor-grabbing dark:hover:bg-white/10">${icon("grip-vertical", "size-4")}</span>` : ""}
             <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-slate-900 text-[11px] font-bold text-white dark:bg-white dark:text-slate-900">${i + 1}</span>
             ${
               editMode
                 ? `<input data-shelf-name="${sh.id}" value="${esc(sh.name)}" maxlength="40" placeholder="${esc(t("home.shelfName"))}" class="h-8 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:focus:border-white">`
                 : `<h3 class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(sh.name || t("home.shelfNew"))}</h3>`
             }
-            <span class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-white/10 dark:text-slate-300">${n}</span>
+            <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-white/10 dark:text-slate-300 dark:ring-white/10">${n}</span>
             ${editMode ? `<button type="button" data-shelf-del="${sh.id}" title="${esc(t("home.shelfDelete"))}" aria-label="${esc(t("home.shelfDelete"))}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
           </header>
-          <div data-shelf-items="${sh.id}" class="min-h-[3.5rem] ${itemsCls()}">${sh.items.map((k, j) => tile(k, `${i + 1}.${j + 1}`)).join("")}${n ? "" : emptyHint(canEdit ? t("home.shelfDropHere") : t("home.shelfEmpty"))}</div>
+          <div data-shelf-items="${sh.id}" class="min-h-[2.75rem] py-1">${sh.items.map((k, j) => row(k, `${i + 1}.${j + 1}`)).join("")}${n ? "" : emptyHint(canEdit ? t("home.shelfDropHere") : t("home.shelfEmpty"))}</div>
         </section>`;
       };
       function render() {
         const rest = loose();
-        const seg = (v, ic, label) => `<button type="button" data-view="${v}" aria-pressed="${view === v}" class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 aria-pressed:bg-white aria-pressed:text-slate-900 aria-pressed:shadow-sm dark:text-slate-400 dark:aria-pressed:bg-slate-700 dark:aria-pressed:text-white">${icon(ic, "size-4")}${esc(label)}</button>`;
         const tb = (attr, ic, label, primary) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm ${primary ? "bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"}">${icon(ic, "size-4")}${esc(label)}</button>`;
         const showLoose = rest.length || !shelves.length || editMode;
         const empty = !allKeys().length;
+        const tools = [isOwner ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : "", canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : "", canEdit && shelves.length ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""].join("");
         host.innerHTML = `
-          <div class="mb-3 flex flex-wrap items-center gap-2 ${f.is_shared || f.shared_by ? "pr-10" : ""}">
-            <div class="inline-flex rounded-xl bg-slate-200/60 p-0.5 dark:bg-white/10">${seg("icons", "layout-grid", t("home.shelfIcons"))}${seg("list", "list", t("home.shelfList"))}</div>
-            <div class="ml-auto flex flex-wrap items-center gap-2">
-              ${isOwner ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : ""}
-              ${canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : ""}
-              ${canEdit && shelves.length ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""}
-            </div>
-          </div>
-          <div class="gw-noscroll -mx-1 max-h-[64vh] space-y-3 overflow-y-auto px-1 pb-1">
-            ${!shelves.length && canEdit && !empty ? `<p class="flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">${icon("lightbulb", "size-4 shrink-0")}${esc(t("home.shelfHint"))}</p>` : ""}
-            <div data-shelves class="space-y-3">${shelves.map(card).join("")}</div>
+          ${tools ? `<div class="mb-3 flex flex-wrap items-center justify-end gap-2 ${f.is_shared || f.shared_by ? "pr-10" : ""}">${tools}</div>` : `<div class="h-6"></div>`}
+          <div class="gw-noscroll -mx-1 max-h-[68vh] space-y-3 overflow-y-auto px-1 pb-1">
+            ${!shelves.length && canEdit && !empty ? `<p class="mb-3 flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">${icon("lightbulb", "size-4 shrink-0")}${esc(t("home.shelfHint"))}</p>` : ""}
+            ${shelves.length ? shelvesHtml() : ""}
             ${
               showLoose
-                ? `<section class="overflow-hidden rounded-2xl border border-dashed border-slate-300/80 bg-white/40 dark:border-white/15 dark:bg-white/5">
+                ? `<section class="overflow-hidden rounded-2xl border border-dashed border-slate-300/80 bg-white/50 dark:border-white/15 dark:bg-white/5">
                     ${shelves.length ? `<header class="px-3 pt-2 text-xs font-semibold text-slate-500">${esc(t("home.shelfUnsorted"))}</header>` : ""}
-                    <div data-shelf-items="_" class="min-h-[3.5rem] ${itemsCls()}">${rest.map((k, j) => tile(k, shelves.length ? "–" : String(j + 1))).join("")}${rest.length ? "" : emptyHint(empty ? t("home.shelfFolderEmpty") : t("home.shelfDropHere"))}</div>
+                    <div data-shelf-items="_" class="min-h-[2.75rem] py-1">${rest.map((k, j) => row(k, shelves.length ? "" : String(j + 1))).join("")}${rest.length ? "" : emptyHint(empty ? t("home.shelfFolderEmpty") : t("home.shelfDropHere"))}</div>
                   </section>`
                 : ""
             }
@@ -2664,26 +2670,88 @@ window.GWHome = (function () {
         if (!canEdit || !window.Sortable) return;
         const group = "shelf-" + f.id;
         $$("[data-shelf-items]", host).forEach((el) =>
-          Sortable.create(el, { group, draggable: "[data-item]", filter: "[data-badge], input", preventOnFilter: false, animation: 150, delay: 180, delayOnTouchOnly: true, ghostClass: "opacity-40", onEnd: collect }),
+          Sortable.create(el, { group, draggable: "[data-item]", filter: "[data-badge], input", preventOnFilter: false, animation: 150, delay: 180, delayOnTouchOnly: true, ghostClass: "opacity-40", onStart: dragStart, onEnd: dragEnd }),
         );
-        const box = $("[data-shelves]", host);
-        if (box) Sortable.create(box, { handle: "[data-shelf-grip]", draggable: "[data-shelf]", animation: 150, ghostClass: "opacity-40", onEnd: collect });
+        $$("[data-shelf-col]", host).forEach((col) =>
+          Sortable.create(col, { group: "shelfcol-" + f.id, handle: "[data-shelf-grip]", draggable: "[data-shelf]", animation: 150, ghostClass: "opacity-40", onEnd: () => collect() }),
+        );
       }
-      // 拖完：照画面上的样子记下来
-      function collect() {
+      // 电脑 / 平板：两栏固定（1 | 2、3 | 4…，拖的时候不会乱跳）；手机：一栏
+      const wide = () => matchMedia("(min-width: 768px)").matches;
+      let wasWide = wide();
+      const onResize = () => {
+        if (!document.body.contains(host)) return removeEventListener("resize", onResize);
+        if (wide() !== wasWide) ((wasWide = wide()), render());
+      };
+      addEventListener("resize", onResize);
+      function shelvesHtml() {
+        const col = (list) => `<div data-shelf-col class="space-y-3">${list.map(([sh, i]) => card(sh, i)).join("")}</div>`;
+        const all = shelves.map((sh, i) => [sh, i]);
+        if (!wide() || shelves.length < 2) return col(all);
+        return `<div class="grid grid-cols-2 items-start gap-3">${col(all.filter((x) => x[1] % 2 === 0))}${col(all.filter((x) => x[1] % 2 === 1))}</div>`;
+      }
+      // 拖着连结经过标题：标题亮起来；放开就放到那个标题下面（最后一条）
+      const HL = ["bg-sky-100", "ring-2", "ring-sky-400", "ring-inset", "dark:bg-sky-900/40"];
+      let overHead = null;
+      const track = (x, y) => {
+        const el = document.elementFromPoint(x, y);
+        const h = el && el.closest("[data-shelf-head]");
+        if (h === overHead) return;
+        if (overHead) overHead.classList.remove(...HL);
+        overHead = h && host.contains(h) ? h : null;
+        if (overHead) overHead.classList.add(...HL);
+      };
+      const onDragOver = (e) => track(e.clientX, e.clientY);
+      const onPtr = (e) => {
+        const p = e.touches ? e.touches[0] : e;
+        if (p) track(p.clientX, p.clientY);
+      };
+      function dragStart() {
+        overHead = null;
+        document.addEventListener("dragover", onDragOver, true);
+        document.addEventListener("pointermove", onPtr, true);
+        document.addEventListener("touchmove", onPtr, { capture: true, passive: true });
+      }
+      function dragEnd(evt) {
+        document.removeEventListener("dragover", onDragOver, true);
+        document.removeEventListener("pointermove", onPtr, true);
+        document.removeEventListener("touchmove", onPtr, { capture: true });
+        // 放开那一下的位置再看一次（有的浏览器最后一下 dragover 来得慢）
+        const oe = evt.originalEvent;
+        const pt = oe && (oe.changedTouches ? oe.changedTouches[0] : oe);
+        if (pt && (pt.clientX || pt.clientY)) track(pt.clientX, pt.clientY);
+        const target = overHead ? overHead.dataset.shelfHead : null;
+        if (overHead) overHead.classList.remove(...HL);
+        overHead = null;
+        collect(target ? { key: evt.item.dataset.item, to: target } : null);
+      }
+      // 照画面上的样子记下来（放在标题上的再搬到那个标题下面）
+      function collect(drop) {
         const byId = new Map(shelves.map((x) => [x.id, x]));
-        shelves = $$("[data-shelf]", host).map((sec) => {
+        // 两栏：左右交错读回来（左 1、右 1、左 2、右 2…）
+        const cols = $$("[data-shelf-col]", host).map((c) => $$("[data-shelf]", c));
+        const secs = [];
+        for (let i = 0; i < Math.max(0, ...cols.map((c) => c.length)); i++) cols.forEach((c) => c[i] && secs.push(c[i]));
+        shelves = secs.map((sec) => {
           const sh = byId.get(sec.dataset.shelf);
           sh.items = $$("[data-item]", $("[data-shelf-items]", sec)).map((x) => x.dataset.item);
           return sh;
         });
         const lz = $('[data-shelf-items="_"]', host);
         if (lz) looseOrder = $$("[data-item]", lz).map((x) => x.dataset.item);
+        if (drop) {
+          shelves.forEach((x) => (x.items = x.items.filter((k) => k !== drop.key)));
+          const to = shelves.find((x) => x.id === drop.to);
+          if (to) to.items.push(drop.key);
+        }
         save();
         render();
       }
       async function save() {
         const canvas = { ...(f.canvas && typeof f.canvas === "object" ? f.canvas : {}), shelves, loose: looseOrder };
+        delete canvas.nodes;
+        delete canvas.edges;
+        delete canvas.map;
         const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
         if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
         f.canvas = canvas;
@@ -2692,20 +2760,16 @@ window.GWHome = (function () {
         const b = e.target.closest("button");
         if (!b || !host.contains(b)) return;
         const d = b.dataset;
-        if (d.view) {
-          view = d.view;
-          try { localStorage.setItem(VKEY, view); } catch (err) { /* 忽略 */ }
-          return render();
-        }
         if ("shelfLink" in d) return linkDialog(null, { folderId: f.id, onSaved: hooks.reopen });
         if (d.shelfEditLink) return linkDialog(links.find((x) => x.id === d.shelfEditLink), { onSaved: hooks.reopen });
         if ("shelfEdit" in d) return ((editMode = !editMode), render());
         if ("shelfAdd" in d) {
-          shelves.push({ id: uid(), name: t("home.shelfNew") + " " + (shelves.length + 1), items: [] });
+          const nid = uid();
+          shelves.push({ id: nid, name: t("home.shelfNew") + " " + (shelves.length + 1), items: [] });
           editMode = true;
           save();
           render();
-          const inp = $$("[data-shelf-name]", host).pop();
+          const inp = $(`[data-shelf-name="${nid}"]`, host);
           if (inp) (inp.focus(), inp.select(), inp.scrollIntoView({ block: "nearest" }));
           return;
         }
@@ -2720,7 +2784,7 @@ window.GWHome = (function () {
           });
         }
       });
-      // 改 Section 名字：离开输入框或按 Enter 就存
+      // 改标题名字：离开输入框或按 Enter 就存
       host.addEventListener("change", (e) => {
         const inp = e.target.closest("[data-shelf-name]");
         if (!inp) return;
@@ -2733,635 +2797,6 @@ window.GWHome = (function () {
         if (e.key === "Enter" && e.target.closest("[data-shelf-name]")) (e.preventDefault(), e.target.blur());
       });
       render();
-    }
-
-    // ------------------------------------------------------------ 文件夹心智图（在文件夹浮动窗里，右边一排工具）
-    /* 文件夹里的 App / 连结自动变成节点；工具：加连结图示（拥有者）、方块 / 圆角 / 菱形（打字用）、
-       画线（点两个节点就连一条有箭头的线；也可以从节点四边的蓝点拖到另一个节点）、全选、条列（把选到的 / 全部排成一直栏，前面一个点）、
-       颜色（选到方块时）、删除。拖动节点改位置（选了好几个会一起动）；方块点两下改文字；App / 连结点两下打开。
-       存在 gw_user_folders.canvas（gw_save_folder_canvas：拥有者和被分享的人都能改，改了会自动存）。 */
-    const MAP_COLORS = ["slate", "sky", "emerald", "amber", "rose", "violet"];
-    const MAP_FILL = {
-      slate: "border-slate-300 bg-white text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100",
-      sky: "border-sky-300 bg-sky-100 text-sky-900",
-      emerald: "border-emerald-300 bg-emerald-100 text-emerald-900",
-      amber: "border-amber-300 bg-amber-100 text-amber-900",
-      rose: "border-rose-300 bg-rose-100 text-rose-900",
-      violet: "border-violet-300 bg-violet-100 text-violet-900",
-    };
-    const MAP_SWATCH = { slate: "#94a3b8", sky: "#38bdf8", emerald: "#34d399", amber: "#fbbf24", rose: "#fb7185", violet: "#a78bfa" };
-    const NODE_W = 120, NODE_H = 108, ROW_W = 312, ROW_H = 48, GRID = 24, MIN_W = 96, MIN_H = 48;
-    const snap = (v) => Math.round(v / GRID) * GRID; // 位置都对齐点点格子，排起来才整齐
-    function mountMindMap(f, host, hooks) {
-      const W = 1600, H = 1200;
-      const uid = () => Math.random().toString(36).slice(2, 10);
-      const cv = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
-      const nodes = (Array.isArray(cv.nodes) ? cv.nodes : []).map((n) => ({ ...n }));
-      let edges = (Array.isArray(cv.edges) ? cv.edges : []).map((e) => ({ ...e }));
-      // 文件夹里的 App / 连结：没有节点的补上，已经不在文件夹的拿掉
-      const apps = folderApps(f.id), lks = folderLinks(f.id).map((l) => l.id);
-      const kept = nodes.filter((n) => n.type === "shape" || (n.type === "app" ? apps.includes(n.ref) : lks.includes(n.ref)));
-      nodes.splice(0, nodes.length, ...kept);
-      let k = nodes.length;
-      const place = (type, ref) => {
-        if (nodes.some((n) => n.type === type && n.ref === ref)) return;
-        nodes.push({ id: uid(), type, ref, x: snap(48 + (k % 6) * 168), y: snap(48 + Math.floor(k / 6) * 144), w: NODE_W, h: NODE_H });
-        k++;
-      };
-      apps.forEach((id) => place("app", id));
-      lks.forEach((id) => place("link", id));
-      const have = new Set(nodes.map((n) => n.id));
-      edges = edges.filter((e) => e && e.from && e.to && have.has(e.from.n) && have.has(e.to.n));
-
-      let selSet = new Set(), selEdge = null;
-      let lineMode = false, lineFrom = null;
-      let dirty = false, saveTimer = null, drag = null;
-      let linkEdit = null, lp = null; // 长按连结图示：改名字 / 换图示（只有拥有者）
-      let scale = 1, panMode = false, spaceHeld = false; // 缩放（Ctrl + 滚轮 / 触控板捏合）、手形工具（按住拖动画面）
-      const canEdit = !!hooks.canEdit;
-      const tool = (attr, ic, label, extra) =>
-        `<button type="button" ${attr} class="flex w-full flex-col items-center gap-0.5 rounded-xl px-1 py-1.5 text-[10px] font-medium text-slate-600 hover:bg-white aria-pressed:bg-slate-900 aria-pressed:text-white disabled:opacity-40 dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900 ${extra || ""}">${icon(ic, "size-5")}<span class="leading-tight">${esc(label)}</span></button>`;
-      host.innerHTML = `<div class="relative flex h-full gap-3">
-          <div data-scroll class="gw-noscroll relative min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain rounded-2xl border border-white/70 bg-white/60 dark:border-white/10 dark:bg-slate-950/40">
-            <div data-zoom style="width:${W}px;height:${H}px">
-            <div data-canvas class="relative" style="width:${W}px;height:${H}px;transform-origin:0 0;background-image:radial-gradient(circle, rgba(100,116,139,.28) 1px, transparent 1px);background-size:24px 24px">
-              <svg data-edges class="absolute inset-0" width="${W}" height="${H}" style="pointer-events:none">
-                <defs><marker id="gw-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#475569"/></marker></defs>
-                <g data-edge-layer></g>
-                <path data-temp fill="none" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="6 4" style="display:none"/>
-              </svg>
-              <div data-nodes class="absolute inset-0" style="pointer-events:none"></div>
-              <div data-marquee class="pointer-events-none absolute hidden rounded border-2 border-dashed border-sky-500 bg-sky-500/10"></div>
-            </div>
-            </div>
-          </div>
-          <div data-shape-pop class="absolute z-30 hidden origin-right scale-95 flex-row items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 opacity-0 shadow-xl transition duration-150 dark:border-slate-700 dark:bg-slate-800">
-            ${tool('data-add="rect"', "square", t("home.mapAddBox"), "w-14")}
-            ${tool('data-add="round"', "circle", t("home.mapAddRound"), "w-14")}
-            ${tool('data-add="diamond"', "diamond", t("home.mapAddDiamond"), "w-14")}
-            <span class="absolute top-1/2 -right-1.5 size-3 -translate-y-1/2 rotate-45 border-t border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800"></span>
-          </div>
-          <div data-tools class="${canEdit ? "flex" : "hidden"} w-16 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl border border-white/70 bg-white/70 p-1 dark:border-white/10 dark:bg-slate-800/70">
-            ${hooks.canAddLink ? tool('data-tool="icon"', "link", t("home.mapIcon")) : ""}
-            ${tool('data-tool="text"', "type", t("home.mapText"))}
-            ${tool('data-tool="line"', "spline", t("home.mapLine"))}
-            ${tool('data-tool="hand"', "hand", t("home.mapHand"))}
-            ${tool('data-tool="all"', "box-select", t("home.mapSelectAll"))}
-            ${tool('data-tool="bullets"', "list", t("home.mapBullets"))}
-            <span data-colors class="hidden w-full flex-wrap justify-center gap-1 px-1 py-1">${MAP_COLORS.map((c) => `<button type="button" data-color="${c}" aria-label="${c}" class="size-5 rounded-full ring-slate-400 ring-offset-1 hover:ring-2" style="background:${MAP_SWATCH[c]}"></button>`).join("")}</span>
-            ${tool("data-del", "trash-2", t("home.mapDelete"), "text-red-600 dark:text-red-400")}
-            <span data-status class="mt-auto px-1 pb-1 text-center text-[10px] leading-tight text-slate-400"></span>
-            ${tool('data-tool="grid"', "library", t("home.shelfView"))}
-          </div>
-        </div>`;
-      const canvasEl = $("[data-canvas]", host), nodesEl = $("[data-nodes]", host), edgeLayer = $("[data-edge-layer]", host), temp = $("[data-temp]", host), marquee = $("[data-marquee]", host);
-      const status = $("[data-status]", host), colorsEl = $("[data-colors]", host), delBtn = $("[data-del]", host), scrollEl = $("[data-scroll]", host);
-      const byId = (id) => nodes.find((n) => n.id === id);
-      // 「文字」的小面板：从按钮旁边长出来（开 = 先摆到按钮旁边再放大）
-      const pop = $("[data-shape-pop]", host);
-      function shapePop(show, btnEl) {
-        if (!show) {
-          pop.classList.add("opacity-0", "scale-95");
-          setTimeout(() => (pop.classList.add("hidden"), pop.classList.remove("flex")), 150);
-          return;
-        }
-        const hr = host.getBoundingClientRect(), br = btnEl.getBoundingClientRect();
-        pop.style.top = Math.round(br.top - hr.top + br.height / 2) + "px";
-        pop.style.right = Math.round(hr.right - br.left + 10) + "px";
-        pop.style.transform = "translateY(-50%)";
-        pop.classList.remove("hidden");
-        pop.classList.add("flex");
-        requestAnimationFrame(() => pop.classList.remove("opacity-0", "scale-95"));
-      }
-      host.addEventListener("pointerdown", (e) => {
-        if (!pop.classList.contains("hidden") && !e.target.closest("[data-shape-pop]") && !e.target.closest('[data-tool="text"]')) shapePop(false);
-      });
-      const port = (n, side) => (side === "t" ? [n.x + n.w / 2, n.y] : side === "b" ? [n.x + n.w / 2, n.y + n.h] : side === "l" ? [n.x, n.y + n.h / 2] : [n.x + n.w, n.y + n.h / 2]);
-      const bendPt = (x, y, side, dx, dy) => (side === "l" ? [x - dx, y] : side === "r" ? [x + dx, y] : side === "t" ? [x, y - dy] : [x, y + dy]);
-      const pathD = (a, sa, b, sb2) => {
-        const [x1, y1] = port(a, sa), [x2, y2] = port(b, sb2);
-        const dx = Math.max(40, Math.abs(x2 - x1) / 2), dy = Math.max(40, Math.abs(y2 - y1) / 2);
-        const c1 = bendPt(x1, y1, sa, dx, dy), c2 = bendPt(x2, y2, sb2, dx, dy);
-        return `M${x1} ${y1} C${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${x2} ${y2}`;
-      };
-      // 画线工具：照两个节点的相对位置决定从哪一边出、哪一边进
-      const autoSides = (a, b) => {
-        const dx = b.x + b.w / 2 - (a.x + a.w / 2), dy = b.y + b.h / 2 - (a.y + a.h / 2);
-        return Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? ["r", "l"] : ["l", "r"]) : dy > 0 ? ["b", "t"] : ["t", "b"];
-      };
-      const addEdge = (from, to) => {
-        if (from.n === to.n || edges.some((ed) => ed.from.n === from.n && ed.to.n === to.n)) return false;
-        edges.push({ id: uid(), from, to });
-        return true;
-      };
-      function drawEdges() {
-        edgeLayer.innerHTML = edges
-          .map((e) => {
-            const a = byId(e.from.n), b = byId(e.to.n);
-            if (!a || !b) return "";
-            const on = selEdge === e.id;
-            const d = pathD(a, e.from.s, b, e.to.s);
-            return `<path d="${d}" fill="none" stroke="transparent" stroke-width="16" style="pointer-events:stroke;cursor:pointer" data-edge="${e.id}"/><path d="${d}" fill="none" stroke="${on ? "#0ea5e9" : "#475569"}" stroke-width="${on ? 3 : 2}" marker-end="url(#gw-arrow)" style="pointer-events:none"/>`;
-          })
-          .join("");
-      }
-      const nodeHtml = (n) => {
-        const on = selSet.has(n.id) || lineFrom === n.id;
-        const editing = linkEdit === n.id;
-        const ports = (canEdit && !editing ? ["t", "r", "b", "l"] : [])
-          .map(
-            (sd) => `<span data-port="${n.id}:${sd}" class="absolute z-10 size-4 rounded-full border-2 border-white bg-sky-500 shadow ${on ? "" : "opacity-0 group-hover:opacity-100"} ${
-              sd === "t" ? "-top-2 left-1/2 -translate-x-1/2" : sd === "b" ? "-bottom-2 left-1/2 -translate-x-1/2" : sd === "l" ? "top-1/2 -left-2 -translate-y-1/2" : "top-1/2 -right-2 -translate-y-1/2"
-            }" style="touch-action:none;cursor:crosshair"></span>`,
-          )
-          .join("");
-        let body;
-        if (n.type === "shape") {
-          const fill = MAP_FILL[n.color] || MAP_FILL.slate;
-          const shape = n.shape === "round" ? "rounded-full" : n.shape === "diamond" ? "border-0" : "rounded-xl";
-          const clip = n.shape === "diamond" ? "clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)" : "";
-          body = `<div data-text class="flex h-full w-full items-center justify-center border-2 px-3 text-center text-sm font-medium break-words outline-none ${shape} ${fill}" style="${clip}">${esc(n.text || "")}</div>`;
-        } else {
-          const m = n.type === "app" ? modules.get(n.ref) : null;
-          const l = n.type === "link" ? links.find((x) => x.id === n.ref) : null;
-          const ic = appIcon(m || { code: l ? l.name : "?", icon: l ? l.icon : "link", image_url: l ? l.image_url : null, color: l ? l.color : null }, n.bullet ? "size-8" : "size-12");
-          const label = m ? m.name : l ? l.name : "";
-          const nameAttr = editing ? `data-link-name contenteditable="true" class="min-w-0 max-w-full rounded bg-white px-1 text-xs font-medium outline-none ring-2 ring-sky-400 dark:bg-slate-900"` : "";
-          const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800";
-          // 抖动只抖图示和名字（换图示的小面板不抖）
-          body = n.bullet
-            ? `<div class="flex h-full w-full items-center gap-3 px-3 ${card} ${editing ? "gw-node-edit" : ""}">${ic}<span ${nameAttr || 'class="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100"'}>${esc(label)}</span></div>`
-            : `<div class="flex h-full w-full flex-col items-center justify-center gap-1.5 p-2 ${card} ${editing ? "gw-node-edit" : ""}">${ic}<span ${nameAttr || 'class="line-clamp-2 w-full text-center text-[11px] leading-tight font-medium text-slate-800 dark:text-slate-100"'}>${esc(label)}</span></div>`;
-          // 换图示的小面板（挂在图示下面）
-          if (editing)
-            body += `<div data-link-pop class="absolute top-full left-0 z-20 mt-2 w-60 rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900" style="cursor:default">
-                <div class="flex flex-wrap gap-1">${["link", ...Object.keys(GW.MODULE_ICONS)].filter((v, i, a) => a.indexOf(v) === i).map((key) => `<button type="button" data-pick-icon="${key}" class="flex size-8 items-center justify-center rounded-lg border ${(l ? l.icon : "link") === key ? "border-brand-500 bg-brand-50 text-brand-600" : "border-slate-200 text-slate-500 dark:border-slate-700"}">${key === "link" ? icon("link", "size-4") : moduleIcon(key, "size-4")}</button>`).join("")}</div>
-                <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                  <button type="button" data-pick-color="" title="${esc(t("home.iconAuto"))}" class="size-6 rounded-full border-2 ${l && l.color ? "border-slate-200" : "border-slate-900 dark:border-white"} bg-gradient-to-br from-slate-300 to-slate-500"></button>
-                  ${Object.keys(PALETTE).map((c) => `<button type="button" data-pick-color="${c}" title="${c}" class="size-6 rounded-full border-2 ${l && l.color === c ? "border-slate-900 dark:border-white" : "border-white dark:border-slate-700"} shadow" style="background:${PALETTE[c][1]}"></button>`).join("")}
-                </div>
-                <div class="mt-2 flex items-center justify-between gap-2">
-                  <span class="flex gap-1">
-                    <label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(t("home.linkPhoto"))}<input type="file" data-link-photo accept="image/*" class="hidden"></label>
-                    ${l && l.image_url ? `<button type="button" data-link-nophoto class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("image-off", "size-4")}</button>` : ""}
-                  </span>
-                  <button type="button" data-link-ok class="${btn("primary", "sm")}">${icon("check", "size-4")} ${esc(t("home.save"))}</button>
-                </div>
-              </div>`;
-        }
-        const bullet = n.bullet ? `<span class="absolute top-1/2 -left-5 size-2.5 -translate-y-1/2 rounded-full bg-slate-500 dark:bg-slate-300"></span>` : "";
-        // 右下角拉大 / 缩小（名字太长就拉宽）
-        const grip = canEdit && !editing ? `<span data-resize="${n.id}" class="absolute -right-1.5 -bottom-1.5 z-10 flex size-5 items-end justify-end rounded-full bg-white text-slate-500 shadow ring-1 ring-slate-300 ${on ? "" : "opacity-0 group-hover:opacity-100"} dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-600" style="touch-action:none;cursor:nwse-resize"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" class="m-0.5"><path d="M11 1 1 11M11 6 6 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>` : "";
-        return `<div data-node="${n.id}" class="group absolute rounded-2xl select-none ${editing ? "z-20" : ""} ${on ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : ""}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;pointer-events:auto;touch-action:none;cursor:${!canEdit ? "pointer" : lineMode ? "crosshair" : "grab"}">${bullet}${body}${ports}${grip}</div>`;
-      };
-      const selShapes = () => [...selSet].map(byId).filter((n) => n && n.type === "shape");
-      const selLinks = () => (hooks.canEditLinks ? [...selSet].map(byId).filter((n) => n && n.type === "link") : []);
-      function drawNodes() {
-        nodesEl.innerHTML = nodes.map(nodeHtml).join("");
-        refreshIcons();
-        const hasShape = selShapes().length > 0;
-        colorsEl.classList.toggle("hidden", !hasShape);
-        colorsEl.classList.toggle("flex", hasShape);
-        delBtn.disabled = !(selEdge || hasShape || selLinks().length);
-        const bulletBtn = $('[data-tool="bullets"]', host);
-        if (bulletBtn) bulletBtn.disabled = !selSet.size; // 没选图示就不能按
-        $$("[data-tool]", host).forEach((b) => b.setAttribute("aria-pressed", (b.dataset.tool === "line" && lineMode) || (b.dataset.tool === "hand" && panMode) || (b.dataset.tool === "all" && selSet.size && selSet.size === nodes.length) ? "true" : "false"));
-        if (lineMode) status.textContent = lineFrom ? t("home.mapLinePick") : t("home.mapLineStart");
-      }
-      const paint = () => (drawNodes(), drawEdges());
-      async function save() {
-        if (!dirty) return;
-        clearTimeout(saveTimer);
-        const canvas = { ...(f.canvas && typeof f.canvas === "object" ? f.canvas : {}), nodes, edges, map: true }; // 柜子的 Section 一起留着
-        const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
-        if (error) return ((status.textContent = t("home.saveFailed")), toast(t("home.saveFailed") + " (" + (error.message || "") + ")"));
-        dirty = false;
-        f.canvas = canvas;
-        if (!lineMode) status.textContent = t("home.mapSaved");
-      }
-      const markDirty = () => {
-        dirty = true;
-        if (!lineMode) status.textContent = t("home.mapUnsaved");
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(save, 800);
-      };
-      async function delSel() {
-        if (selEdge) edges = edges.filter((e) => e.id !== selEdge);
-        const dropNodes = selShapes();
-        // 连结图示：整个连结删掉（拥有者）；先问一下
-        const lk = selLinks();
-        if (lk.length) {
-          const ok = await confirmDialog(t("home.mapDeleteIconTitle"), t("home.mapDeleteIconBody", { count: lk.length }), t("home.delete"), t("home.cancel"));
-          if (ok) {
-            dropNodes.push(...lk);
-            lk.forEach((n) => removeLink(n.ref));
-          }
-        }
-        dropNodes.forEach((n) => {
-          nodes.splice(nodes.indexOf(n), 1);
-          edges = edges.filter((e) => e.from.n !== n.id && e.to.n !== n.id);
-        });
-        selEdge = null;
-        selSet = new Set();
-        markDirty();
-        paint();
-      }
-      // 条列：只排「选到的」图示（没选就什么都不动），排成一直栏，前面一个点；App / 连结变成一行一个（图示在左、名字在右）；再按一次就还原
-      function bullets() {
-        const targets = nodes.filter((n) => selSet.has(n.id)).sort((a, b) => a.y - b.y || a.x - b.x);
-        if (!targets.length) return;
-        const undo = targets.every((n) => n.bullet);
-        let y = 48;
-        targets.forEach((n) => {
-          n.bullet = !undo;
-          if (n.type !== "shape") ((n.w = undo ? NODE_W : ROW_W), (n.h = undo ? NODE_H : ROW_H));
-          if (!undo) ((n.x = 72), (n.y = y), (y = snap(y + n.h + 16)));
-        });
-        markDirty();
-        paint();
-      }
-      function editText(id) {
-        const el = $(`[data-node="${id}"] [data-text]`, nodesEl);
-        if (!el) return;
-        el.contentEditable = "true";
-        el.focus();
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const s0 = getSelection();
-        s0.removeAllRanges();
-        s0.addRange(range);
-        const done = () => {
-          el.contentEditable = "false";
-          const n = byId(id);
-          const txt = (el.innerText || "").trim().slice(0, 200);
-          if (n && txt !== (n.text || "")) ((n.text = txt), markDirty());
-          paint();
-        };
-        el.addEventListener("blur", done, { once: true });
-        el.addEventListener("keydown", (ev) => {
-          ev.stopPropagation();
-          if ((ev.key === "Enter" && !ev.shiftKey) || ev.key === "Escape") (ev.preventDefault(), el.blur());
-        });
-      }
-      nodesEl.addEventListener("change", (e) => {
-        if (e.target.matches("[data-link-photo]") && e.target.files[0]) uploadLinkPhoto(e.target.files[0]);
-      });
-      nodesEl.addEventListener("keydown", (ev) => {
-        if (!ev.target.matches("[data-link-name]")) return;
-        ev.stopPropagation();
-        if (ev.key === "Enter" || ev.key === "Escape") (ev.preventDefault(), finishLinkEdit());
-      });
-      // 长按连结图示：抖动 + 名字可以打字 + 换图示；按 ✓ 或点别的地方就存（App 的名字不能改）
-      async function finishLinkEdit() {
-        if (!linkEdit) return;
-        const n = byId(linkEdit);
-        const el = $(`[data-node="${linkEdit}"] [data-link-name]`, nodesEl);
-        linkEdit = null;
-        const l = n && links.find((x) => x.id === n.ref);
-        const name = el ? (el.innerText || "").trim().slice(0, 40) : "";
-        if (l && name && name !== l.name) {
-          const { error } = await sb.from("gw_user_links").update({ name }).eq("id", l.id);
-          if (error) toast(t("home.saveFailed"));
-          else ((l.name = name), draw());
-        }
-        paint();
-      }
-      // 改连结的图示 / 颜色 / 照片（马上写入 gw_user_links）
-      const editingLink = () => {
-        const n = linkEdit && byId(linkEdit);
-        return n && links.find((x) => x.id === n.ref);
-      };
-      async function patchLink(patch) {
-        const l = editingLink();
-        if (!l) return;
-        const { error } = await sb.from("gw_user_links").update(patch).eq("id", l.id);
-        if (error) return toast(t("home.saveFailed") + (error.message ? " (" + error.message + ")" : ""));
-        Object.assign(l, patch);
-        draw();
-        paint();
-      }
-      const pickLinkIcon = (key) => patchLink({ icon: key });
-      async function uploadLinkPhoto(file) {
-        const l = editingLink();
-        if (!l || !file) return;
-        if (file.size > 2 * 1024 * 1024) return toast(t("home.linkPhotoTooBig"));
-        const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
-        const path = `${data.profile.id}/${l.id}-${Date.now()}.${ext}`;
-        const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type, upsert: true });
-        if (up.error) return toast(t("home.saveFailed") + " (" + (up.error.message || "") + ")");
-        const { data: pub } = sb.storage.from("link-icons").getPublicUrl(path);
-        await patchLink({ image_url: pub.publicUrl });
-      }
-      const onKeyUp = (e) => e.key === " " && (spaceHeld = false);
-      document.addEventListener("keyup", onKeyUp);
-      const onKey = (e) => {
-        if (!document.body.contains(host) || (e.target && e.target.isContentEditable) || document.querySelector(".gw-modal")) return;
-        if (e.key === " " && !spaceHeld) ((spaceHeld = true), e.preventDefault());
-        if ((e.key === "Delete" || e.key === "Backspace") && (selEdge || selShapes().length || selLinks().length)) (e.preventDefault(), delSel());
-      };
-      document.addEventListener("keydown", onKey);
-      host.addEventListener("click", (e) => {
-        const b = e.target.closest("button");
-        if (!b) return;
-        if (b.dataset.pickIcon) return pickLinkIcon(b.dataset.pickIcon);
-        if ("pickColor" in b.dataset) return patchLink({ color: b.dataset.pickColor || null });
-        if ("linkNophoto" in b.dataset) return patchLink({ image_url: null });
-        if ("linkOk" in b.dataset) return finishLinkEdit();
-        if (b.dataset.tool === "text") return shapePop(pop.classList.contains("hidden"), b);
-        // 回到柜子看法（心智图照样留着，下次按 Mind map 还在）
-        if (b.dataset.tool === "grid") return hooks.toGrid();
-        if (b.dataset.add) {
-          shapePop(false);
-          const shape = b.dataset.add;
-          const w = shape === "diamond" ? 144 : 168, h = shape === "diamond" ? 96 : 72;
-          // 放在看得到的范围里第一个没被盖到的格子
-          const free = (x, y) => !nodes.some((o) => x < o.x + o.w + GRID && x + w + GRID > o.x && y < o.y + o.h + GRID && y + h + GRID > o.y);
-          let x = snap(scrollEl.scrollLeft + 48), y = snap(scrollEl.scrollTop + 48);
-          const right = Math.min(W - w, scrollEl.scrollLeft + scrollEl.clientWidth - w - 24);
-          for (let tries = 0; tries < 400 && !free(x, y); tries++) {
-            x += GRID * 2;
-            if (x > right) ((x = snap(scrollEl.scrollLeft + 48)), (y += GRID * 2));
-          }
-          const n = { id: uid(), type: "shape", shape, text: "", color: "slate", x, y: Math.min(y, H - h), w, h };
-          nodes.push(n);
-          selSet = new Set([n.id]);
-          selEdge = null;
-          markDirty();
-          paint();
-          return editText(n.id);
-        }
-        if (b.dataset.tool === "icon") return linkDialog(null, { folderId: f.id, onSaved: hooks.reopen });
-        if (b.dataset.tool === "line") {
-          lineMode = !lineMode;
-          lineFrom = null;
-          if (!lineMode) status.textContent = "";
-          return paint();
-        }
-        if (b.dataset.tool === "hand") {
-          panMode = !panMode;
-          canvasEl.style.cursor = panMode ? "grab" : "";
-          return paint();
-        }
-        if (b.dataset.tool === "all") {
-          selSet = selSet.size === nodes.length ? new Set() : new Set(nodes.map((n) => n.id));
-          selEdge = null;
-          return paint();
-        }
-        if (b.dataset.tool === "bullets") return bullets();
-        if (b.dataset.color) {
-          const list = selShapes();
-          if (list.length) (list.forEach((n) => (n.color = b.dataset.color)), markDirty(), paint());
-          return;
-        }
-        if ("del" in b.dataset) return delSel();
-      });
-      const pt = (e) => {
-        const r = canvasEl.getBoundingClientRect();
-        return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale];
-      };
-      const zoomEl = $("[data-zoom]", host);
-      // 缩放：以滑鼠所在的点为中心
-      function setScale(next, cx, cy) {
-        next = Math.max(0.4, Math.min(2.5, next));
-        if (next === scale) return;
-        const px = (scrollEl.scrollLeft + cx) / scale, py = (scrollEl.scrollTop + cy) / scale;
-        scale = next;
-        canvasEl.style.transform = `scale(${scale})`;
-        zoomEl.style.width = Math.round(W * scale) + "px";
-        zoomEl.style.height = Math.round(H * scale) + "px";
-        scrollEl.scrollLeft = px * scale - cx;
-        scrollEl.scrollTop = py * scale - cy;
-      }
-      scrollEl.addEventListener(
-        "wheel",
-        (e) => {
-          if (!e.ctrlKey && !e.metaKey) return; // 普通滚轮 = 上下 / 左右移动画面
-          e.preventDefault();
-          const r = scrollEl.getBoundingClientRect();
-          setScale(scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientX - r.left, e.clientY - r.top);
-        },
-        { passive: false },
-      );
-      // 手机 / 平板：两指捏合缩放
-      const touches = new Map();
-      let pinch = null;
-      scrollEl.addEventListener("pointerdown", (e) => e.pointerType === "touch" && touches.set(e.pointerId, [e.clientX, e.clientY]));
-      scrollEl.addEventListener("pointermove", (e) => {
-        if (e.pointerType !== "touch" || !touches.has(e.pointerId)) return;
-        touches.set(e.pointerId, [e.clientX, e.clientY]);
-        if (touches.size !== 2) return;
-        const [a, b] = [...touches.values()];
-        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-        const r = scrollEl.getBoundingClientRect();
-        if (pinch) setScale(pinch.s * (d / pinch.d), (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top);
-        else pinch = { d, s: scale };
-      });
-      ["pointerup", "pointercancel"].forEach((ev) => scrollEl.addEventListener(ev, (e) => (touches.delete(e.pointerId), touches.size < 2 && (pinch = null))));
-      const startPan = (e) => {
-        drag = { kind: "pan", cx: e.clientX, cy: e.clientY, sl: scrollEl.scrollLeft, st: scrollEl.scrollTop };
-        canvasEl.setPointerCapture(e.pointerId);
-        canvasEl.style.cursor = "grabbing";
-        e.preventDefault();
-      };
-      canvasEl.addEventListener("pointerdown", (e) => {
-        if (e.button) return;
-        if (touches.size > 1) return; // 两指 = 缩放，不拖东西
-        if (!canEdit) return e.target.closest("[data-node]") ? undefined : startPan(e);
-        if (panMode || spaceHeld) return startPan(e);
-        if (linkEdit) {
-          // 正在改连结图示：点它自己里面不动；点别处 = 存
-          if (e.target.closest(`[data-node="${linkEdit}"]`)) return;
-          return finishLinkEdit();
-        }
-        const gripEl = e.target.closest("[data-resize]");
-        if (gripEl && !lineMode) {
-          const n = byId(gripEl.dataset.resize);
-          const [x, y] = pt(e);
-          drag = { kind: "resize", id: n.id, x0: x, y0: y, w0: n.w, h0: n.h, moved: false };
-          canvasEl.setPointerCapture(e.pointerId);
-          return e.preventDefault();
-        }
-        const portEl = e.target.closest("[data-port]");
-        if (portEl && !lineMode) {
-          const [n, sd] = portEl.dataset.port.split(":");
-          drag = { kind: "link", from: { n, s: sd } };
-          canvasEl.setPointerCapture(e.pointerId);
-          return e.preventDefault();
-        }
-        const nodeEl = e.target.closest("[data-node]");
-        if (nodeEl) {
-          if (e.target.isContentEditable) return;
-          const n = byId(nodeEl.dataset.node);
-          if (lineMode) {
-            // 画线：点第一个，再点第二个
-            if (!lineFrom) lineFrom = n.id;
-            else {
-              const a = byId(lineFrom);
-              const [sa, sb2] = autoSides(a, n);
-              if (addEdge({ n: a.id, s: sa }, { n: n.id, s: sb2 })) markDirty();
-              lineFrom = null;
-            }
-            return paint();
-          }
-          const [x, y] = pt(e);
-          if (!selSet.has(n.id)) ((selSet = new Set([n.id])), (selEdge = null), paint());
-          drag = { kind: "move", id: n.id, x0: x, y0: y, start: new Map([...selSet].map((id) => [id, { x: byId(id).x, y: byId(id).y }])), moved: false };
-          canvasEl.setPointerCapture(e.pointerId);
-          if (hooks.canEditLinks && n.type === "link") {
-            clearTimeout(lp);
-            const pid = e.pointerId;
-            lp = setTimeout(() => {
-              lp = null;
-              if (!drag || drag.moved) return;
-              drag = null;
-              try { canvasEl.releasePointerCapture(pid); } catch (_e) { /* 忽略 */ }
-              linkEdit = n.id;
-              selSet = new Set();
-              paint();
-              const el = $(`[data-node="${n.id}"] [data-link-name]`, nodesEl);
-              if (el) el.focus();
-            }, 600);
-          }
-          return e.preventDefault();
-        }
-        const edgeEl = e.target.closest("[data-edge]");
-        if (edgeEl) return ((selEdge = edgeEl.dataset.edge), (selSet = new Set()), paint());
-        if (selSet.size || selEdge || lineFrom) ((selSet = new Set()), (selEdge = null), (lineFrom = null), paint());
-        if (lineMode) return;
-        // 空白处按住拖：拉一个框选好几个（手形工具 / 按住空白键 = 移动画面）
-        const [x, y] = pt(e);
-        drag = { kind: "box", x0: x, y0: y, moved: false };
-        canvasEl.setPointerCapture(e.pointerId);
-        e.preventDefault();
-      });
-      const boxRect = (x, y) => ({ x: Math.min(drag.x0, x), y: Math.min(drag.y0, y), w: Math.abs(x - drag.x0), h: Math.abs(y - drag.y0) });
-      canvasEl.addEventListener("pointermove", (e) => {
-        if (!drag) return;
-        if (drag.kind === "pan") {
-          scrollEl.scrollLeft = drag.sl - (e.clientX - drag.cx);
-          scrollEl.scrollTop = drag.st - (e.clientY - drag.cy);
-          return;
-        }
-        const [x, y] = pt(e);
-        if (drag.kind === "resize") {
-          const n = byId(drag.id);
-          n.w = Math.max(MIN_W, Math.min(W - n.x, snap(drag.w0 + x - drag.x0)));
-          n.h = Math.max(MIN_H, Math.min(H - n.y, snap(drag.h0 + y - drag.y0)));
-          drag.moved = true;
-          const el = $(`[data-node="${n.id}"]`, nodesEl);
-          if (el) ((el.style.width = n.w + "px"), (el.style.height = n.h + "px"));
-          return drawEdges();
-        }
-        if (drag.kind === "move") {
-          const dx = x - drag.x0, dy = y - drag.y0;
-          if (lp && Math.hypot(dx, dy) > 6) (clearTimeout(lp), (lp = null));
-          drag.start.forEach((s0, id) => {
-            const n = byId(id);
-            if (!n) return;
-            n.x = Math.max(0, Math.min(W - n.w, snap(s0.x + dx)));
-            n.y = Math.max(0, Math.min(H - n.h, snap(s0.y + dy)));
-            const el = $(`[data-node="${n.id}"]`, nodesEl);
-            if (el) ((el.style.left = n.x + "px"), (el.style.top = n.y + "px"));
-          });
-          drag.moved = true;
-          drawEdges();
-        } else if (drag.kind === "box") {
-          const r = boxRect(x, y);
-          drag.moved = drag.moved || r.w > 4 || r.h > 4;
-          marquee.style.cssText = `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px`;
-          marquee.classList.toggle("hidden", !drag.moved);
-        } else {
-          const [x1, y1] = port(byId(drag.from.n), drag.from.s);
-          temp.setAttribute("d", `M${x1} ${y1} L${x} ${y}`);
-          temp.style.display = "";
-        }
-      });
-      const endDrag = (e) => {
-        clearTimeout(lp);
-        lp = null;
-        if (!drag) return;
-        if (drag.kind === "pan") {
-          canvasEl.style.cursor = "";
-          drag = null;
-          return;
-        }
-        if (drag.kind === "move" || drag.kind === "resize") {
-          if (drag.moved) markDirty();
-          else if (drag.kind === "move" && !lineMode && !linkEdit) {
-            // 点一下（没有拖）App / 连结图示 = 打开它
-            const n = byId(drag.id);
-            if (n && n.type !== "shape") ((drag = null), paint(), openNode(n));
-            if (!drag) return;
-          }
-        } else if (drag.kind === "box") {
-          marquee.classList.add("hidden");
-          if (drag.moved) {
-            const [x, y] = pt(e);
-            const r = boxRect(x, y);
-            selSet = new Set(nodes.filter((n) => n.x < r.x + r.w && n.x + n.w > r.x && n.y < r.y + r.h && n.y + n.h > r.y).map((n) => n.id));
-            selEdge = null;
-          }
-        } else {
-          temp.style.display = "none";
-          const under = document.elementFromPoint(e.clientX, e.clientY);
-          const target = under && (under.closest("[data-port]") || under.closest("[data-node]"));
-          if (target) {
-            let n, sd;
-            if (target.dataset.port) [n, sd] = target.dataset.port.split(":");
-            else {
-              n = target.dataset.node;
-              const b = byId(n);
-              const [x, y] = pt(e);
-              const dl = x - b.x, dr = b.x + b.w - x, dt = y - b.y, db = b.y + b.h - y;
-              const m = Math.min(dl, dr, dt, db);
-              sd = m === dl ? "l" : m === dr ? "r" : m === dt ? "t" : "b";
-            }
-            if (addEdge(drag.from, { n, s: sd })) markDirty();
-          }
-        }
-        drag = null;
-        paint();
-      };
-      canvasEl.addEventListener("pointerup", endDrag);
-      canvasEl.addEventListener("pointercancel", () => ((drag = null), (temp.style.display = "none"), paint()));
-      function openNode(n) {
-        if (n.type === "app") return hooks.openApp(n.ref);
-        const l = links.find((x) => x.id === n.ref);
-        if (l) window.open(l.url, "_blank", "noopener,noreferrer");
-      }
-      canvasEl.addEventListener("dblclick", (e) => {
-        if (lineMode || linkEdit) return;
-        const nodeEl = e.target.closest("[data-node]");
-        if (!nodeEl) return;
-        const n = byId(nodeEl.dataset.node);
-        if (n && n.type === "shape") canEdit && editText(n.id);
-      });
-      // 只能看的人：点图示就打开
-      canvasEl.addEventListener("click", (e) => {
-        if (canEdit) return;
-        const nodeEl = e.target.closest("[data-node]");
-        const n = nodeEl && byId(nodeEl.dataset.node);
-        if (n && n.type !== "shape") openNode(n);
-      });
-      paint();
-      if (canEdit && !cv.map) markDirty(); // 第一次打开心智图：记下来，之后这个文件夹一打开就是心智图
-      return {
-        flush: () => {
-          document.removeEventListener("keydown", onKey);
-          document.removeEventListener("keyup", onKeyUp);
-          clearTimeout(saveTimer);
-          if (dirty) save();
-        },
-        onEscape: () => {
-          if (linkEdit) return (finishLinkEdit(), true);
-          if (!lineMode) return false;
-          lineMode = false;
-          lineFrom = null;
-          status.textContent = "";
-          paint();
-          return true;
-        },
-      };
     }
 
     // 图示颜色：全部一起选（柔和 / 多彩 / 单一颜色），也可以一个一个 App 自己选

@@ -439,6 +439,17 @@
       return null;
     };
 
+    // Business 只有一个 Company：加进 Business 时顺便加进那个 Company（一般用户），不用再另外勾
+    const autoCompany = async (gid) => {
+      const cos = cosOfBiz(gid);
+      if (cos.length !== 1 || mcRow(gid, cos[0].id)) return;
+      const cid = cos[0].id;
+      let { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
+      if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid }));
+      if (error) return fail(error);
+      mcs.push({ group_id: gid, company_id: cid, role_id: null });
+    };
+
     // + Add business：列还没加进去、而且我能加人的 Business
     function addBusinessDialog() {
       const list = addableBiz();
@@ -461,7 +472,11 @@
         b.disabled = true;
         const e1 = await ensureMember(b.dataset.pickBiz);
         if (e1) return ((b.disabled = false), fail(e1));
-        pm.close();
+        await autoCompany(b.dataset.pickBiz);
+        // 小窗不关：按钮变成「✓ Added」，可以继续加别的 Business
+        b.className = "pointer-events-none inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300";
+        b.innerHTML = `${icon("check", "size-4")} ${esc(ts("added"))}`;
+        refreshIcons();
         draw();
       });
     }
@@ -1143,19 +1158,18 @@
     const sectorRes = await sb.from("gw_sectors").select("*").order("sort_order").order("name");
     const sectorsReady = !sectorRes.error;
     const sectors = sectorsReady ? sectorRes.data || [] : [];
-    const [groups, companies, links, mappings, modules, bizTags, coTags, people, estateRows] = await Promise.all([
+    const [groups, companies, links, modules, bizTags, coTags, people, locationRows] = await Promise.all([
       sb.from("gw_groups").select("*").order("sort_order").order("name"),
       sb.from("gw_companies").select("*").order("sort_order").order("name"),
       sb.from("gw_business_companies").select("group_id, company_id, area, area_unit"),
-      sb.from("gw_company_mappings").select("*").order("created_at"),
       sb.from("gw_modules").select("*").eq("kind", "system").order("sort_order").order("name"),
       sb.from("gw_group_modules").select(sectorsReady ? "group_id, module_id, sector_id, lead_user_id" : "group_id, module_id"),
       sb.from("gw_module_companies").select("module_id, company_id"),
       sb.from("gw_profiles").select("id, full_name").eq("status", "active").order("full_name"),
-      sb.from("gw_company_estates").select("*").order("sort_order").order("name"), // 资料库还没更新时就是空的
+      sb.from("gw_company_locations").select("*").order("sort_order").order("name"), // 资料库还没更新时就是空的
     ]).then((r) => r.map((x) => x.data || []));
     if (stale(seq)) return;
-    const estates = estateRows; // 每家 Company 的 Estate（没有就是「整家公司一个 Estate」）
+    const locations = locationRows; // 每家 Company 的 Location（勾了 has_locations 的公司才有）
 
     const modById = new Map(modules.map((m) => [m.id, m]));
     const coById = new Map(companies.map((c) => [c.id, c]));
@@ -1397,47 +1411,87 @@
       };
     }
 
-    // ---------------------------------------------------------- Company 新增 / 修改（含属于哪些 Business、面积、对应到现有系统）
+    // ---------------------------------------------------------- Company 新增 / 修改
+    /* 第 1 段：公司名（标题，旁边铅笔才能改）＋ 注册号码；短名、备注；公司代码、Opispro 公司编号；属于哪些 Business（含面积）
+       第 2 段：Billing details（地址、电话、传真）
+       第 3 段：这家公司有多个 Location → 一行一个（Opispro Location ID、名称），「+ Add row」再加；按 Save 一起存 */
     function companyDialog(c, presetGroupId) {
-      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "" };
+      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false, billing_address: "", phone: "", fax: "" };
       const mine = c ? linksOf(c.id) : [];
       const link = (gid) => mine.find((l) => l.group_id === gid);
       const ticked = (gid) => (c ? !!link(gid) : gid === presetGroupId);
+      const myLocs = c ? locations.filter((x) => x.company_id === c.id) : [];
+      // 还没分 Business 的旧 Location：先放在第一个勾的 Business 底下（按 Save 就记下来）
+      const firstBiz = (groups.find((g) => ticked(g.id)) || {}).id;
+      const locsOf = (gid) => myLocs.filter((x) => x.group_id === gid || (!x.group_id && gid === firstBiz));
+      const locBlock = (g) => `<div data-loc-biz="${g.id}" class="${ticked(g.id) ? "" : "hidden"} rounded-lg bg-slate-50 p-2.5 dark:bg-white/5">
+          <p class="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${esc(g.name)}</p>
+          <div class="mb-1 grid grid-cols-[9rem_1fr_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span class="w-8"></span></div>
+          <div data-loc-rows class="space-y-2">${(locsOf(g.id).length ? locsOf(g.id) : [null]).map(locRow).join("")}</div>
+          <button type="button" data-loc-row-add="${g.id}" class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">${icon("plus", "size-3.5")} ${esc(tc("addRow"))}</button>
+        </div>`;
+      const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[9rem_1fr_auto] items-center gap-2">
+          <input data-loc-id maxlength="40" value="${esc(x ? x.location_id || "" : "")}" placeholder="${esc(tc("opisproLocationId"))}" class="${cls.input} font-mono">
+          <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" placeholder="${esc(tc("locationName"))}" class="${cls.input}">
+          <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
+        </div>`;
       const m = modal(
-        c ? tc("editTitle") : tc("addTitle"),
-        `<form class="space-y-4"><div data-err></div>
-          <div class="grid gap-4 sm:grid-cols-[10rem_1fr]">
-            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`, ts("codeAuto"))}
-            <div></div>
+        c ? c.name : tc("addTitle"),
+        `<form class="space-y-5"><div data-err></div>
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-end gap-3">
+              <div class="min-w-0 flex-1 basis-56">
+                <div data-name-view class="${c ? "flex" : "hidden"} items-center gap-1.5">
+                  <span data-name-text class="min-w-0 truncate text-xl font-semibold">${esc(v.name)}</span>
+                  <button type="button" data-name-edit aria-label="${esc(tc("editName"))}" title="${esc(tc("editName"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>
+                </div>
+                <div data-name-box class="${c ? "hidden" : ""}">${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}</div>
+              </div>
+              <div class="w-full sm:w-56">${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}</div>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2">
+              ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
+              ${field(tc("remark"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+              ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
+              ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`)}
+            </div>
+            <div>
+              <p class="mb-1.5 ${cls.label}">${esc(tc("businesses"))}</p>
+              ${
+                groups.length
+                  ? `<div class="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-800">${groups
+                      .map((g) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${ticked(g.id) ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white"><span class="font-medium">${esc(g.name)}</span></label>`)
+                      .join("")}</div>
+                    <div class="mt-2 grid gap-2 sm:grid-cols-2">${groups
+                      .map((g) => {
+                        const l = link(g.id);
+                        return `<label data-area-box="${g.id}" class="${ticked(g.id) ? "flex" : "hidden"} items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 text-sm dark:bg-white/5">
+                          <span class="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">${esc(g.name)} · ${esc(tc("area"))}</span>
+                          <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 max-w-28 shrink-0">
+                          <span class="text-xs text-slate-400">ha</span>
+                          <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
+                        </label>`;
+                      })
+                      .join("")}</div>`
+                  : `<p class="text-sm text-slate-400">${esc(tc("noBusiness"))}</p>`
+              }
+            </div>
           </div>
-          <div>
-            <p class="mb-1.5 ${cls.label}">${esc(tc("businesses"))}</p>
-            ${
-              groups.length
-                ? `<div class="flex flex-wrap gap-x-5 gap-y-2 rounded-xl border border-slate-200 px-3 py-2.5 dark:border-slate-800">${groups
-                    .map((g) => `<label class="flex items-center gap-2 text-sm"><input type="checkbox" data-biz="${g.id}" ${ticked(g.id) ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white"><span class="font-medium">${esc(g.name)}</span></label>`)
-                    .join("")}</div>
-                  <div class="mt-2 grid gap-2 sm:grid-cols-2">${groups
-                    .map((g) => {
-                      const l = link(g.id);
-                      return `<label data-area-box="${g.id}" class="${ticked(g.id) ? "flex" : "hidden"} items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 text-sm dark:bg-white/5">
-                        <span class="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300">${esc(g.name)} · ${esc(tc("area"))}</span>
-                        <input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l && l.area != null ? esc(String(l.area)) : ""}" class="${cls.input} h-8 max-w-28 shrink-0">
-                        <span class="text-xs text-slate-400">ha</span>
-                        <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
-                      </label>`;
-                    })
-                    .join("")}</div>`
-                : `<p class="text-sm text-slate-400">${esc(tc("noBusiness"))}</p>`
-            }
+          <div class="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <p class="text-sm font-semibold">${esc(tc("billing"))}</p>
+            ${field(tc("billingAddress"), `<textarea name="billing_address" rows="2" maxlength="400" class="${cls.input} h-auto py-2">${esc(v.billing_address || "")}</textarea>`)}
+            <div class="grid gap-3 sm:grid-cols-2">
+              ${field(tc("phone"), `<input name="phone" maxlength="60" value="${esc(v.phone || "")}" class="${cls.input}">`)}
+              ${field(tc("fax"), `<input name="fax" maxlength="60" value="${esc(v.fax || "")}" class="${cls.input}">`)}
+            </div>
           </div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            ${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}
-            ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
-            ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
-            ${field(tc("descriptionLabel"), `<input name="description" maxlength="300" value="${esc(v.description || "")}" class="${cls.input}">`)}
+          <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <label class="flex cursor-pointer items-center gap-2 text-sm font-semibold"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
+            <div data-locations class="${v.has_locations ? "" : "hidden"} mt-3 space-y-2.5">
+              ${groups.map(locBlock).join("")}
+              <p data-loc-nobiz class="${groups.some((g) => ticked(g.id)) ? "hidden" : ""} text-xs text-slate-500">${esc(tc("locationsTickBusiness"))}</p>
+            </div>
           </div>
-          ${c ? `<div data-estates></div><div data-maps></div>` : ""}
           <div class="flex justify-between gap-2">
             ${c && canDelCo ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
             <div class="flex gap-2"><button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button><button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button></div>
@@ -1447,139 +1501,72 @@
       );
       refreshIcons();
       $("[data-cancel]", m.el).onclick = m.close;
-      $("[name=name]", m.el).focus();
-      // 勾了 Business 才出现面积栏
+      if (!c) $("[name=name]", m.el).focus();
+      m.el.addEventListener("click", (e) => {
+        const b = e.target.closest("button[type=button]");
+        if (!b) return;
+        // 铅笔：公司名变成可以改
+        if ("nameEdit" in b.dataset) {
+          $("[data-name-view]", m.el).classList.add("hidden");
+          $("[data-name-box]", m.el).classList.remove("hidden");
+          $("[name=name]", m.el).focus();
+          return;
+        }
+        if ("locRowAdd" in b.dataset) {
+          const host = $(`[data-loc-biz="${b.dataset.locRowAdd}"] [data-loc-rows]`, m.el);
+          host.insertAdjacentHTML("beforeend", locRow(null));
+          refreshIcons();
+          const rows = $$("[data-loc-row]", host);
+          return $("[data-loc-id]", rows[rows.length - 1]).focus();
+        }
+        if ("locRowDel" in b.dataset) {
+          const host = b.closest("[data-loc-rows]");
+          b.closest("[data-loc-row]").remove();
+          if (!$("[data-loc-row]", host)) host.insertAdjacentHTML("beforeend", locRow(null));
+          refreshIcons();
+        }
+      });
+      // 勾了 Business 才出现面积栏；勾了「有多个 Location」才出现 Location 列
       m.el.addEventListener("change", (e) => {
+        if (e.target.name === "has_locations") return $("[data-locations]", m.el).classList.toggle("hidden", !e.target.checked);
         const b = e.target.closest("input[data-biz]");
         if (!b) return;
         const box = $(`[data-area-box="${b.dataset.biz}"]`, m.el);
         box.classList.toggle("hidden", !b.checked);
         box.classList.toggle("flex", b.checked);
+        // 这个 Business 的 Location 表也跟着出现 / 收起
+        const lb = $(`[data-loc-biz="${b.dataset.biz}"]`, m.el);
+        if (lb) lb.classList.toggle("hidden", !b.checked);
+        $("[data-loc-nobiz]", m.el).classList.toggle("hidden", $$("input[data-biz]", m.el).some((x) => x.checked));
         if (b.checked) $("input[data-area]", box).focus();
       });
 
-      // Estate（只有已存在的 Company 才能加）：直接在编辑窗里加 / 删；一个都不加 = 整家公司就是一个 Estate
-      if (c) {
-        const ebox = $("[data-estates]", m.el);
-        const drawEstates = () => {
-          const list = estates.filter((x) => x.company_id === c.id);
-          ebox.innerHTML = `<p class="mb-1 ${cls.label}">${esc(tc("estates"))}</p>
-            <p class="mb-1.5 text-xs text-slate-500">${esc(tc("estatesHint"))}</p>
-            ${
-              list.length
-                ? `<div class="mb-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">${list
-                    .map(
-                      (x) => `<div class="flex items-center gap-2 px-3 py-1.5">
-                        <span class="min-w-0 flex-1 truncate"><span class="font-medium">${esc(x.name)}</span>${x.short_name ? ` <span class="text-slate-500">(${esc(x.short_name)})</span>` : ""}${x.area != null ? ` <span class="text-slate-500">· ${esc(String(x.area))} ${esc(x.area_unit || "ha")}</span>` : ""}</span>
-                        <button type="button" data-est-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
-                      </div>`,
-                    )
-                    .join("")}</div>`
-                : ""
-            }
-            <div data-est-err></div>
-            <div class="grid gap-2 sm:grid-cols-[1fr_8rem_7rem_auto]">
-              <input data-est-name maxlength="100" placeholder="${esc(tc("estateName"))}" class="${cls.input}">
-              <input data-est-short maxlength="40" placeholder="${esc(tc("shortName"))}" class="${cls.input}">
-              <input data-est-area type="number" min="0" step="0.01" placeholder="${esc(tc("area"))} (ha)" class="${cls.input}">
-              <button type="button" data-est-add class="${btn("secondary")}">${icon("map-pin")} ${esc(tc("addEstate"))}</button>
-            </div>`;
-          refreshIcons();
-        };
-        drawEstates();
-        ebox.addEventListener("click", async (e) => {
-          const b = e.target.closest("button");
-          if (!b) return;
-          if (b.dataset.estDel) {
-            const { error } = await sb.from("gw_company_estates").delete().eq("id", b.dataset.estDel);
-            if (error) return ($("[data-est-err]", ebox).innerHTML = alertBox(tg("saveFailed")));
-            estates.splice(estates.findIndex((x) => x.id === b.dataset.estDel), 1);
-            return drawEstates();
-          }
-          if ("estAdd" in b.dataset) {
-            const name = $("[data-est-name]", ebox).value.trim();
-            if (!name) return $("[data-est-name]", ebox).focus();
-            const area = $("[data-est-area]", ebox).value;
-            const { data, error } = await sb
-              .from("gw_company_estates")
-              .insert({ company_id: c.id, name, short_name: $("[data-est-short]", ebox).value.trim() || null, area: area === "" ? null : Number(area), sort_order: estates.filter((x) => x.company_id === c.id).length })
-              .select()
-              .single();
-            if (error) return ($("[data-est-err]", ebox).innerHTML = alertBox(error.code === "23505" ? tc("estateDuplicate") : error.code === "42P01" ? tc("estatesNotReady") : tg("saveFailed")));
-            estates.push(data);
-            drawEstates();
-          }
-        });
-      }
-
-      // 对应到现有系统（只有已存在的 Company 才能加）：直接在编辑窗里加 / 删
-      if (c) {
-        const box = $("[data-maps]", m.el);
-        const drawMaps = () => {
-          const maps = mappings.filter((x) => x.company_id === c.id);
-          box.innerHTML = `<p class="mb-1.5 ${cls.label}">${esc(tc("mappings"))}</p>
-            ${
-              maps.length
-                ? `<div class="mb-2 divide-y divide-slate-100 rounded-xl border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-800">${maps
-                    .map((x) => {
-                      const mod = modById.get(x.module_id);
-                      return `<div class="flex items-center gap-2 px-3 py-1.5">
-                        <span class="min-w-0 flex-1 truncate"><span class="font-medium">${esc(mod ? mod.name : "—")}</span> → <span class="font-mono">${esc(x.external_id)}</span>${x.external_name ? ` <span class="text-slate-500">(${esc(x.external_name)})</span>` : ""}</span>
-                        <button type="button" data-map-del="${x.id}" aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
-                      </div>`;
-                    })
-                    .join("")}</div>`
-                : ""
-            }
-            <div data-map-err></div>
-            ${
-              modules.length
-                ? `<div class="grid gap-2 sm:grid-cols-[1fr_8rem_1fr_auto]">
-                    ${select("map_module", modules.map((x) => [x.id, x.name + " (" + x.code + ")"]), "")}
-                    <input data-map-id maxlength="100" placeholder="${esc(tc("externalId"))}" class="${cls.input} font-mono">
-                    <input data-map-name maxlength="120" placeholder="${esc(tc("externalName"))}" class="${cls.input}">
-                    <button type="button" data-map-add class="${btn("secondary")}">${icon("link-2")} ${esc(tc("addMapping"))}</button>
-                  </div>`
-                : ""
-            }`;
-          refreshIcons();
-        };
-        drawMaps();
-        box.addEventListener("click", async (e) => {
-          const b = e.target.closest("button");
-          if (!b) return;
-          if (b.dataset.mapDel) {
-            const { error } = await sb.from("gw_company_mappings").delete().eq("id", b.dataset.mapDel);
-            if (error) return ($("[data-map-err]", box).innerHTML = alertBox(tg("saveFailed")));
-            mappings.splice(mappings.findIndex((x) => x.id === b.dataset.mapDel), 1);
-            return drawMaps();
-          }
-          if ("mapAdd" in b.dataset) {
-            const ext = $("[data-map-id]", box).value.trim();
-            if (!ext) return $("[data-map-id]", box).focus();
-            const { data, error } = await sb
-              .from("gw_company_mappings")
-              .insert({ company_id: c.id, module_id: $("[name=map_module]", box).value, external_id: ext, external_name: $("[data-map-name]", box).value.trim() || null })
-              .select()
-              .single();
-            if (error) return ($("[data-map-err]", box).innerHTML = alertBox(tc(error.code === "23505" ? "mappingDuplicate" : "saveFailed")));
-            mappings.push(data);
-            drawMaps();
-          }
-        });
-        if ($("[data-del]", m.el)) $("[data-del]", m.el).onclick = async () => {
+      if (c && $("[data-del]", m.el))
+        $("[data-del]", m.el).onclick = async () => {
           if (!(await confirmDialog(tc("deleteTitle"), tc("deleteBody", { name: c.name }), tg("delete"), tg("cancel")))) return;
           const { error } = await sb.from("gw_companies").delete().eq("id", c.id);
           if (error) return ($("[data-err]", m.el).innerHTML = alertBox(tc("inUse")));
           m.close();
           structureTab();
         };
-      }
 
       $("form", m.el).addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
         const submit = $("button[type=submit]", f);
+        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "loc-dup" ? tc("locationDuplicate") : error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations|gw_company_locations|group_id/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
+        // Location 列：两栏都要填（整行空白的略过）
+        const hasLoc = f.has_locations.checked;
+        // 只收勾着的 Business 底下的 Location
+        const locRows = hasLoc
+          ? $$("[data-loc-biz]", f)
+              .filter((bx) => !bx.classList.contains("hidden"))
+              .flatMap((bx) =>
+                $$("[data-loc-row]", bx).map((r) => ({ id: r.dataset.locRowid || null, group_id: bx.dataset.locBiz, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim() })),
+              )
+              .filter((r) => r.location_id || r.name)
+          : [];
+        if (locRows.some((r) => !r.name)) return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
         submit.disabled = true;
         submit.innerHTML = `<span class="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>`;
         const row = {
@@ -1588,8 +1575,12 @@
           short_name: f.short_name.value.trim() || null,
           registration_no: f.registration_no.value.trim() || null,
           description: f.description.value.trim() || null,
+          opispro_id: f.opispro_id.value.trim() || null,
+          has_locations: hasLoc,
+          billing_address: f.billing_address.value.trim() || null,
+          phone: f.phone.value.trim() || null,
+          fax: f.fax.value.trim() || null,
         };
-        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(tc(error.code === "23505" ? "duplicate" : error.code === "23514" ? "badCode" : "saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
         const saved = c ? await sb.from("gw_companies").update(row).eq("id", c.id).select().single() : await sb.from("gw_companies").insert({ ...row, sort_order: companies.length }).select().single();
         if (saved.error) return fail(saved.error);
         const id = saved.data.id;
@@ -1614,6 +1605,17 @@
           rows.length ? sb.from("gw_business_companies").upsert(rows, { onConflict: "group_id,company_id" }) : Promise.resolve({}),
         ]);
         if (r1.error || r2.error) return fail(r1.error || r2.error);
+        // Location：画面上有的新增 / 更新，画面上没有的（或整段没勾）删掉
+        const keepIds = new Set(locRows.filter((r) => r.id).map((r) => r.id));
+        const gone = myLocs.filter((x) => !keepIds.has(x.id)).map((x) => x.id);
+        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, group_id: r.group_id, location_id: r.location_id || null, name: r.name, sort_order: myLocs.length + i }));
+        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && ((x.location_id || "") !== r.location_id || x.name !== r.name || x.group_id !== r.group_id)));
+        const ops = [];
+        if (gone.length) ops.push(sb.from("gw_company_locations").delete().in("id", gone));
+        if (adds.length) ops.push(sb.from("gw_company_locations").insert(adds));
+        edits.forEach((r) => ops.push(sb.from("gw_company_locations").update({ group_id: r.group_id, location_id: r.location_id || null, name: r.name }).eq("id", r.id)));
+        const bad = (await Promise.all(ops)).find((r) => r.error);
+        if (bad) return fail(bad.error.code === "23505" ? { code: "loc-dup" } : bad.error);
         m.close();
         structureTab();
       });
@@ -1793,11 +1795,16 @@
           m.close();
           structureTab();
         };
-      m.el.addEventListener("click", (e) => {
+      m.el.addEventListener("click", async (e) => {
         if (!e.target.closest("[data-lead-box]")) hideLeadLists();
         const b = e.target.closest("button[type=button]");
         if (!b || !bizArea || !bizArea.contains(b)) return;
         const d = b.dataset;
+        // 从 Business 拿掉模块：那个 Business 的人都会看不到这个图示 → 先问一下
+        if (d.bizOff) {
+          const g = groups.find((x) => x.id === d.bizOff);
+          if (!(await confirmDialog(tmod("removeBusiness"), tmod("removeBusinessBody", { module: mod.name, business: g ? g.name : "" }), tmod("removeBusiness"), tg("cancel")))) return;
+        }
         if (d.leadPick) {
           const [gid, uid] = d.leadPick.split(":");
           leadOf.set(gid, uid);

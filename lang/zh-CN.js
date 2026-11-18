@@ -67,6 +67,9 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "deleteLinkBody": "这个连结会从文件夹里删掉，分享的人也都看不到了，不能复原。",
+    "deleteLinkTitle": "删除「{name}」？",
+    "deleteLink": "删除连结",
     "linkRemovePhoto": "移除照片",
     "linkColor": "颜色",
     "shelfView": "柜子",
@@ -100,8 +103,8 @@ window.GW_LANG["zh-CN"] = {
     "mapDeleteIconTitle": "删除图示",
     "mapDeleteIconBody": "把 {count} 个连结图示从这个文件夹删掉？连结本身也会删除。",
     "shareRole": "权限",
-    "shareRoleView": "可以看",
-    "shareRoleEdit": "可以改",
+    "shareRoleView": "查看者",
+    "shareRoleEdit": "编辑者",
     "mapGrid": "格子",
     "mapSelectAll": "全选",
     "mapBullets": "条列",

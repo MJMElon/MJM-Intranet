@@ -2415,7 +2415,7 @@ window.GWHome = (function () {
         } else {
           const { data: created, error } = await sb
             .from("gw_user_links")
-            .insert({ ...row, user_id: data.profile.id, sort_order: nextSlot(1, 1), ...(o && o.folderId ? { folder_id: o.folderId } : {}) })
+            .insert({ ...row, user_id: (o && o.ownerId) || data.profile.id, sort_order: nextSlot(1, 1), ...(o && o.folderId ? { folder_id: o.folderId } : {}) })
             .select()
             .single();
           if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.saveFailed")));
@@ -2615,9 +2615,15 @@ window.GWHome = (function () {
         return { attr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, "size-7"), name: l.name, title: l.url, sub: site };
       };
       const mini = (attr, ic, label, extra) => `<button type="button" data-badge ${attr} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 ${extra}">${icon(ic, "size-3.5")}</button>`;
+      // 编辑中每一条右边的小钮：连结 → 改、删（拥有者和 Editor）；移出文件夹 → 只有拥有者
       const badges = (k) => {
         const id = k.slice(2);
-        return (k[0] === "l" ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200") : "") + mini(k[0] === "a" ? `data-out="${id}"` : `data-out-link="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700 text-white");
+        const link = k[0] === "l";
+        return (
+          (link ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200") : "") +
+          (isOwner ? mini(link ? `data-out-link="${id}"` : `data-out="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700 text-white") : "") +
+          (link ? mini(`data-shelf-del-link="${id}"`, "trash-2", t("home.deleteLink"), "bg-white text-red-600 dark:bg-slate-800 dark:text-red-400") : "")
+        );
       };
       // 一条：↳ 编号 图示 名字（下面小字是网站）
       const row = (k, num) => {
@@ -2625,7 +2631,7 @@ window.GWHome = (function () {
         return `<div data-item="${k}" class="flex items-center gap-2 py-1.5 pr-2 pl-3 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}">
           <span class="flex shrink-0 items-center gap-1 text-slate-300 dark:text-slate-600">${icon("corner-down-right", "size-4")}<span class="w-7 text-[11px] text-slate-400 tabular-nums">${num}</span></span>
           <button type="button" ${x.attr} title="${esc(x.title)}" class="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-0.5 text-left">${x.iconHtml}<span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-800 group-hover:text-sky-700 group-hover:underline dark:text-slate-100 dark:group-hover:text-sky-300">${esc(x.name)}</span><span class="block truncate text-[11px] text-slate-400">${esc(x.sub)}</span></span></button>
-          ${editMode && isOwner ? `<span class="flex shrink-0 gap-1">${badges(k)}</span>` : ""}
+          ${editMode && canEdit ? `<span class="flex shrink-0 gap-1">${badges(k)}</span>` : ""}
         </div>`;
       };
       const emptyHint = (txt) => `<p data-empty class="px-3 py-3 text-center text-xs text-slate-400">${esc(txt)}</p>`;
@@ -2651,7 +2657,7 @@ window.GWHome = (function () {
         const tb = (attr, ic, label, primary) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm ${primary ? "bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"}">${icon(ic, "size-4")}${esc(label)}</button>`;
         const showLoose = rest.length || !shelves.length || editMode;
         const empty = !allKeys().length;
-        const tools = [isOwner ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : "", canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : "", canEdit && shelves.length ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""].join("");
+        const tools = [canEdit ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : "", canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : "", canEdit && (shelves.length || !empty) ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""].join("");
         host.innerHTML = `
           ${tools ? `<div class="mb-3 flex flex-wrap items-center justify-end gap-2 ${f.is_shared || f.shared_by ? "pr-10" : ""}">${tools}</div>` : `<div class="h-6"></div>`}
           <div class="gw-noscroll -mx-1 max-h-[68vh] space-y-3 overflow-y-auto px-1 pb-1">
@@ -2760,7 +2766,21 @@ window.GWHome = (function () {
         const b = e.target.closest("button");
         if (!b || !host.contains(b)) return;
         const d = b.dataset;
-        if ("shelfLink" in d) return linkDialog(null, { folderId: f.id, onSaved: hooks.reopen });
+        // 新连结记在文件夹拥有者名下（Editor 加的也一样），大家都看得到
+        if ("shelfLink" in d) return linkDialog(null, { folderId: f.id, ownerId: f.shared_by || null, onSaved: hooks.reopen });
+        if (d.shelfDelLink) {
+          const l = links.find((x) => x.id === d.shelfDelLink);
+          if (!l) return;
+          return confirmDialog(t("home.deleteLinkTitle", { name: l.name }), t("home.deleteLinkBody"), t("home.delete"), t("home.cancel")).then(async (ok) => {
+            if (!ok) return;
+            const { error } = await sb.from("gw_user_links").delete().eq("id", l.id);
+            if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
+            links = links.filter((x) => x.id !== l.id);
+            draw();
+            save();
+            render();
+          });
+        }
         if (d.shelfEditLink) return linkDialog(links.find((x) => x.id === d.shelfEditLink), { onSaved: hooks.reopen });
         if ("shelfEdit" in d) return ((editMode = !editMode), render());
         if ("shelfAdd" in d) {

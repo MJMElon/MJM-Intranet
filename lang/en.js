@@ -67,6 +67,9 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "deleteLinkBody": "The link is removed from this folder for everyone it is shared with. This can’t be undone.",
+    "deleteLinkTitle": "Delete “{name}”?",
+    "deleteLink": "Delete link",
     "linkRemovePhoto": "Remove photo",
     "linkColor": "Colour",
     "shelfView": "Cupboard",
@@ -100,8 +103,8 @@ window.GW_LANG["en"] = {
     "mapDeleteIconTitle": "Delete icon",
     "mapDeleteIconBody": "Delete {count} link icon(s) from this folder? This removes the link itself.",
     "shareRole": "Access",
-    "shareRoleView": "Can view",
-    "shareRoleEdit": "Can edit",
+    "shareRoleView": "Viewer",
+    "shareRoleEdit": "Editor",
     "mapGrid": "Grid",
     "mapSelectAll": "Select all",
     "mapBullets": "Bullets",

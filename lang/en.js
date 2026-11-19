@@ -220,6 +220,21 @@ window.GW_LANG["en"] = {
       "medium": "M",
       "large": "L"
     },
+    "calLeave": "On leave",
+    "calEstate": "Estate",
+    "calNone": "Nobody is on leave or going to the estate.",
+    "goingTo": "Going to {place}",
+    "hourly": "Hourly",
+    "leaveTypes": {
+      "ANNUAL": "Annual Leave",
+      "SICK": "Sick Leave",
+      "HOSPITALIZATION": "Hospitalisation Leave",
+      "COMPASSIONATE": "Compassionate Leave",
+      "MATERNITY": "Maternity Leave",
+      "PATERNITY": "Paternity Leave",
+      "UNPAID": "Unpaid Leave",
+      "EVENT_DAY_OFF": "Event Day Off"
+    },
     "postAudience": "Who sees it",
     "postEveryone": "Everyone",
     "editNotice": "Edit notice",

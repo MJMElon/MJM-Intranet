@@ -65,6 +65,60 @@ window.GWHome = (function () {
     let lastDragEnd = 0;
     let clockTimer = null;
 
+    // ------------------------------------------------------------ 月历：MJMConnect 的请假 / 去 Estate
+    /* 有 MJMConnect（代码 MJMCONNECT）权限的人，月历小工具会显示 MJMConnect 的资料：
+       紫点 = 有人请假，绿点 = 有人去 Estate；按日期看名单。资料由 MJMConnect 的 intranet-calendar 函数提供，
+       那边会再用 Intranet 的登录 Token 检查一次权限（说明见 mjmconnect-app 的 docs/intranet-calendar-setup.md）。 */
+    const CAL_URL = GW_CONFIG.mjmconnectCalendarUrl;
+    const calEnabled = !readOnly && !!CAL_URL && data.modules.some((m) => m.code === "MJMCONNECT");
+    const cal = { month: null, loading: false, leave: {}, estate: {} };
+    async function loadCal(month, days) {
+      cal.loading = true;
+      const leave = {};
+      const estate = {};
+      try {
+        const { data: s } = await sb.auth.getSession();
+        const token = s && s.session && s.session.access_token;
+        if (token) {
+          const res = await fetch(CAL_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify({ from: month + "-01", days }),
+          });
+          const r = res.ok ? await res.json() : null;
+          if (r && r.ok) {
+            (r.leave || []).forEach((x) => (leave[x.date] = leave[x.date] || []).push(x));
+            (r.estate || []).forEach((x) => (estate[x.date] = estate[x.date] || []).push(x));
+          }
+        }
+      } catch (e) {
+        /* 拿不到就显示普通月历 */
+      }
+      Object.assign(cal, { month, loading: false, leave, estate });
+      if (!editing && root.isConnected) draw();
+    }
+    function calDay(date) {
+      const lv = cal.leave[date] || [];
+      const es = cal.estate[date] || [];
+      const title = new Intl.DateTimeFormat(GW.LOCALE, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(date + "T00:00:00Z"));
+      const row = (dot, name, sub) =>
+        `<li class="flex items-center gap-3 py-2"><span class="size-2.5 shrink-0 rounded-full ${dot}"></span><span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(name)}</span><span class="block truncate text-xs text-slate-500">${esc(sub)}</span></span></li>`;
+      const leaveType = (x) => {
+        const k = "widgets.leaveTypes." + x.leave_type;
+        const name = t(k) === k ? x.leave_type : t(k);
+        return x.day_type && x.day_type !== "FULL" ? `${name} · ${x.day_type === "AM" || x.day_type === "PM" ? x.day_type : t("widgets.hourly")}` : name;
+      };
+      const section = (label, items) => (items.length ? `<p class="mt-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">${esc(label)} (${items.length})</p><ul class="divide-y divide-slate-100 dark:divide-slate-800">${items.join("")}</ul>` : "");
+      const m = modal(
+        title,
+        lv.length || es.length
+          ? section(t("widgets.calLeave"), lv.map((x) => row("bg-violet-500", x.name, leaveType(x)))) + section(t("widgets.calEstate"), es.map((x) => row("bg-emerald-500", x.name, t("widgets.goingTo", { place: x.estate || "—" }))))
+          : `<p class="py-4 text-center text-sm text-slate-400">${esc(t("widgets.calNone"))}</p>`,
+      );
+      refreshIcons();
+      return m;
+    }
+
     // ------------------------------------------------------------ 资料：格子位置（slot）
     /* 主画面是一个固定格子的棋盘（手机 4 栏、平板 6 栏、电脑 8 栏）。
        每个东西记一个 slot（= 第几格，从 0 开始）：row = slot ÷ 栏数，col = slot mod 栏数。
@@ -329,10 +383,32 @@ window.GWHome = (function () {
           const days = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
           const names = [...Array(7)].map((_, i) => new Intl.DateTimeFormat(GW.LOCALE, { weekday: "narrow", timeZone: "UTC" }).format(new Date(Date.UTC(2023, 0, 1 + i))));
           const cells = [...Array(first).fill(""), ...[...Array(days)].map((_, i) => i + 1)];
-          return `<div class="mb-1 text-sm font-semibold text-rose-500">${esc(fmt({ month: "long" }))}</div>
+          const month = `${y}-${String(mo + 1).padStart(2, "0")}`;
+          if (calEnabled && cal.month !== month && !cal.loading) loadCal(month, days);
+          const dateOf = (d) => `${month}-${String(d).padStart(2, "0")}`;
+          const dots = (d) => {
+            const lv = (cal.leave[dateOf(d)] || []).length;
+            const es = (cal.estate[dateOf(d)] || []).length;
+            return lv || es
+              ? `<span class="pointer-events-none absolute -bottom-0.5 left-1/2 flex -translate-x-1/2 gap-0.5">${lv ? `<span class="size-1 rounded-full bg-violet-500"></span>` : ""}${es ? `<span class="size-1 rounded-full bg-emerald-500"></span>` : ""}</span>`
+              : "";
+          };
+          const cell = (d) => {
+            if (!d) return "<span></span>";
+            const num = `<span class="${d === today ? "mx-auto flex size-5 items-center justify-center rounded-full bg-rose-500 font-bold text-white" : ""}">${d}</span>`;
+            const mark = dots(d);
+            return mark && !editing
+              ? `<button type="button" data-cal-day="${dateOf(d)}" class="no-drag relative rounded-md pb-1 hover:bg-slate-900/5 dark:hover:bg-white/10">${num}${mark}</button>`
+              : `<span class="relative pb-1">${num}${mark}</span>`;
+          };
+          const legend =
+            calEnabled && w.size !== "small"
+              ? `<span class="flex items-center gap-2 text-[10px] font-medium text-slate-500"><span class="flex items-center gap-1"><span class="size-1.5 rounded-full bg-violet-500"></span>${esc(t("widgets.calLeave"))}</span><span class="flex items-center gap-1"><span class="size-1.5 rounded-full bg-emerald-500"></span>${esc(t("widgets.calEstate"))}</span></span>`
+              : "";
+          return `<div class="mb-1 flex items-center justify-between gap-2"><span class="text-sm font-semibold text-rose-500">${esc(fmt({ month: "long" }))}</span>${legend}</div>
             <div class="grid grid-cols-7 gap-y-0.5 text-center ${w.size === "small" ? "text-[10px]" : "text-xs"}">
               ${names.map((n) => `<span class="font-semibold text-slate-400">${esc(n)}</span>`).join("")}
-              ${cells.map((d) => `<span class="${d === today ? "mx-auto flex size-5 items-center justify-center rounded-full bg-rose-500 font-bold text-white" : ""}">${d}</span>`).join("")}
+              ${cells.map(cell).join("")}
             </div>`;
         }
         case "notes":
@@ -907,6 +983,7 @@ window.GWHome = (function () {
       }
       const d = b.dataset;
       if (d.open) return open(d.open);
+      if (d.calDay) return editing ? null : calDay(d.calDay);
       if (d.openLink) {
         if (editing || Date.now() - lastDragEnd < 300) return;
         const l = links.find((x) => x.id === d.openLink);

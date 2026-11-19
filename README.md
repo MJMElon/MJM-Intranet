@@ -22,7 +22,7 @@ admin.html               设置页（右上角齿轮）：User & Group Manage（
 shared/head.js           每页第一个载入：主题、Tailwind、共用函式库（版本在这里统一改）
 shared/config.js         Supabase 网址与 anon key
 shared/core.js           登录检查、页面外框、对话框、Edge Function 调用、Excel
-shared/home.js           主画面（首页与后台预览共用）；小工具资料存 gw_user_widgets
+shared/home.js           主画面（首页与后台预览共用）；小工具资料存 gw_user_widgets；月历小工具显示 MJMConnect 的请假 / 去 Estate（有 MJMCONNECT 权限才显示，资料来自 MJMConnect 的 intranet-calendar 函数）
 shared/admin.js          权限后台
 shared/diesel.js         Diesel Claims 模块
 lang/en.js lang/zh-CN.js  界面文字（英文 / 简体中文）

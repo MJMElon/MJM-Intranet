@@ -675,7 +675,7 @@ create policy gw_company_estates_write on public.gw_company_estates
 update public.gw_modules
    set name        = 'Plantation Operation',
        icon        = 'tractor',
-       url         = 'https://oliviawsc.github.io/plantationstockmanagementsystem/portal/',
+       url         = 'https://oliviawsc.github.io/plantationstockmanagementsystem/',
        description = 'Plantation Operation portal: Stock, Management Report and the other estate modules',
        category    = 'Plantation'
  where code = 'STOCK';

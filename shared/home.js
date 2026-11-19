@@ -127,7 +127,7 @@ window.GWHome = (function () {
       const items = [];
       layout.forEach((l, id) => modules.has(id) && !l.folder_id && items.push({ kind: "app", id, slot: l.sort_order, w: 1, h: 1 }));
       links.filter((l) => !l.folder_id).forEach((l) => items.push({ kind: "link", id: l.id, slot: l.sort_order, w: 1, h: 1 }));
-      folders.forEach((f) => items.push({ kind: "folder", id: f.id, slot: f.sort_order, w: 1, h: 1 }));
+      folders.filter((f) => !boxOfFolder(f)).forEach((f) => items.push({ kind: "folder", id: f.id, slot: f.sort_order, w: 1, h: 1 }));
       widgets.filter((w) => !isPinned(w) && !isFloating(w)).forEach((w) => items.push({ kind: "widget", id: w.id, slot: w.sort_order, w: SIZES[w.size][0], h: SIZES[w.size][1] }));
       return items.sort((a, b) => a.slot - b.slot || a.kind.localeCompare(b.kind));
     }
@@ -146,16 +146,18 @@ window.GWHome = (function () {
     async function loadShared() {
       if (readOnly) return;
       const me = data.profile.id;
-      const mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me);
+      let mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas, tag_group_id, tag_company_id").eq("user_id", me);
+      const tagsOn = !(mineRes.error && /tag_/.test(mineRes.error.message || ""));
+      if (!tagsOn) mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me); // 资料库还没加 Business 标签：照旧
       let shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order, role").eq("user_id", me);
       if (shareRes.error && /role/.test(shareRes.error.message || "")) shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order").eq("user_id", me); // 还没套用 role 的资料库：当作可以改
       if (mineRes.error || shareRes.error) return; // 资料库还没更新：没有分享功能，其他照常
-      (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas }));
+      (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas, tag_group_id: r.tag_group_id || null, tag_company_id: r.tag_company_id || null }));
       const shares = shareRes.data || [];
       if (shares.length) {
         const ids = shares.map((x) => x.folder_id);
         const [fs, ls, ly] = await Promise.all([
-          sb.from("gw_user_folders").select("id, user_id, name, color, collapsed, is_shared, canvas").in("id", ids),
+          sb.from("gw_user_folders").select("id, user_id, name, color, collapsed, is_shared, canvas" + (tagsOn ? ", tag_group_id, tag_company_id" : "")).in("id", ids),
           sb.from("gw_user_links").select("*").in("folder_id", ids),
           sb.from("gw_user_layout").select("module_id, folder_id").in("folder_id", ids),
         ]).then((r) => r.map((x) => x.data || []));
@@ -691,6 +693,13 @@ window.GWHome = (function () {
     // 从区块拿掉的 App：只是这个区块不显示（权限不变），记在 Notice Board 小工具的 config.hidden = { Business id: [模块 id] }；Add Apps 可以放回去
     const boardCfg = () => (board() && board().config) || {};
     const hiddenIn = (gid) => new Set((boardCfg().hidden && boardCfg().hidden[gid]) || []);
+    // 标了 Business（和 Company）的文件夹：放在那个 Business 区块里（固定在最后面，不能拖走）；我看不到那个区块就照旧在 My Home
+    function boxOfFolder(f) {
+      if (!f || !f.tag_group_id || !sectionsOn || !S.groups.some((g) => g.id === f.tag_group_id)) return null;
+      return f.tag_group_id;
+    }
+    // 这个区块现在要显示的文件夹（标了 Company 的，只在区块选那家 Company 时出现）
+    const boxFolders = (gid) => folders.filter((f) => boxOfFolder(f) === gid && (!f.tag_company_id || ["all", f.tag_company_id].includes(selectedCompany(gid))));
     // 区块最上层的东西：有记录的按记录排；还没记录的 App 按默认顺序补在后面
     function boxItems(gid) {
       const mods = new Map(modsOfGroup(gid).map((m) => [m.id, m]));
@@ -700,7 +709,8 @@ window.GWHome = (function () {
       const have = new Set(sItems.filter((x) => x.group_id === gid && x.kind === "module").map((x) => x.module_id));
       let n = own.length ? own[own.length - 1].sort_order : 0;
       const extra = [...mods.values()].filter((m) => !have.has(m.id) && visible(m.id)).map((m) => ({ id: "new:" + m.id, virtual: true, group_id: gid, kind: "module", module_id: m.id, parent_id: null, sort_order: ++n }));
-      return [...own, ...extra];
+      const sf = boxFolders(gid).map((f) => ({ id: "sf:" + f.id, virtual: true, group_id: gid, kind: "sfolder", folder_id: f.id, parent_id: null, sort_order: ++n }));
+      return [...own, ...extra, ...sf];
     }
     const folderKids = (fid) => sItems.filter((x) => x.parent_id === fid && modules.has(x.module_id) && shownFor(x.group_id, x.module_id)).sort(bySort);
 
@@ -811,6 +821,9 @@ window.GWHome = (function () {
     const BADGE_L = "top-0 left-[calc(50%-36px)] sm:top-1 sm:left-[calc(50%-40px)]";
     const BADGE_R = "top-0 right-[calc(50%-36px)] sm:top-1 sm:right-[calc(50%-40px)]";
     const cellCss = (p) => `grid-column:${p.c + 1} / span ${p.w};grid-row:${p.r + 1} / span ${p.h}`;
+    // 分享的文件夹：蓝色文件夹图示，右下角小小的「人」（一眼看得出是大家一起用的）
+    const sharedFolderIcon = (f) =>
+      `<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="gw-icon relative flex size-14 items-center justify-center rounded-[26%] bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-sm sm:size-16">${icon("folder-open", "size-[46%]")}<span class="absolute right-1 bottom-1 flex size-[1.15rem] items-center justify-center rounded-full bg-white text-sky-600 shadow-sm">${icon("users", "size-3")}</span></span>`;
     const folderIcon = (minis) => `<span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>`;
     function cellTile({ key, kind, p, btnAttr, iconHtml, label, title, badges }) {
       return `<div data-key="${key}" data-kind="${kind}" style="${cellCss(p)}" class="gw-item relative flex flex-col items-center justify-start pt-2.5 sm:pt-3 ${editing ? "touch-none" : ""}">
@@ -818,6 +831,10 @@ window.GWHome = (function () {
     }
     // Business 区块里的一个东西
     function sTile(gid, it, p) {
+      if (it.kind === "sfolder") {
+        const f = folders.find((x) => x.id === it.folder_id);
+        return cellTile({ key: it.id, kind: "sfolder", p, btnAttr: `data-folder="${f.id}"`, iconHtml: sharedFolderIcon(f), label: f.name, title: f.name }).replace('class="gw-item ', 'class="gw-item no-drag ');
+      }
       if (it.kind === "module") {
         const m = modules.get(it.module_id);
         return cellTile({ key: it.id, kind: "module", p, btnAttr: `data-open="${m.id}" data-gid="${gid}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name, badges: badge(`data-hide-mod="${m.id}" data-gid="${gid}"`, "minus", t("home.removeFromSection"), BADGE_L) });
@@ -848,7 +865,7 @@ window.GWHome = (function () {
         const f = folders.find((x) => x.id === it.id);
         const minis = [...folderApps(f.id).map((id) => miniColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => miniColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
         const shared = f.is_shared || f.shared_by;
-        const iconHtml = shared ? `<span class="relative">${folderIcon(minis)}<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-sky-500 text-white ring-2 ring-white dark:ring-slate-900">${icon("users", "size-3")}</span></span>` : folderIcon(minis);
+        const iconHtml = shared ? sharedFolderIcon(f) : folderIcon(minis);
         return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
       }
       return widgetTile(widgets.find((w) => w.id === it.id), p, it.key);
@@ -958,6 +975,7 @@ window.GWHome = (function () {
     }
     // 区块里一个东西放到第 c 栏第 r 行
     function saveCell(key, it, c, r) {
+      if (it.kind === "sfolder") return Promise.resolve(); // 标了 Business 的文件夹固定在区块最后，不存位置
       if (it.kind === "fw") return saveWidgetPos(widgets.find((w) => w.id === it.id), { box: key, x: c, y: r, w: it.w, h: it.h });
       if (key === "home") return saveSlot(it.kind, it.id, r * 100 + c);
       return placeInBox(key, it.id, r * 100 + c);
@@ -1047,7 +1065,7 @@ window.GWHome = (function () {
         const other = B.model.find((x) => x.key === hits[0]);
         const p = B.L.pos.get(hits[0]);
         if (other.kind === "folder" && ["module", "app", "link"].includes(bdrag.kind)) action = { type: "folder", fid: other.id };
-        else if (other.kind !== "fw" && w === 1 && h === 1 && p.w === 1 && p.h === 1) action = { type: "swap", key: hits[0], c: p.c, r: p.r };
+        else if (other.kind !== "fw" && other.kind !== "sfolder" && w === 1 && h === 1 && p.w === 1 && p.h === 1) action = { type: "swap", key: hits[0], c: p.c, r: p.r };
       }
       return { c, r, action };
     }
@@ -2051,7 +2069,7 @@ window.GWHome = (function () {
       const parts = [];
       S.groups.forEach((grp) => {
         // 一般人：Business 里有 App 才出现；super admin：新开的 Business 还没有模块也显示（空的区块）
-        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id))) return;
+        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id) || folders.some((f) => boxOfFolder(f) === grp.id))) return;
         const B = boxGeo(grp.id);
         parts.push([grp.id, boxShell(grp.id, grp.name, B, modeOf(grp.id) === "title" ? "" : boxTiles(grp.id, B))]);
       });
@@ -2465,6 +2483,55 @@ window.GWHome = (function () {
     /* mode = "grid"（图示格子）| "map"（心智图：视窗放大，右边一排工具；还是浮动窗，不换页）
        右上角小小的「两个人」= 分享给谁（分享用的文件夹、拥有者才有）；分享给我的文件夹右上角是淡蓝的「两个人」。
        分享给我的：不能移出里面的东西、不能改名。 */
+    // 文件夹标签：放在哪个 Business / Company 的区块
+    function folderTagChip(f, canChange) {
+      if (!sectionsOn) return "";
+      const g = f.tag_group_id && S.groups.find((x) => x.id === f.tag_group_id);
+      const co = f.tag_company_id && S.companies.find((x) => x.id === f.tag_company_id);
+      const label = g ? g.name + (co ? " · " + (co.short_name || co.code || co.name) : "") : t("home.folderTagAdd");
+      if (!g && !canChange) return "";
+      const cls_ = "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium shadow-sm backdrop-blur " + (g ? "bg-white/85 text-slate-700 dark:bg-slate-800/85 dark:text-slate-200" : "border border-dashed border-white/70 bg-white/20 text-white");
+      return canChange
+        ? `<button type="button" data-folder-tag class="${cls_} hover:bg-white">${icon(g ? "briefcase-business" : "tag", "size-3.5")}${esc(label)}${g ? icon("pencil", "size-3 opacity-60") : ""}</button>`
+        : `<span class="${cls_}">${icon("briefcase-business", "size-3.5")}${esc(label)}</span>`;
+    }
+    function folderTagDialog(f, done) {
+      const coOpts = (gid) =>
+        `<option value="">${esc(t("home.folderTagAllCo"))}</option>` + (gid ? companiesOf(gid).map((c) => `<option value="${c.id}" ${f.tag_company_id === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("") : "");
+      const dlg = modal(
+        t("home.folderTagTitle"),
+        `<form class="space-y-4">
+          <p class="text-sm text-slate-500">${esc(t("home.folderTagHint"))}</p>
+          <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("home.folderTagBusiness"))}</span>
+            <select name="g" class="${cls.input}"><option value="">${esc(t("home.folderTagNone"))}</option>${S.groups.map((g) => `<option value="${g.id}" ${f.tag_group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>
+          </label>
+          <label data-co-wrap class="block space-y-1.5 ${f.tag_group_id ? "" : "hidden"}"><span class="${cls.label}">${esc(t("home.folderTagCompany"))}</span>
+            <select name="c" class="${cls.input}">${coOpts(f.tag_group_id)}</select>
+          </label>
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </form>`,
+      );
+      const form = $("form", dlg.el);
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      form.g.addEventListener("change", () => {
+        form.c.innerHTML = coOpts(form.g.value);
+        $("[data-co-wrap]", dlg.el).classList.toggle("hidden", !form.g.value);
+      });
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const row = { tag_group_id: form.g.value || null, tag_company_id: (form.g.value && form.c.value) || null };
+        const { error } = await sb.from("gw_user_folders").update(row).eq("id", f.id);
+        if (error) return toast(/tag_/.test(error.message || "") ? t("home.folderTagNeedsDb") : t("home.saveFailed") + " (" + (error.message || "") + ")");
+        Object.assign(f, row);
+        dlg.close();
+        draw();
+        if (done) done();
+      });
+    }
+
     function openFolder(fid) {
       const f = folders.find((x) => x.id === fid);
       if (!f) return;
@@ -2479,6 +2546,7 @@ window.GWHome = (function () {
         <div class="mb-4 flex max-w-full items-center gap-2 px-4">
           <h2 data-title class="min-w-0 truncate text-3xl font-bold text-white drop-shadow outline-none select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
         </div>
+        <div data-tag-row class="-mt-2 mb-4 flex justify-center">${folderTagChip(f, canRename)}</div>
         <div data-win class="relative w-full max-w-5xl rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
           ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
           ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
@@ -2574,6 +2642,7 @@ window.GWHome = (function () {
           return openFolder(fid);
         }
         if ("share" in b.dataset) return sharePicker(f);
+        if ("folderTag" in b.dataset) return folderTagDialog(f, () => ($("[data-tag-row]", wrap).innerHTML = folderTagChip(f, canRename), refreshIcons()));
       });
     }
 
@@ -3035,6 +3104,7 @@ window.GWHome = (function () {
       const roleSel = (id, role, show) => `<select data-role="${id}" aria-label="${esc(t("home.shareRole"))}" class="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900 ${show ? "" : "invisible"}">
           <option value="view" ${role === "view" ? "selected" : ""}>${esc(t("home.shareRoleView"))}</option>
           <option value="edit" ${role === "edit" ? "selected" : ""}>${esc(t("home.shareRoleEdit"))}</option>
+          <option value="owner">${esc(t("home.shareRoleOwner"))}</option>
         </select>`;
       const dlg = modal(
         t("home.shareTitle", { name: f.name }),
@@ -3067,12 +3137,22 @@ window.GWHome = (function () {
       const q = $("[data-q]", dlg.el);
       if (q) q.addEventListener("input", () => { const v = q.value.trim().toLowerCase(); $$("[data-row]", dlg.el).forEach((r) => r.classList.toggle("hidden", !!v && !r.dataset.row.includes(v))); });
       dlg.el.addEventListener("change", (e) => {
+        // 只能选一个新拥有者：选了另一个人，前一个改回 Editor
+        if (e.target.dataset.role && e.target.value === "owner") $$("[data-role]", dlg.el).forEach((x) => x !== e.target && x.value === "owner" && (x.value = "edit"));
         if (!e.target.dataset.pick) return;
         const sel = $(`[data-role="${e.target.dataset.pick}"]`, dlg.el);
         if (sel) sel.classList.toggle("invisible", !e.target.checked);
       });
       $("[data-save]", dlg.el).onclick = async () => {
         const picked = new Map($$("[data-pick]:checked", dlg.el).map((x) => [x.dataset.pick, rolesOn ? $(`[data-role="${x.dataset.pick}"]`, dlg.el).value : "edit"]));
+        // 转移拥有者：先问清楚；分享名单先照常存（新拥有者暂时当 Editor），最后才转
+        const newOwner = [...picked].find(([, role]) => role === "owner");
+        if (newOwner) {
+          picked.set(newOwner[0], "edit");
+          const who = list.find((u) => u.id === newOwner[0]);
+          const ok = await confirmDialog(t("home.transferTitle", { name: (who && who.full_name) || "" }), t("home.transferBody", { name: (who && who.full_name) || "", folder: f.name }), t("home.transferOk"), t("home.cancel"));
+          if (!ok) return;
+        }
         const add = [...picked.keys()].filter((id) => !on.has(id));
         const drop = [...on.keys()].filter((id) => !picked.has(id));
         const changed = [...picked].filter(([id, role]) => on.has(id) && on.get(id) !== role);
@@ -3089,6 +3169,13 @@ window.GWHome = (function () {
         if (drop.length) {
           const { error } = await sb.from("gw_folder_shares").delete().eq("folder_id", f.id).in("user_id", drop);
           if (error) return fail(error);
+        }
+        if (newOwner) {
+          const { error } = await sb.rpc("gw_transfer_folder", { p_folder: f.id, p_new_owner: newOwner[0] });
+          if (error) return fail(/gw_transfer_folder/.test(error.message || "") ? { message: t("home.folderTagNeedsDb") } : error);
+          dlg.close();
+          toast(t("home.transferDone"));
+          return setTimeout(() => location.reload(), 600); // 文件夹换了主人：整页重新载入最单纯
         }
         dlg.close();
         toast(t("home.shareSaved", { count: picked.size }));

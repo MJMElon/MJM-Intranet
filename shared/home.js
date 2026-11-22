@@ -2748,7 +2748,7 @@ window.GWHome = (function () {
       const uid = () => Math.random().toString(36).slice(2, 10);
       let editMode = false;
       const cv0 = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
-      let shelves = (Array.isArray(cv0.shelves) ? cv0.shelves : []).filter((x) => x && typeof x === "object").map((x) => ({ id: String(x.id || uid()), name: String(x.name || "").slice(0, 40), items: Array.isArray(x.items) ? x.items.map(String) : [] }));
+      let shelves = (Array.isArray(cv0.shelves) ? cv0.shelves : []).filter((x) => x && typeof x === "object").map((x) => ({ id: /^[A-Za-z0-9_-]{1,40}$/.test(String(x.id || "")) ? String(x.id) : uid(), name: String(x.name || "").slice(0, 40), items: Array.isArray(x.items) ? x.items.map(String) : [] })); // id 只收字母数字（文件夹内容别人也能改：不能让奇怪的字进到画面）
       let looseOrder = Array.isArray(cv0.loose) ? cv0.loose.map(String) : [];
       const allKeys = () => [...folderApps(f.id).map((id) => "a:" + id), ...folderLinks(f.id).map((l) => "l:" + l.id)];
       // 已经不在文件夹的拿掉；同一个东西只放一个标题；剩下的 = 还没分
@@ -2794,19 +2794,19 @@ window.GWHome = (function () {
       const emptyHint = (txt) => `<p data-empty class="px-3 py-3 text-center text-xs text-slate-400">${esc(txt)}</p>`;
       const card = (sh, i) => {
         const n = sh.items.length;
-        return `<section data-shelf="${sh.id}" class="overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-800/70">
-          <header data-shelf-head="${sh.id}" class="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/90 px-3 py-2 transition dark:border-white/10 dark:bg-slate-800">
+        return `<section data-shelf="${esc(sh.id)}" class="overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-800/70">
+          <header data-shelf-head="${esc(sh.id)}" class="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/90 px-3 py-2 transition dark:border-white/10 dark:bg-slate-800">
             ${canEdit ? `<span data-shelf-grip title="${esc(t("home.dragToSort"))}" class="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 active:cursor-grabbing dark:hover:bg-white/10">${icon("grip-vertical", "size-4")}</span>` : ""}
             <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-slate-900 text-[11px] font-bold text-white dark:bg-white dark:text-slate-900">${i + 1}</span>
             ${
               editMode
-                ? `<input data-shelf-name="${sh.id}" value="${esc(sh.name)}" maxlength="40" placeholder="${esc(t("home.shelfName"))}" class="h-8 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:focus:border-white">`
+                ? `<input data-shelf-name="${esc(sh.id)}" value="${esc(sh.name)}" maxlength="40" placeholder="${esc(t("home.shelfName"))}" class="h-8 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:focus:border-white">`
                 : `<h3 class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(sh.name || t("home.shelfNew"))}</h3>`
             }
             <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-white/10 dark:text-slate-300 dark:ring-white/10">${n}</span>
-            ${editMode ? `<button type="button" data-shelf-del="${sh.id}" title="${esc(t("home.shelfDelete"))}" aria-label="${esc(t("home.shelfDelete"))}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
+            ${editMode ? `<button type="button" data-shelf-del="${esc(sh.id)}" title="${esc(t("home.shelfDelete"))}" aria-label="${esc(t("home.shelfDelete"))}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
           </header>
-          <div data-shelf-items="${sh.id}" class="min-h-[2.75rem] py-1">${sh.items.map((k, j) => row(k, `${i + 1}.${j + 1}`)).join("")}${n ? "" : emptyHint(canEdit ? t("home.shelfDropHere") : t("home.shelfEmpty"))}</div>
+          <div data-shelf-items="${esc(sh.id)}" class="min-h-[2.75rem] py-1">${sh.items.map((k, j) => row(k, `${i + 1}.${j + 1}`)).join("")}${n ? "" : emptyHint(canEdit ? t("home.shelfDropHere") : t("home.shelfEmpty"))}</div>
         </section>`;
       };
       function render() {

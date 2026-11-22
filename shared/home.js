@@ -178,6 +178,38 @@ window.GWHome = (function () {
         ly.forEach((l) => sharedApps.set(l.folder_id, [...(sharedApps.get(l.folder_id) || []), l.module_id]));
       }
       draw();
+      askTransfers();
+    }
+    // 有人要把文件夹转给我：问我接不接受（按「之后再说」下次打开首页会再问）
+    async function askTransfers() {
+      const { data: reqs, error } = await sb.rpc("gw_my_folder_transfers");
+      if (error || !reqs || !reqs.length) return;
+      for (const r of reqs) {
+        const answer = await new Promise((resolve) => {
+          const dlg = modal(
+            t("home.transferInTitle"),
+            `<div class="space-y-4">
+              <p class="text-sm">${esc(t("home.transferInBody", { name: r.from_name || "", folder: r.folder_name || "" }))}</p>
+              <div class="flex flex-wrap justify-end gap-2">
+                <button type="button" data-a="later" class="${btn("ghost")}">${esc(t("home.transferLater"))}</button>
+                <button type="button" data-a="no" class="${btn("secondary")}">${esc(t("home.transferDecline"))}</button>
+                <button type="button" data-a="yes" class="${btn("primary")}">${esc(t("home.transferAccept"))}</button>
+              </div>
+            </div>`,
+          );
+          dlg.el.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-a]");
+            if (b) (dlg.close(), resolve(b.dataset.a));
+          });
+        });
+        if (answer === "later") continue;
+        const { error: e2 } = await sb.rpc("gw_answer_folder_transfer", { p_folder: r.folder_id, p_accept: answer === "yes" });
+        if (e2) toast(t("home.saveFailed") + " (" + (e2.message || "") + ")");
+        else if (answer === "yes") {
+          toast(t("home.transferDone"));
+          return setTimeout(() => location.reload(), 600); // 文件夹换了主人：整页重新载入最单纯
+        }
+      }
     }
 
     // 把 slot 换算成实际位置；重叠的（例如换了装置、栏数不同）往后找空位，只影响显示不改资料
@@ -331,8 +363,10 @@ window.GWHome = (function () {
     const badge = (attr, ic, label, pos) =>
       `<button type="button" ${attr} aria-label="${esc(label)}" class="no-drag absolute ${pos} z-10 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon(ic, "size-3.5")}</button>`;
 
+    // 只显示传到 Intranet 自己的图片（别的网站的图片会知道谁打开了）
+    const ownPhoto = (u) => String(u).startsWith(GW_CONFIG.supabaseUrl + "/storage/v1/object/public/");
     function appIcon(m, size) {
-      if (m.image_url)
+      if (m.image_url && ownPhoto(m.image_url))
         return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} overflow-hidden rounded-[26%] bg-white"><img src="${esc(m.image_url)}" alt="" class="size-full object-cover">${newDot(m)}</span>`;
       const grad = tileColor(m.code, m.id, m.color);
       const skin = grad ? `bg-gradient-to-br ${grad} text-white` : GLASS;
@@ -2489,7 +2523,7 @@ window.GWHome = (function () {
         if (!file) return;
         if (file.size > 2 * 1024 * 1024) return toast(t("home.linkPhotoTooBig"));
         const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
-        const path = `${data.profile.id}/${(link && link.id) || "new"}-${Date.now()}.${ext}`;
+        const path = `${data.profile.id}/${crypto.randomUUID()}.${ext}`; // 随机档名：猜不到别人的图片网址
         const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type, upsert: true });
         if (up.error) return toast(t("home.saveFailed") + " (" + (up.error.message || "") + ")");
         photo = sb.storage.from("link-icons").getPublicUrl(path).data.publicUrl;
@@ -3235,6 +3269,18 @@ window.GWHome = (function () {
       );
       refreshIcons();
       $("[data-cancel]", dlg.el).onclick = dlg.close;
+      // 已经送出、还没被接受的转移
+      const pend = await sb.from("gw_folder_transfers").select("to_user").eq("folder_id", f.id).maybeSingle();
+      if (pend.data) {
+        const who = list.find((u) => u.id === pend.data.to_user);
+        $(".space-y-3", dlg.el).insertAdjacentHTML("afterbegin", `<div data-pending class="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200">${icon("hourglass", "size-4 shrink-0")}<span class="min-w-0 flex-1">${esc(t("home.transferPending", { name: (who && who.full_name) || "" }))}</span><button type="button" data-cancel-transfer class="${btn("secondary", "sm")}">${esc(t("home.cancel"))}</button></div>`);
+        refreshIcons();
+        $("[data-cancel-transfer]", dlg.el).onclick = async () => {
+          const { error } = await sb.rpc("gw_cancel_folder_transfer", { p_folder: f.id });
+          if (error) return toast(t("home.saveFailed"));
+          $("[data-pending]", dlg.el).remove();
+        };
+      }
       const bz = $("[data-biz-share]", dlg.el);
       if (bz) bz.onclick = () => folderTagDialog(f, () => (($("[data-biz-label]", dlg.el).textContent = bizShareLabel(f)), onTag && onTag()));
       const q = $("[data-q]", dlg.el);
@@ -3274,11 +3320,12 @@ window.GWHome = (function () {
           if (error) return fail(error);
         }
         if (newOwner) {
-          const { error } = await sb.rpc("gw_transfer_folder", { p_folder: f.id, p_new_owner: newOwner[0] });
-          if (error) return fail(/gw_transfer_folder/.test(error.message || "") ? { message: t("home.folderTagNeedsDb") } : error);
+          // 送出请求：对方在首页按「接受」才会真的转过去
+          const { error } = await sb.rpc("gw_request_folder_transfer", { p_folder: f.id, p_to: newOwner[0] });
+          if (error) return fail(/gw_request_folder_transfer/.test(error.message || "") ? { message: t("home.folderTagNeedsDb") } : error);
           dlg.close();
-          toast(t("home.transferDone"));
-          return setTimeout(() => location.reload(), 600); // 文件夹换了主人：整页重新载入最单纯
+          const who = list.find((u) => u.id === newOwner[0]);
+          return toast(t("home.transferAsked", { name: (who && who.full_name) || "" }));
         }
         dlg.close();
         toast(t("home.shareSaved", { count: picked.size }));

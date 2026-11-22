@@ -125,7 +125,7 @@
                 .map(
                   (x) => `<li class="flex items-center gap-3 px-3 py-2 text-sm">
                     <span class="min-w-0 flex-1"><span class="block truncate font-medium${x.revoked_at ? " text-slate-400 line-through" : ""}">${esc(x.label)}</span>
-                    <span class="block text-xs text-slate-500">${esc(x.revoked_at ? tc("revoked") : x.last_used_at ? tc("lastUsed", { time: GW.fmtDateTime(x.last_used_at) }) : tc("neverUsed"))}</span></span>
+                    <span class="block text-xs text-slate-500">${esc(x.revoked_at ? tc("revoked") : x.expires_at && new Date(x.expires_at) < new Date() ? tc("expired") : [x.last_used_at ? tc("lastUsed", { time: GW.fmtDateTime(x.last_used_at) }) : tc("neverUsed"), x.expires_at ? tc("expires", { time: GW.fmtDateTime(x.expires_at) }) : ""].filter(Boolean).join(" · "))}</span></span>
                     ${x.revoked_at ? "" : `<button data-revoke="${x.id}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${esc(tc("revoke"))}</button>`}
                   </li>`,
                 )

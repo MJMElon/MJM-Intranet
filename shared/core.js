@@ -162,10 +162,10 @@ window.GW = (function () {
     if (password.length < 8) return "too_short";
     if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "weak";
     if (password !== confirm) return "mismatch";
-    const { error } = await sb.auth.updateUser({ password });
-    if (error) return error.code === "same_password" ? "same" : "unknown";
-    await invoke("gw-auth", { action: "password_changed" });
-    return null;
+    // 在伺服器改：改成功才会清掉「必须改密码」（不能只清标记不改密码）
+    const r = await invoke("gw-auth", { action: "change_password", password });
+    if (r && r.ok) return null;
+    return r && ["too_short", "weak", "same"].includes(r.error) ? r.error : "unknown";
   }
 
   // ---------------------------------------------------------------- 页面外框
@@ -339,7 +339,7 @@ window.GW = (function () {
     if (!excelPromise) {
       excelPromise = new Promise((resolve, reject) => {
         const s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+        s.src = BASE + "shared/vendor/exceljs-4.4.0.min.js";
         s.onload = () => resolve(window.ExcelJS);
         s.onerror = reject;
         document.head.appendChild(s);

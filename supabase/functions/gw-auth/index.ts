@@ -2,7 +2,7 @@
 // POST { action: "login", email, password }
 //   → { session, must_change_password, locale } 或 { error, remaining?, minutes? }
 //   连续输错 5 次锁 15 分钟；帐号必须有启用中的 Gateway 资料
-// POST { action: "password_changed" }（带用户 Token）→ 清除「必须改密码」标记并记录
+// POST { action: "change_password", password }（带用户 Token）→ 在伺服器改密码，成功才清除「必须改密码」标记并记录
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, getCaller, json, logEvent, serviceClient } from "../_shared/gw.ts";
 
@@ -50,9 +50,24 @@ Deno.serve(async (req) => {
     });
   }
 
-  if (body.action === "password_changed") {
+  if (body.action === "change_password") {
     const caller = await getCaller(req);
-    if (!caller) return json({ error: "unauthorized" }, 401);
+    if (!caller || !caller.profile || caller.profile.status !== "active") return json({ error: "unauthorized" }, 401);
+    const password = String(body.password ?? "");
+    if (password.length < 8) return json({ error: "too_short" });
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return json({ error: "weak" });
+    // 跟现在的密码一样？用它登入看看（登入得了 = 一样），测完马上登出那一次
+    const email = caller.user.email ?? "";
+    const probe = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const same = await probe.auth.signInWithPassword({ email, password });
+    if (!same.error && same.data.session) {
+      await admin.auth.admin.signOut(same.data.session.access_token, "local").catch(() => {});
+      return json({ error: "same" });
+    }
+    const { error: updError } = await admin.auth.admin.updateUserById(caller.user.id, { password });
+    if (updError) return json({ error: "unknown", detail: updError.message });
     await admin.from("gw_profiles").update({ must_change_password: false }).eq("id", caller.user.id);
     await logEvent(caller.user.id, "auth.password_changed", "auth", caller.user.id, caller.user.email ?? null);
     return json({ ok: true });

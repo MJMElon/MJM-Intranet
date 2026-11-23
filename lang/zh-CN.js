@@ -965,6 +965,13 @@ window.GW_LANG["zh-CN"] = {
       "clear": "清除全部"
     },
     "userWindow": {
+      "colAccess": "可用",
+      "colAdmin": "管理员",
+      "modulesInShort": "模块 — {company}",
+      "nCompanies": "{count} 家公司",
+      "nModules": "{count} 项模块权限",
+      "noRightAccess": "你不能在这里改这个模块的权限",
+      "noRightAdmin": "只有能设定模块管理员的人才能勾",
       "modulesIn": "{company} 的模块 — 勾选 = 可以用",
       "noCompanyTab": "没有 Company",
       "editCompanies": "Company 与角色",

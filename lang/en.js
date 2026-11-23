@@ -965,6 +965,13 @@ window.GW_LANG["en"] = {
       "clear": "Clear all"
     },
     "userWindow": {
+      "colAccess": "Access",
+      "colAdmin": "Admin",
+      "modulesInShort": "Modules — {company}",
+      "nCompanies": "{count} companies",
+      "nModules": "{count} module access",
+      "noRightAccess": "You can't change access to this module here",
+      "noRightAdmin": "Only people allowed to set module admins can tick this",
       "modulesIn": "Modules in {company} — tick to give access",
       "noCompanyTab": "No company",
       "editCompanies": "Companies & roles",

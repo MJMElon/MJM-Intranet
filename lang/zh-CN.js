@@ -965,6 +965,10 @@ window.GW_LANG["zh-CN"] = {
       "clear": "清除全部"
     },
     "userWindow": {
+      "modulesIn": "{company} 的模块 — 勾选 = 可以用",
+      "noCompanyTab": "没有 Company",
+      "editCompanies": "Company 与角色",
+      "pickCompanyFirst": "先把这个人加进 Company（上面的 +），再勾他在那家 Company 可以用的模块。",
       "companyLimited": "{modules}：只开给这个 Business 的某些 Company。先把这个人加进那些 Company，才能加这个模块。",
       "withAccess": "有权限的模块",
       "noAccessYet": "还没开通",

@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     supabase.from("gw_business_companies").select("group_id, company_id"),
     supabase.from("gw_module_companies").select("company_id").eq("module_id", module.id),
     supabase.from("gw_group_modules").select("group_id").eq("module_id", module.id),
-    supabase.from("gw_module_members").select("user_id, group_id, is_admin").eq("module_id", module.id),
+    supabase.from("gw_module_members").select("*").eq("module_id", module.id), // company_id: access per Business + Company
     supabase.from("gw_group_members").select("user_id, group_id"),
     supabase.from("gw_profiles").select("id, email, full_name, role, status").eq("status", "active"),
     supabase.from("gw_company_locations").select("*").order("sort_order"),
@@ -59,21 +59,28 @@ Deno.serve(async (req) => {
   const taggedGroups = new Set((taggedBiz.data ?? []).map((r) => r.group_id));
   const inBusiness = new Set((groupMembers.data ?? []).map((r) => r.group_id + ":" + r.user_id));
   const memberOf = new Map<string, boolean>();
-  const iconGroups = new Map<string, Set<string>>(); // user → Businesses where the Icon is opened for them
+  const iconGroups = new Map<string, Set<string>>(); // user → Businesses where the Icon is opened for them without a Company
+  const iconCos = new Map<string, Set<string>>(); // user → Companies where the Icon is opened for them
   for (const r of members.data ?? []) {
     if (!taggedGroups.has(r.group_id) || !inBusiness.has(r.group_id + ":" + r.user_id)) continue;
     memberOf.set(r.user_id, (memberOf.get(r.user_id) ?? false) || r.is_admin === true);
-    if (!iconGroups.has(r.user_id)) iconGroups.set(r.user_id, new Set());
-    iconGroups.get(r.user_id)!.add(r.group_id);
+    if (r.company_id) {
+      if (!iconCos.has(r.user_id)) iconCos.set(r.user_id, new Set());
+      iconCos.get(r.user_id)!.add(r.company_id);
+    } else {
+      if (!iconGroups.has(r.user_id)) iconGroups.set(r.user_id, new Set());
+      iconGroups.get(r.user_id)!.add(r.group_id);
+    }
   }
   // Companies with this Icon: tagged directly, or in a tagged Business
   const iconCompanies = new Set<string>((tagged.data ?? []).map((r) => r.company_id));
   for (const l of links.data ?? []) if (taggedGroups.has(l.group_id)) iconCompanies.add(l.company_id);
-  // A person's Companies for this Icon = the Companies HR allocated them to, in the Businesses where they have the Icon
+  // A person's Companies for this Icon = the Companies where the Icon is ticked for them
+  // (older rows without a Company: the Companies HR allocated them to in that Business)
   const companiesOf = (userId: string): string[] => {
+    const out = new Set<string>([...(iconCos.get(userId) ?? [])].filter((c) => iconCompanies.has(c)));
     const groups = iconGroups.get(userId);
-    if (!groups) return [];
-    const out = new Set<string>();
+    if (!groups) return [...out];
     for (const m of memberCompanies.data ?? []) {
       if (m.user_id === userId && groups.has(m.group_id) && iconCompanies.has(m.company_id)) out.add(m.company_id);
     }

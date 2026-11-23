@@ -42,6 +42,8 @@
         GW.sb.from("gw_company_locations").select("*").eq("is_active", true).order("sort_order").order("name"),
         // Notice Board 的表情反应：主页资料一回来就接着拿（数据库还没更新时就没有这个功能，其他照常）
         homeP.then((r) => (r.data && r.data.announcements && r.data.announcements.length ? GW.sb.rpc("gw_get_notice_reactions", { p_ids: r.data.announcements.map((a) => a.id) }) : { data: [] })),
+        // 我的模块权限（按 Business ＋ Company）：区块只显示我在现在选的 Company 可以用的模块
+        GW.sb.from("gw_module_members").select("*").eq("user_id", uid),
       ])
     : null;
   const profile = await GW.requireProfile("user");
@@ -49,7 +51,7 @@
   const main = GW.shell(profile, "home");
   main.innerHTML = GW.spinner();
   const firstVisit = !profile.layout_initialized;
-  let [secRes, { data, error }, widgetRes, memberRes, linkRes, imgRes, itemRes, groupRes, gmodRes, bcoRes, coRes, mcoRes, myCoRes, mapRes, locRes, reactRes] = await loads;
+  let [secRes, { data, error }, widgetRes, memberRes, linkRes, imgRes, itemRes, groupRes, gmodRes, bcoRes, coRes, mcoRes, myCoRes, mapRes, locRes, reactRes, accRes] = await loads;
   const sectionsOn = !secRes.error;
   if (!sectionsOn) {
     // 旧版：没有区块表 → 区块用的资料都当成没有；第一次登录按群组自动排好预设版面
@@ -126,6 +128,7 @@
         // 在这个 Business 里只属于一个 Company 的人，预设选那个 Company；属于好几个就预设「全部」
         // 我在每个 Business 被分到的 Company（区块的 Company 下拉只列这些；super_admin 看全部）
         memberCompanies: myCoRes.data || [],
+        myAccess: accRes && !accRes.error ? accRes.data || [] : null, // null = 读不到：照旧（不按 Company 过滤）
         myCompany: Object.fromEntries(
           (myCoRes.data || [])
             .filter((m, _i, all) => all.filter((y) => y.group_id === m.group_id).length === 1)

@@ -807,8 +807,19 @@ window.GWHome = (function () {
       sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
     })();
     // 模块有标 Company 的，只在选了那个 Company（或选全部）时显示；没标 Company 的模块一律显示
+    // 我在这个 Business 现在选的 Company 有没有这个模块的权限（super_admin 全部都有）
+    const accessHere = (gid, moduleId, sel) => {
+      if (isSuper || !S.myAccess) return true;
+      const rows = S.myAccess.filter((r) => r.group_id === gid && r.module_id === moduleId);
+      if (!rows.length) return false;
+      if (sel === "all") return true;
+      if (sel === "none") return rows.some((r) => !r.company_id);
+      if (sel === "hq") return rows.some((r) => !r.company_id || companiesOf(gid).some((c) => c.id === r.company_id));
+      return rows.some((r) => !r.company_id || r.company_id === sel);
+    };
     const shownFor = (gid, moduleId) => {
       const sel = selectedCompany(gid);
+      if (!accessHere(gid, moduleId, sel)) return false;
       if (sel === "all") return true;
       const tags = S.moduleCompanies.filter((x) => x.module_id === moduleId);
       if (sel === "none") return !tags.length;
@@ -818,7 +829,8 @@ window.GWHome = (function () {
     const bySort = (a, b) => (a.sort_order || 0) - (b.sort_order || 0);
     const modsOfGroup = (gid) => {
       const ids = new Set(S.groupModules.filter((x) => x.group_id === gid).map((x) => x.module_id));
-      return data.modules.filter((m) => ids.has(m.id));
+      // 只算在这个 Business 被开了的模块（在别的 Business 有权限不算）
+      return data.modules.filter((m) => ids.has(m.id) && (isSuper || !S.myAccess || S.myAccess.some((r) => r.group_id === gid && r.module_id === m.id)));
     };
     // 从区块拿掉的 App：只是这个区块不显示（权限不变），记在 Notice Board 小工具的 config.hidden = { Business id: [模块 id] }；Add Apps 可以放回去
     const boardCfg = () => (board() && board().config) || {};

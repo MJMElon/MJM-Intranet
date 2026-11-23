@@ -965,6 +965,10 @@ window.GW_LANG["en"] = {
       "clear": "Clear all"
     },
     "userWindow": {
+      "modulesIn": "Modules in {company} — tick to give access",
+      "noCompanyTab": "No company",
+      "editCompanies": "Companies & roles",
+      "pickCompanyFirst": "Add this person to a company first (+ above), then tick the modules they can use in that company.",
       "companyLimited": "{modules}: limited to certain companies in this business. Add the person to one of those companies first, then the module can be added.",
       "withAccess": "Modules with access",
       "noAccessYet": "No access yet",

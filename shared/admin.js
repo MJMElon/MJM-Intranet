@@ -95,7 +95,7 @@
       sb.from("gw_group_members").select("group_id, user_id"),
       sb.from("gw_group_modules").select("group_id, module_id"),
       sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
-      sb.from("gw_module_members").select("user_id, module_id, group_id, is_admin"),
+      sb.from("gw_module_members").select("*"),
       Promise.resolve({ data: [] }),
       sb.from("gw_profiles").select("id, full_name, email, role, status, user_code").order("full_name"),
       sb.from("gw_module_companies").select("module_id, company_id"),
@@ -103,10 +103,12 @@
     ]).then((r) => r.map((x) => x.data || []));
     const coName = new Map(companies.map((c) => [c.id, c.code || c.name]));
     // 模块权限按 Business：一行 = 这个人在这个 Business 可以用这个模块；key = 人:模块:Business
-    const ctx = { groups, members, gm, mods, users, mine, coTags, companies, rows: new Map(rows.map((r) => [accessKey(r.user_id, r.module_id, r.group_id), r])) };
+    // 资料库有没有 company_id 栏（模块权限按 Company 的 SQL 跑过没）
+    const probe = await sb.from("gw_module_members").select("company_id").limit(1);
+    const ctx = { groups, members, gm, mods, users, mine, coTags, companies, companyMode: !probe.error, rows: new Map(rows.map((r) => [accessKey(r.user_id, r.module_id, r.group_id, r.company_id), r])) };
     const inGroup = (uid, gid) => members.some((m) => m.user_id === uid && m.group_id === gid);
     const groupHas = (gid, mid) => gm.some((x) => x.group_id === gid && x.module_id === mid);
-    const myAdmin = (gid, mid) => !!(ctx.rows.get(accessKey(me.id, mid, gid)) || {}).is_admin;
+    const myAdmin = (gid, mid) => [...ctx.rows.values()].some((r) => r.user_id === me.id && r.module_id === mid && r.group_id === gid && r.is_admin);
     const roleHas = (gid, mid, flag) => me.bizCan(gid, flag) && groupHas(gid, mid);
     const locked = (u) => u.id === me.id || u.role === "super_admin";
     // 在某个 Business 里，我能不能改这个人这个模块的 Access / Admin（规则同数据库 RLS）
@@ -115,7 +117,6 @@
     const targetOk = (u, gid, mid) => !locked(u) && inGroup(u.id, gid) && groupHas(gid, mid);
     ctx.canGrant = (u, gid, mid) => isSuper || (targetOk(u, gid, mid) && (roleHas(gid, mid, "can_grant_module") || adminReach(gid, mid)));
     ctx.canRevoke = (u, gid, mid) => isSuper || (targetOk(u, gid, mid) && (roleHas(gid, mid, "can_revoke_module") || adminReach(gid, mid)));
-    ctx.canAccess = (u, gid, mid) => (ctx.rows.has(accessKey(u.id, mid, gid)) ? ctx.canRevoke(u, gid, mid) : ctx.canGrant(u, gid, mid));
     ctx.canAdmin = (u, gid, mid) => isSuper || (targetOk(u, gid, mid) && roleHas(gid, mid, "can_set_module_admin"));
     ctx.inGroup = inGroup;
     ctx.companyTags = (mid) => coTags.filter((x) => x.module_id === mid).map((x) => coName.get(x.company_id)).filter(Boolean);
@@ -125,20 +126,26 @@
     return ctx;
   }
 
-  const accessKey = (uid, mid, gid) => uid + ":" + mid + ":" + gid;
-  // 改某个 Business 里的 Access / Admin；回传 false 表示失败
-  async function saveAccess(ctx, uid, mid, gid, access, admin) {
-    const key = accessKey(uid, mid, gid);
+  // 一行 = 人 × 模块 × Business × Company（Company 空 = 这个 Business 没有 Company / 这个人还没分到 Company）
+  const accessKey = (uid, mid, gid, cid) => uid + ":" + mid + ":" + gid + ":" + (cid || "");
+  // 改某个 Business（＋ Company）里的 Access / Admin；回传 false 表示失败
+  async function saveAccess(ctx, uid, mid, gid, cid, access, admin) {
+    const key = accessKey(uid, mid, gid, cid);
     const row = ctx.rows.get(key);
+    const match = (q) => {
+      q = q.eq("user_id", uid).eq("module_id", mid).eq("group_id", gid);
+      return ctx.companyMode ? (cid ? q.eq("company_id", cid) : q.is("company_id", null)) : q;
+    };
     let error;
     if (!access) {
-      if (row) ({ error } = await sb.from("gw_module_members").delete().eq("user_id", uid).eq("module_id", mid).eq("group_id", gid));
+      if (row) ({ error } = await match(sb.from("gw_module_members").delete()));
       if (!error) ctx.rows.delete(key);
     } else if (!row) {
-      ({ error } = await sb.from("gw_module_members").insert({ user_id: uid, module_id: mid, group_id: gid, is_admin: !!admin }));
-      if (!error) ctx.rows.set(key, { user_id: uid, module_id: mid, group_id: gid, is_admin: !!admin });
+      const ins = { user_id: uid, module_id: mid, group_id: gid, is_admin: !!admin, ...(cid ? { company_id: cid } : {}) };
+      ({ error } = await sb.from("gw_module_members").insert(ins));
+      if (!error) ctx.rows.set(key, { ...ins, company_id: cid || null });
     } else if (!!row.is_admin !== !!admin) {
-      ({ error } = await sb.from("gw_module_members").update({ is_admin: !!admin }).eq("user_id", uid).eq("module_id", mid).eq("group_id", gid));
+      ({ error } = await match(sb.from("gw_module_members").update({ is_admin: !!admin })));
       if (!error) row.is_admin = !!admin;
     }
     if (error) toast(t("admin.users.accessDialog.saveFailed") + (error.message ? " (" + error.message + ")" : ""));
@@ -197,7 +204,7 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) || !!(pending && ctx && (pending.access !== !!rowOf(pending.gid, pending.mid) || pending.admin !== !!(rowOf(pending.gid, pending.mid) || {}).is_admin)) });
+    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -228,7 +235,9 @@
     const mcRow = (gid, cid) => mcs.find((x) => x.group_id === gid && x.company_id === cid);
     const superU = () => isSuperUser(u);
     const locked = () => u.id === me.id || superU();
-    const rowOf = (gid, mid) => (superU() ? SUPER_ROW : ctx.rows.get(accessKey(u.id, mid, gid))); // 这个人在这个 Business 的这个模块
+    const rowOf = (gid, mid, cid) => (superU() ? SUPER_ROW : ctx.rows.get(accessKey(u.id, mid, gid, ctx.companyMode ? cid : ""))); // 这个人在这个 Business（＋ Company）的这个模块
+    const selCo = new Map(); // 每个 Business 现在选的 Company（"" = 没有 Company）
+    let busyKey = null; // 正在存的那一格
     const canEditAccess = () =>
       !locked() &&
       (isSuper ||
@@ -241,7 +250,6 @@
     const canRolesAny = () => isSuper || (groups || []).some((g) => canRolesFor(g.id));
     const addableBiz = () => (groups || []).filter((g) => !mems.includes(g.id) && canPlace(g.id));
     let ctx = null; // loadAccess()：权限规则 + 模块 × Company 标签
-    const openMod = new Map(); // 每个 Business 点开的模块
     let editing = false;
     let draft = null; // { full_name, super }
     let saving = false;
@@ -256,16 +264,6 @@
         .map((x) => modById.get(x.module_id))
         .filter((mod) => mod && mod.is_active)
         .sort(byModName);
-    const openToHere = (mod, gid) => {
-      const here = cosOfBiz(gid).map((c) => c.id);
-      const tags = ctx ? ctx.coTags.filter((x) => x.module_id === mod.id && here.includes(x.company_id)) : [];
-      if (!tags.length) return true;
-      const myCos = cosIn(gid).map((c) => c.id);
-      return tags.some((x) => myCos.includes(x.company_id));
-    };
-    function modulesFor(gid) {
-      return linkedMods(gid).filter((mod) => openToHere(mod, gid));
-    }
     const coLabel = (c) => c.short_name || c.code || c.name;
     const roleOf = (gid, cid) => {
       const r = mcRow(gid, cid);
@@ -276,83 +274,85 @@
     const plusBtn = (attrs, label) =>
       `<button type="button" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>`;
 
-    // 点开的模块：Access / Admin 勾选（规则同 By Module）
-    // 点开的模块：Access / Admin 勾选先记在 pending，按 Save 才写入（规则同 By Module）
-    let pending = null; // { gid, mid, access, admin }
-    const openPanel = (gid, mid) => {
-      const row = rowOf(gid, mid);
-      pending = { gid, mid, access: !!row, admin: !!(row && row.is_admin) };
-      openMod.clear(); // 一次只开一个面板
-      openMod.set(gid, mid);
-    };
-    const closePanel = (gid) => ((pending = null), openMod.delete(gid));
-    function panel(gid, mod) {
-      const row = rowOf(gid, mod.id);
-      if (!pending || pending.mid !== mod.id) openPanel(gid, mod.id);
-      const canAdm = !superU() && ctx.canAdmin(u, gid, mod.id) && !!row;
-      const canAcc = !superU() && ctx.canAccess(u, gid, mod.id) && !(row && row.is_admin && !ctx.canAdmin(u, gid, mod.id));
-      const changed = pending.access !== !!row || pending.admin !== !!(row && row.is_admin);
-      return `<div data-panel="${mod.id}" class="mt-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-        <div class="flex flex-wrap items-center gap-3">
-          ${modLogo(mod, "size-10")}
-          <p class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(mod.name)}</p>
-          <span class="flex gap-4">
-            ${tick(`data-pend="access"`, pending.access, canAcc, ta("access"))}
-            ${tick(`data-pend="admin"`, pending.admin, canAdm, ta("admin"))}
-          </span>
-        </div>
-        <div class="mt-3 flex justify-end gap-2">
-          <button type="button" data-panel-cancel="${gid}" class="${btn("secondary", "sm")}">${esc(t("admin.users.cancel"))}</button>
-          <button type="button" data-panel-save="${gid}" ${changed && !saving ? "" : "disabled"} class="${btn("primary", "sm")}">${esc(t("admin.users.save"))}</button>
-        </div>
-      </div>`;
+    // 这个 Business 可以选的 Company 分页：这个人在的 Company；还有旧的「没有 Company」权限时多一个「No company」
+    function coTabs(g) {
+      if (!ctx || !ctx.companyMode || !cosOfBiz(g.id).length) return [];
+      const tabs = cosIn(g.id).map((c) => ({ id: c.id, label: coLabel(c), title: c.name, role: mcRow(g.id, c.id) }));
+      const legacy = [...ctx.rows.values()].some((r) => r.user_id === u.id && r.group_id === g.id && !r.company_id);
+      if (legacy) tabs.push({ id: "", label: tu("noCompanyTab"), title: tu("noCompanyTab"), role: null });
+      return tabs;
     }
+    function currentCo(g) {
+      const tabs = coTabs(g);
+      if (!tabs.length) return "";
+      const v = selCo.get(g.id);
+      return tabs.some((x) => x.id === v) ? v : tabs[0].id;
+    }
+    // 这个 Company 用得到的模块：模块在这个 Business 没标 Company → 都可以；有标 → 要标到这个 Company
+    const modsForCo = (gid, cid) =>
+      linkedMods(gid).filter((mod) => {
+        const here = cosOfBiz(gid).map((c) => c.id);
+        const tags = ctx.coTags.filter((x) => x.module_id === mod.id && here.includes(x.company_id));
+        return !tags.length || (!!cid && tags.some((x) => x.company_id === cid));
+      });
+    const countIn = (gid, cid) => (superU() ? modsForCo(gid, cid).length : [...ctx.rows.values()].filter((r) => r.user_id === u.id && r.group_id === gid && (r.company_id || "") === cid).length);
 
-    // 一个 Business 方块（样子同 Master Manage）
+    // 一个 Business 方块：Business 名字 → 一排 Company（一次选一个）→ 那个 Company 的模块，勾 = 可以用、取消 = 不能用（马上存）
     function bizBox(g) {
-      const list = ctx ? modulesFor(g.id) : null;
       const place = editing && canPlace(g.id);
-      const mine = list ? list.filter((x) => rowOf(g.id, x.id)) : [];
-      const addable = list && !superU() ? list.filter((x) => !rowOf(g.id, x.id) && ctx.canGrant(u, g.id, x.id)) : [];
-      // 这个 Business 有、但这个人因为不在对的 Company 而拿不到的模块（提示先加 Company）
-      const limited = list && !superU() ? linkedMods(g.id).filter((mod) => !rowOf(g.id, mod.id) && !openToHere(mod, g.id)) : [];
-      const tile = (mod) => {
-        const row = rowOf(g.id, mod.id);
-        const active = openMod.get(g.id) === mod.id;
-        return `<button type="button" data-tile="${g.id}:${mod.id}" title="${esc(mod.name)}" class="relative flex max-w-full items-center gap-2 rounded-xl border px-2 py-1.5 text-left transition-colors ${
-          active ? "border-brand-500 bg-white ring-2 ring-brand-500 dark:bg-slate-900" : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
-        }">
-          <span class="relative shrink-0">${modLogo(mod, "size-9")}${row && row.is_admin ? adminMark() : ""}</span>
-          <span class="min-w-0 text-xs leading-tight font-medium text-slate-800 [overflow-wrap:normal] [word-break:normal] dark:text-slate-100">${esc(mod.name)}</span>
-        </button>`;
+      const hasCos = cosOfBiz(g.id).length > 0;
+      const tabs = coTabs(g);
+      const cid = currentCo(g);
+      const needCompany = ctx && ctx.companyMode && hasCos && !tabs.length; // Business 有 Company，但这个人还没被分到任何一家
+      const list = ctx && !needCompany ? modsForCo(g.id, cid) : [];
+      const chip = (x) => {
+        const on = x.id === cid;
+        const n = ctx ? countIn(g.id, x.id) : 0;
+        const roleTxt = x.role ? roleOf(g.id, x.id) : "";
+        return `<button type="button" data-pick-co="${g.id}|${x.id}" title="${esc(x.title)}" aria-pressed="${on}" class="inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${
+          on ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900" : x.role && x.role.role_id ? "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200" : "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+        }"><span class="truncate">${esc(x.label)}</span>${roleTxt ? `<span class="opacity-60">·</span><span class="truncate">${esc(roleTxt)}</span>` : ""}<span class="ml-0.5 rounded-full ${on ? "bg-white/20" : "bg-black/5 dark:bg-white/10"} px-1.5 text-[10px]">${n}</span></button>`;
       };
-      const chip = (c) => {
-        const r = mcRow(g.id, c.id);
-        return `<button type="button" data-co-dlg="${g.id}" title="${esc(c.name)}" ${place ? "" : "disabled"} class="inline-flex max-w-full items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${place ? "" : "cursor-default"} ${
-          r && r.role_id
-            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
-            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
-        }"><span class="truncate">${esc(coLabel(c))}</span><span class="text-slate-400">·</span><span class="truncate">${esc(roleOf(g.id, c.id))}</span></button>`;
+      const row = (mod) => {
+        const r = rowOf(g.id, mod.id, cid);
+        const k = g.id + "|" + cid + "|" + mod.id;
+        const canAdm = !superU() && ctx.canAdmin(u, g.id, mod.id);
+        const canAcc = !superU() && (r ? ctx.canRevoke(u, g.id, mod.id) && (!r.is_admin || canAdm) : ctx.canGrant(u, g.id, mod.id));
+        const busy = busyKey === k;
+        return `<div class="flex items-center gap-3 rounded-xl border px-3 py-2 ${r ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-900/20" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}">
+          <label class="flex min-w-0 flex-1 items-center gap-3 ${canAcc && !busy ? "cursor-pointer" : "cursor-not-allowed"}">
+            <input type="checkbox" data-acc="${k}" ${r ? "checked" : ""} ${canAcc && !busy ? "" : "disabled"} class="size-4 shrink-0 accent-emerald-600">
+            <span class="relative shrink-0">${modLogo(mod, "size-8")}${r && r.is_admin ? adminMark() : ""}</span>
+            <span class="min-w-0 truncate text-sm font-medium">${esc(mod.name)}</span>
+          </label>
+          ${r && canAdm ? `<label class="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300"><input type="checkbox" data-adm="${k}" ${r.is_admin ? "checked" : ""} ${busy ? "disabled" : ""} class="size-3.5 accent-sky-600">${esc(ta("admin"))}</label>` : ""}
+        </div>`;
       };
-      const cos = cosIn(g.id);
       return `<section data-biz="${g.id}" class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <header class="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
           ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
           <h3 class="min-w-0 flex-1 truncate font-semibold">${esc(g.name)}</h3>
           ${place ? `<button type="button" data-rm-biz="${g.id}" aria-label="${esc(t("admin.userGroups.removeMember"))}" title="${esc(t("admin.userGroups.removeMember"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>` : ""}
         </header>
-        <div class="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-          ${icon("building-2", "size-3.5 shrink-0 text-slate-400")}
-          ${cos.map(chip).join("")}
-          ${cos.length ? "" : `<span class="text-xs text-slate-400">${esc(tu("noCompany"))}</span>`}
-          ${place && cosOfBiz(g.id).length ? plusBtn(`data-co-dlg="${g.id}"`, ts("addCompany")) : ""}
-        </div>
+        ${
+          hasCos || !ctx || !ctx.companyMode
+            ? `<div class="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                ${icon("building-2", "size-3.5 shrink-0 text-slate-400")}
+                ${tabs.map(chip).join("")}
+                ${!tabs.length ? `<span class="text-xs text-slate-400">${esc(tu("noCompany"))}</span>` : ""}
+                ${(place || (canPlace(g.id) && !superU())) && hasCos ? plusBtn(`data-co-dlg="${g.id}"`, tu("editCompanies")) : ""}
+              </div>`
+            : ""
+        }
         <div class="p-3">
-          <p class="mb-1.5 px-0.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">${esc(tu("withAccess"))} <span class="font-normal text-slate-400">(${mine.length})</span></p>
-          ${!list ? GW.spinner() : mine.length ? `<div class="flex flex-wrap gap-1.5">${mine.map(tile).join("")}</div>` : `<p class="px-0.5 text-xs text-slate-400">${esc(list.length ? tu("noModules") : tu("noModulesHere"))}</p>`}
-          ${openMod.has(g.id) && list && list.some((x) => x.id === openMod.get(g.id)) ? panel(g.id, modById.get(openMod.get(g.id))) : ""}
-          ${addable.length ? `<div class="mt-2">${dashedBtn(`data-add-mod="${g.id}"`, ts("addModule"))}</div>` : ""}
-          ${limited.length ? `<p class="mt-2 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-300">${icon("info", "mt-0.5 size-3.5 shrink-0")}<span>${esc(tu("companyLimited", { modules: limited.map((x) => x.name).join(", ") }))}</span></p>` : ""}
+          ${
+            !ctx
+              ? GW.spinner()
+              : needCompany
+                ? `<p class="px-0.5 text-xs text-amber-700 dark:text-amber-300">${esc(tu("pickCompanyFirst"))}</p>`
+                : `<p class="mb-1.5 px-0.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">${esc(cid ? tu("modulesIn", { company: (coById.get(cid) || {}).name || "" }) : tu("withAccess"))}</p>
+                  ${list.length ? `<div class="grid gap-1.5 sm:grid-cols-2">${list.map(row).join("")}</div>` : `<p class="px-0.5 text-xs text-slate-400">${esc(tu("noModulesHere"))}</p>`}`
+          }
         </div>
       </section>`;
     }
@@ -557,6 +557,7 @@
               const { error } = await sb.from("gw_member_companies").delete().eq("group_id", g.id).eq("user_id", uid).eq("company_id", c.id);
               if (error) return stop(error);
               mcs.splice(mcs.indexOf(cur), 1);
+              if (ctx) for (const [k, r] of [...ctx.rows]) if (r.user_id === uid && r.group_id === g.id && r.company_id === c.id) ctx.rows.delete(k);
             }
           } else if (now.in && cur && (cur.role_id || null) !== now.role_id) {
             const { error } = await sb.from("gw_member_companies").update({ role_id: now.role_id }).eq("group_id", g.id).eq("user_id", uid).eq("company_id", c.id);
@@ -565,39 +566,8 @@
           }
           orig.set(c.id, { ...now });
         }
-        closePanel(g.id);
         toast(t("admin.users.savedOk"));
         pm.close();
-        draw();
-      });
-    }
-
-    // + Add module：这个 Business 里、这个人还没有、而且我能开的模块 → 点 Add 直接开 Access
-    function addModuleDialog(g) {
-      const free = modulesFor(g.id).filter((x) => !rowOf(g.id, x.id) && ctx.canGrant(u, g.id, x.id));
-      const pm = modal(
-        tu("addModuleTitle", { business: g.name }),
-        `<div class="space-y-3">
-          <p class="text-sm text-slate-500">${esc(tu("addModuleHint"))}</p>
-          <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${free
-            .map(
-              (x) => `<div class="flex items-center gap-3 px-3 py-2">
-                ${modLogo(x, "size-9")}
-                <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(x.name)}</span>
-                <button data-pick-mod="${x.id}" class="${btn("secondary", "sm")}">${icon("plus", "size-4")} ${esc(ts("add"))}</button>
-              </div>`,
-            )
-            .join("")}</div>
-        </div>`,
-      );
-      refreshIcons();
-      pm.el.addEventListener("click", async (e) => {
-        const b = e.target.closest("[data-pick-mod]");
-        if (!b) return;
-        b.disabled = true;
-        if (!(await saveAccess(ctx, uid, b.dataset.pickMod, g.id, true, false))) return (b.disabled = false);
-        pm.close();
-        openPanel(g.id, b.dataset.pickMod);
         draw();
       });
     }
@@ -613,8 +583,7 @@
       if (error) return fail(error);
       for (let i = mcs.length - 1; i >= 0; i--) if (mcs[i].group_id === g.id) mcs.splice(i, 1);
       mems.splice(mems.indexOf(g.id), 1);
-      if (ctx) [...ctx.rows.keys()].filter((k) => k.startsWith(uid + ":") && k.endsWith(":" + g.id)).forEach((k) => ctx.rows.delete(k));
-      closePanel(g.id);
+      if (ctx) for (const [k, r] of [...ctx.rows]) if (r.user_id === uid && r.group_id === g.id) ctx.rows.delete(k);
       draw();
     }
 
@@ -631,27 +600,24 @@
       if ("cancel" in d) return ((editing = false), (draft = null), draw());
       if ("save" in d) return save();
       if ("addBiz" in d) return addBusinessDialog();
-      const g = (groups || []).find((x) => x.id === (d.coDlg || d.addMod || d.rmBiz));
-      if (g && d.coDlg) return companyDialog(g);
-      if (g && d.addMod) return ctx && addModuleDialog(g);
-      if (g && d.rmBiz) return removeBusiness(g);
-      if (d.panelCancel) return (closePanel(d.panelCancel), draw());
-      if (d.panelSave) return savePanel();
-      if (d.tile) {
-        const [gid, mid] = d.tile.split(":");
-        openMod.get(gid) === mid ? closePanel(gid) : openPanel(gid, mid);
+      if (d.pickCo) {
+        const [gid, cid] = d.pickCo.split("|");
+        selCo.set(gid, cid);
         return draw();
       }
+      const g = (groups || []).find((x) => x.id === (d.coDlg || d.rmBiz));
+      if (g && d.coDlg) return companyDialog(g);
+      if (g && d.rmBiz) return removeBusiness(g);
     });
-    // 模块面板 Save：写 gw_module_members（勾 Admin 一定同时有 Access；取消 Access 也取消 Admin）
-    async function savePanel() {
-      if (!pending || saving) return;
-      const { gid, mid, access, admin } = pending;
-      saving = true;
+    // 勾 / 取消模块：马上存（取消 Access 也会取消 Admin；勾 Admin 一定已经有 Access）
+    async function tickAccess(k, access, admin) {
+      if (busyKey) return;
+      const [gid, cid, mid] = k.split("|");
+      busyKey = k;
       draw();
-      const ok = await saveAccess(ctx, uid, mid, gid, access, admin);
-      saving = false;
-      if (ok) ((closePanel(gid)), toast(t("admin.users.savedOk")));
+      const ok = await saveAccess(ctx, uid, mid, gid, cid, access, admin);
+      busyKey = null;
+      if (ok) toast(t("admin.users.savedOk"));
       draw();
     }
     m.el.addEventListener("input", (e) => {
@@ -660,11 +626,12 @@
     m.el.addEventListener("change", (e) => {
       const box = e.target;
       if (box.matches("[data-draft-super]") && draft) return ((draft.super = box.checked), draw());
-      if (box.matches("[data-pend]") && pending) {
-        if (box.dataset.pend === "admin") ((pending.admin = box.checked), pending.admin && (pending.access = true));
-        else ((pending.access = box.checked), !pending.access && (pending.admin = false));
-        return draw();
+      if (box.dataset.acc) {
+        const [gid, cid, mid] = box.dataset.acc.split("|");
+        const r = rowOf(gid, mid, cid);
+        return tickAccess(box.dataset.acc, box.checked, box.checked ? !!(r && r.is_admin) : false);
       }
+      if (box.dataset.adm) return tickAccess(box.dataset.adm, true, box.checked);
     });
     draw();
     ctx = await loadAccess();

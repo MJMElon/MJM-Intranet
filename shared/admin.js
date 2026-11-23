@@ -308,8 +308,6 @@
       const cid = currentCo(g);
       const needCompany = ctx && ctx.companyMode && hasCos && !tabs.length; // Business 有 Company，但这个人还没被分到任何一家
       const list = ctx && !needCompany ? modsForCo(g.id, cid) : [];
-      const total = ctx ? (superU() ? null : [...ctx.rows.values()].filter((r) => r.user_id === u.id && r.group_id === g.id).length) : null;
-      const summary = [tabs.filter((x) => x.id).length ? tu("nCompanies", { count: tabs.filter((x) => x.id).length }) : "", total != null ? tu("nModules", { count: total }) : ""].filter(Boolean).join(" · ");
       const coItem = (x) => {
         const on = x.id === cid;
         const n = ctx ? countIn(g.id, x.id) : 0;
@@ -351,7 +349,6 @@
           <button type="button" data-toggle-biz="${g.id}" aria-expanded="${open}" class="flex min-w-0 flex-1 items-center gap-2 text-left">
             ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
             <h3 class="min-w-0 truncate font-semibold">${esc(g.name)}</h3>
-            ${summary ? `<span class="shrink-0 text-xs text-slate-400">${esc(summary)}</span>` : ""}
             <span class="ml-auto shrink-0 text-slate-400">${icon(open ? "chevron-up" : "chevron-down", "size-4")}</span>
           </button>
           ${place ? `<button type="button" data-rm-biz="${g.id}" aria-label="${esc(t("admin.userGroups.removeMember"))}" title="${esc(t("admin.userGroups.removeMember"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>` : ""}

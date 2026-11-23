@@ -1,5 +1,5 @@
 /* ================================================================
-   MJM Gateway — 共用核心
+   MJM Intranet — 共用核心
    Supabase 连线、登录检查、多语言、页面外框（顶栏 / 手机底部导航）、
    对话框、提示、Edge Function 调用、Excel。
    所有资料权限都由数据库 RLS 检查；这里的页面保护只负责导航。
@@ -64,20 +64,25 @@ window.GW = (function () {
     const session = data.session;
     if (!session) return { session: null, profile: null };
     // 一次请求拿到：个人资料 ＋ 角色 ＋ 角色的 Business 功能；模块管理员资料同时一起拿
-    const [{ data: profile }, { data: adm }] = await Promise.all([
+    // 按 Business ＋ Company 指派的角色（gw_member_companies.role_id）也一起拿：只算在那个 Business 的功能，全域功能照算
+    const [{ data: profile }, { data: adm }, { data: mcs }] = await Promise.all([
       sb.from("gw_profiles").select("*, gw_roles(*, gw_role_businesses(*))").eq("id", session.user.id).maybeSingle(),
-      sb.from("gw_module_members").select("module_id").eq("user_id", session.user.id).eq("is_admin", true),
+      sb.from("gw_module_members").select("module_id, group_id").eq("user_id", session.user.id).eq("is_admin", true),
+      sb.from("gw_member_companies").select("group_id, company_id, role_id, gw_roles(*, gw_role_businesses(*))").eq("user_id", session.user.id),
     ]);
     if (profile) {
       const role = profile.gw_roles || null;
       const biz = role ? role.gw_role_businesses || [] : [];
       delete profile.gw_roles;
+      // 每个 Company 的角色：{ group_id, company_id, role_id, role }
+      profile.companyRoles = (mcs || []).map((x) => ({ group_id: x.group_id, company_id: x.company_id, role_id: x.role_id, role: x.gw_roles || null }));
       // 自订角色：管哪些 Business、能不能发公告（RLS 只给看自己的角色）
       profile.isSuper = profile.role === "super_admin";
       profile.roleName = null;
       profile.businessIds = [];
       profile.roleModules = [];
       profile.adminModuleIds = [];
+      profile.adminPairs = []; // 我在哪个 Business 是哪个模块的管理员 [{ group_id, module_id }]
       profile.adminModules = 0;
       // 角色功能：全域的（gw_roles）＋ 按 Business 的（gw_role_businesses）；super_admin 全部都有
       const GLOBAL = ["can_view_user_group", "can_view_audit", "can_edit_module_name", "can_manage_module_access"];
@@ -86,15 +91,27 @@ window.GW = (function () {
       profile.perms = {}; // group_id → { can_post_notice, ... }
       if (!profile.isSuper) {
         // 模块管理员：可以开 / 收回自己管理的模块的权限
-        profile.adminModuleIds = (adm || []).map((x) => x.module_id);
+        profile.adminPairs = (adm || []).map((x) => ({ group_id: x.group_id, module_id: x.module_id }));
+        profile.adminModuleIds = [...new Set(profile.adminPairs.map((x) => x.module_id))];
         profile.adminModules = profile.adminModuleIds.length;
       }
-      if (!profile.isSuper && role) {
-        profile.roleName = role.name;
-        GLOBAL.forEach((f) => (profile.can[f] = !!role[f]));
-        biz.forEach((b) => {
-          profile.perms[b.group_id] = Object.fromEntries(PER_BIZ.map((f) => [f, !!b[f]]));
-          PER_BIZ.forEach((f) => b[f] && (profile.can[f] = true)); // can.xxx = 在任何一个 Business 有
+      const perBizRoles = profile.isSuper ? [] : profile.companyRoles.filter((x) => x.role);
+      if (!profile.isSuper && (role || perBizRoles.length)) {
+        profile.roleName = role ? role.name : perBizRoles[0].role.name;
+        const addBiz = (b) => {
+          if (!profile.perms[b.group_id]) profile.perms[b.group_id] = Object.fromEntries(PER_BIZ.map((f) => [f, false]));
+          PER_BIZ.forEach((f) => {
+            if (b[f]) ((profile.perms[b.group_id][f] = true), (profile.can[f] = true)); // can.xxx = 在任何一个 Business 有
+          });
+        };
+        if (role) {
+          GLOBAL.forEach((f) => (profile.can[f] = !!role[f]));
+          biz.forEach(addBiz);
+        }
+        // 在 (Business, Company) 指派的角色：全域功能照算，Business 功能只算它被指派的那个 Business
+        perBizRoles.forEach((x) => {
+          GLOBAL.forEach((f) => x.role[f] && (profile.can[f] = true));
+          (x.role.gw_role_businesses || []).filter((b) => b.group_id === x.group_id).forEach(addBiz);
         });
         profile.businessIds = Object.keys(profile.perms);
         if (profile.businessIds.length) {
@@ -145,10 +162,10 @@ window.GW = (function () {
     if (password.length < 8) return "too_short";
     if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "weak";
     if (password !== confirm) return "mismatch";
-    const { error } = await sb.auth.updateUser({ password });
-    if (error) return error.code === "same_password" ? "same" : "unknown";
-    await invoke("gw-auth", { action: "password_changed" });
-    return null;
+    // 在伺服器改：改成功才会清掉「必须改密码」（不能只清标记不改密码）
+    const r = await invoke("gw-auth", { action: "change_password", password });
+    if (r && r.ok) return null;
+    return r && ["too_short", "weak", "same"].includes(r.error) ? r.error : "unknown";
   }
 
   // ---------------------------------------------------------------- 页面外框
@@ -156,7 +173,7 @@ window.GW = (function () {
     const isAdmin = profile.manages;
     const header = document.createElement("div");
     header.innerHTML = `
-      <header class="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+      <header class="sticky top-0 z-30 border-b border-white/50 bg-white/55 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-slate-950/55">
         <div class="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
           <a href="${BASE}index.html" class="text-lg font-bold tracking-tight whitespace-nowrap">${esc(t("app.name"))}</a>
           <div class="ml-auto flex items-center gap-3">
@@ -169,6 +186,7 @@ window.GW = (function () {
                 active === "settings" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-slate-200 dark:bg-slate-800"
               }">${esc(profile.full_name.slice(0, 1))}</span>
             </a>
+            <button type="button" id="gw-theme" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"></button>
             <a href="${BASE}${isAdmin ? "admin.html" : "settings.html"}" title="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" aria-label="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" class="rounded-lg p-2 ${
               active === (isAdmin ? "admin" : "settings") ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
             }">${icon("settings", "size-5")}</a>
@@ -180,6 +198,24 @@ window.GW = (function () {
       </header>`;
     document.body.prepend(...header.children);
     $("#gw-logout").addEventListener("click", logout);
+    // 名字旁边的月亮 / 太阳：一按就换深色 / 浅色，记在自己的设定（下次登入、别的电脑也一样）
+    const themeBtn = $("#gw-theme");
+    const paintTheme = () => {
+      const dark = document.documentElement.classList.contains("dark");
+      const label = t(dark ? "nav.lightMode" : "nav.darkMode");
+      themeBtn.title = label;
+      themeBtn.setAttribute("aria-label", label);
+      themeBtn.innerHTML = icon(dark ? "sun" : "moon", "size-5");
+      refreshIcons();
+    };
+    paintTheme();
+    themeBtn.addEventListener("click", () => {
+      const theme = document.documentElement.classList.contains("dark") ? "light" : "dark";
+      applyTheme(theme);
+      profile.theme = theme;
+      paintTheme();
+      sb.from("gw_profiles").update({ theme }).eq("id", profile.id).then(() => {});
+    });
     const main = $("#main");
     main.classList.add("mx-auto", "max-w-7xl", "px-4", "py-5", "sm:py-8");
     refreshIcons();
@@ -196,7 +232,7 @@ window.GW = (function () {
       "h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-900",
     btn: "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 h-10 px-4 text-sm",
     btnSm: "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 h-8 px-2.5 text-sm",
-    primary: "bg-brand-600 text-white hover:bg-brand-700",
+    primary: "bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200",
     secondary:
       "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
     ghost: "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
@@ -227,7 +263,7 @@ window.GW = (function () {
   // ---------------------------------------------------------------- 对话框 / 提示
   function modal(title, bodyHtml, opts) {
     const wrap = document.createElement("div");
-    wrap.className = "fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4";
+    wrap.className = "gw-modal fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4";
     wrap.innerHTML = `
       <div role="dialog" aria-modal="true" aria-label="${esc(title)}" class="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl dark:bg-slate-900 ${
         opts && opts.wide ? "sm:max-w-2xl" : "sm:max-w-md"
@@ -243,13 +279,25 @@ window.GW = (function () {
       document.removeEventListener("keydown", onKey);
       if (opts && opts.onClose) opts.onClose();
     };
-    const onKey = (e) => e.key === "Escape" && close();
+    /* 还没存的改动：点外面 / 叉 / Esc 先问要不要放弃。
+       opts.guard：true = 弹窗里有 input / change 事件就算改过；函数 = 自己判断；false = 不问。
+       没给的话，内容是 <form> 的弹窗自动 true。程式自己叫 close()（例如存好了）不会问。m.touch() 可以手动标成改过。 */
+    const guard = opts && "guard" in opts ? opts.guard : /^\s*<form\b/.test(bodyHtml || "");
+    let touched = false;
+    if (guard === true) ["input", "change"].forEach((ev) => wrap.addEventListener(ev, (e) => e.target.closest && e.target.closest("[data-no-dirty]") ? null : (touched = true)));
+    const isDirty = () => (typeof guard === "function" ? !!guard() : guard === true && touched);
+    const tryClose = async () => {
+      if (isDirty() && !(await confirmDialog(t("unsaved.title"), t("unsaved.body"), t("unsaved.leave"), t("unsaved.stay")))) return;
+      close();
+    };
+    // Esc 只关最上面那一个（弹窗叠弹窗时，下面的留着）
+    const onKey = (e) => e.key === "Escape" && [...document.querySelectorAll(".gw-modal")].pop() === wrap && tryClose();
     document.addEventListener("keydown", onKey);
-    wrap.addEventListener("click", (e) => e.target === wrap && close());
-    wrap.querySelector("[data-close]").addEventListener("click", close);
+    wrap.addEventListener("click", (e) => e.target === wrap && tryClose());
+    wrap.querySelector("[data-close]").addEventListener("click", tryClose);
     document.body.appendChild(wrap);
     refreshIcons();
-    return { el: wrap.querySelector("[data-body]"), close };
+    return { el: wrap.querySelector("[data-body]"), close, touch: () => (touched = true) };
   }
 
   function confirmDialog(title, text, confirmLabel, cancelLabel) {
@@ -279,7 +327,7 @@ window.GW = (function () {
     if (!el) {
       el = document.createElement("div");
       el.id = "gw-toast";
-      el.className = "fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 sm:bottom-6";
+      el.className = "pointer-events-none fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 sm:bottom-6";
       document.body.appendChild(el);
     }
     el.innerHTML = `<div class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white shadow-lg dark:bg-slate-100 dark:text-slate-900">${esc(text)}</div>`;
@@ -310,7 +358,7 @@ window.GW = (function () {
     if (!excelPromise) {
       excelPromise = new Promise((resolve, reject) => {
         const s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+        s.src = BASE + "shared/vendor/exceljs-4.4.0.min.js";
         s.onload = () => resolve(window.ExcelJS);
         s.onerror = reject;
         document.head.appendChild(s);
@@ -394,30 +442,71 @@ window.GW = (function () {
   // ---------------------------------------------------------------- 打开模块
   /* 第 1 级（外部链接）/ 第 3 级（SSO）：直接打开网址
      第 2 级（Token 跳转）：向 Edge Function 申请 60 秒 Token，再带着 Token 跳转 */
-  async function openModule(m) {
+  // 等 Token 的时候给用户看的画面（新分页：写进去取代 about:blank；同分页：盖一层）
+  const openingHtml = (name) =>
+    `<!doctype html><html><head><meta charset="utf-8"><title>${esc(name)}</title></head>
+     <body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;background:#e7edf7;color:#334155">
+     <div style="text-align:center"><div style="margin:0 auto 14px;width:34px;height:34px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:s 0.8s linear infinite"></div>
+     <div style="font-size:15px;font-weight:600">Opening ${esc(name)}…</div><div style="font-size:12px;color:#64748b;margin-top:4px">MJM Intranet is signing you in</div></div>
+     <style>@keyframes s{to{transform:rotate(360deg)}}</style></body></html>`;
+  function openingOverlay(name) {
+    const el = document.createElement("div");
+    el.className = "fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm";
+    el.innerHTML = `<div class="rounded-2xl bg-white px-8 py-6 text-center shadow-xl dark:bg-slate-900"><div class="mx-auto mb-3 size-8 animate-spin rounded-full border-[3px] border-slate-300 border-t-brand-600"></div><div class="text-sm font-semibold">Opening ${esc(name)}…</div></div>`;
+    document.body.appendChild(el);
+    return () => el.remove();
+  }
+  // 开模块的网址加上「哪家公司」（gw_company = 那个系统认得的代码或名字，gw_company_name = Intranet 里的名字）
+  function withCompany(url, ctx) {
+    if (!ctx || !ctx.company) return url;
+    try {
+      const u = new URL(url);
+      u.searchParams.set("gw_company", ctx.company);
+      if (ctx.company_name && ctx.company_name !== ctx.company) u.searchParams.set("gw_company_name", ctx.company_name);
+      if (ctx.company_short) u.searchParams.set("gw_company_short", ctx.company_short);
+      if (ctx.opispro) u.searchParams.set("gw_opispro", ctx.opispro);
+      if (ctx.location) u.searchParams.set("gw_location", ctx.location);
+      if (ctx.location_id) u.searchParams.set("gw_location_id", ctx.location_id);
+      return u.toString();
+    } catch (e) {
+      return url;
+    }
+  }
+  async function openModule(m, ctx) {
     const newTab = m.open_mode === "new_tab";
     if (m.access_level === 2) {
-      const win = newTab ? window.open("about:blank", "_blank") : null;
+      const win = newTab ? window.open("", "_blank") : null;
+      if (win) {
+        try {
+          win.document.write(openingHtml(m.name));
+          win.document.close();
+        } catch (e) {
+          /* 忽略 */
+        }
+      }
+      const done = win ? () => {} : openingOverlay(m.name);
       const r = await invoke("gw-issue-token", { module_code: m.code });
       if (!r || !r.redirect_url) {
+        done();
         if (win) win.close();
         return false;
       }
+      const target = withCompany(r.redirect_url, ctx);
       if (win) {
         win.opener = null;
-        win.location.href = r.redirect_url;
+        win.location.href = target;
       } else {
-        location.assign(r.redirect_url);
+        location.assign(target);
       }
       return true;
     }
     const record = sb.rpc("gw_record_open", { p_module: m.id });
     if (newTab) {
-      window.open(m.url, "_blank", "noopener,noreferrer");
+      window.open(withCompany(m.url, ctx), "_blank", "noopener,noreferrer");
       await record;
     } else {
       await record;
-      location.assign(m.url);
+      location.assign(withCompany(m.url, ctx));
     }
     return true;
   }

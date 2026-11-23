@@ -1,7 +1,7 @@
 # 上线步骤
 
-线上 Supabase 项目：**MJM Gateway**（原 NASA Dashboard，ref `briqzyxfxsvulyizzbiu`）。
-网站发布在 **GitHub Pages**：`https://mjmelon.github.io/MJM-Gateway/`（纯 HTML，不需要建置）。
+线上 Supabase 项目：**MJM Intranet**（原 NASA Dashboard，ref `briqzyxfxsvulyizzbiu`）。
+网站发布在 **GitHub Pages**：`https://mjmelon.github.io/MJM-Intranet/`（纯 HTML，不需要建置）。
 
 ## 架构
 
@@ -34,8 +34,10 @@ where email = 'you@example.com';
 
 ## 3. Edge Functions
 
+GitHub → Actions → **Deploy Edge Functions**（需要 repo secret `SUPABASE_ACCESS_TOKEN`；改到 `supabase/functions/` 推到 main 也会自动跑）。或用终端：
+
 ```bash
-npx supabase functions deploy gw-auth gw-admin gw-issue-token gw-check-access gw-jwks --project-ref briqzyxfxsvulyizzbiu
+npx supabase functions deploy gw-auth gw-admin gw-issue-token gw-check-access gw-jwks gw-master-data --project-ref briqzyxfxsvulyizzbiu --no-verify-jwt --yes
 ```
 
 第 2 级 Token 需要签名私钥：
@@ -57,6 +59,6 @@ GitHub repo → Settings → Pages → Build and deployment：
 ## 5. Supabase Auth 设定（忘记密码需要）
 
 - Authentication → URL Configuration
-  - Site URL：`https://mjmelon.github.io/MJM-Gateway/`
-  - Redirect URLs：加入 `https://mjmelon.github.io/MJM-Gateway/**`
+  - Site URL：`https://mjmelon.github.io/MJM-Intranet/`
+  - Redirect URLs：加入 `https://mjmelon.github.io/MJM-Intranet/**`
 - Authentication → Emails：设定 SMTP（内建邮件每小时只能寄很少封）

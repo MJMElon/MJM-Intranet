@@ -4,6 +4,8 @@
 import { SignJWT } from "npm:jose@5";
 import { corsHeaders, json, signingKey, TOKEN_ISSUER, TOKEN_TTL_SECONDS, userClient } from "../_shared/gw.ts";
 
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -19,21 +21,16 @@ Deno.serve(async (req) => {
   if (userError || !user) return json({ error: "unauthorized" }, 401);
 
   // 权限检查在数据库做（帐号停用、模块下架、个人禁止都会返回 false）
-  const { data: allowed, error: accessError } = await supabase.rpc("gw_user_can_access", {
-    p_user: user.id,
-    p_module_code: module_code,
-  });
+  // 权限、模块资料、签名钥匙同时拿（以前一个等一个，开模块比较慢）
+  const [{ data: allowed, error: accessError }, { data: module }, { kid, key }] = await Promise.all([
+    supabase.rpc("gw_user_can_access", { p_user: user.id, p_module_code: module_code }),
+    supabase.from("gw_modules").select("id, code, url, access_level").eq("code", module_code).maybeSingle(),
+    signingKey(),
+  ]);
   if (accessError) return json({ error: "access_check_failed" }, 500);
   if (!allowed) return json({ error: "forbidden" }, 403);
-
-  const { data: module } = await supabase
-    .from("gw_modules")
-    .select("id, code, url, access_level")
-    .eq("code", module_code)
-    .single();
   if (!module || module.access_level !== 2) return json({ error: "module_not_token_enabled" }, 400);
 
-  const { kid, key } = await signingKey();
   const token = await new SignJWT({ mod: module.code, email: user.email })
     .setProtectedHeader({ alg: "ES256", kid, typ: "JWT" })
     .setIssuer(TOKEN_ISSUER)
@@ -44,7 +41,10 @@ Deno.serve(async (req) => {
     .setExpirationTime(`${TOKEN_TTL_SECONDS}s`)
     .sign(key);
 
-  await supabase.rpc("gw_record_open", { p_module: module.id });
+  // 开启记录：回应送出后再写，不用让使用者等
+  const record = supabase.rpc("gw_record_open", { p_module: module.id }).then(() => {}, () => {});
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(record);
+  else await record;
 
   const redirect = new URL(module.url);
   redirect.searchParams.set("gw_token", token);

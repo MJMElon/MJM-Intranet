@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MJM Connect</title>
-<script src="shared/head.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
-<script src="shared/home.js"></script>
+<title>MJM Intranet</title>
+<script src="shared/head.js?v=__GW_VERSION__"></script>
+<script src="shared/vendor/sortable-1.15.6.min.js"></script>
+<script src="shared/home.js?v=__GW_VERSION__"></script>
 </head>
 <body class="gw-wallpaper">
 <main id="main"></main>
@@ -14,21 +14,54 @@
 /* 主画面（像 iPhone）：App、小工具、文件夹，拖拉排版；右下角浮动按钮新增小工具 / App */
 (async function () {
   const { t, esc } = GW;
+  // 快：个人资料和主页资料同时开始拿（以前要等个人资料回来、再查区块表，才开始拿主页资料）
+  const { data: sessData } = await GW.sb.auth.getSession();
+  const uid = sessData && sessData.session ? sessData.session.user.id : null;
+  const none = Promise.resolve({ data: [] });
+  const homeP = Promise.resolve(GW.sb.rpc("gw_get_home")); // 包成一般 Promise：下面用两次也只送一次请求
+  const loads = uid
+    ? Promise.all([
+        // 主页按 Business 分区块（资料表还没建立时退回旧的棋盘版面）
+        GW.sb.from("gw_user_sections").select("group_id, expanded"),
+        homeP,
+        GW.sb.from("gw_user_widgets").select("*").order("sort_order"),
+        GW.sb.from("gw_group_members").select("group_id").eq("user_id", uid),
+        GW.sb.from("gw_user_links").select("*").order("sort_order"),
+        GW.sb.from("gw_modules").select("id, image_url"),
+        GW.sb.from("gw_user_section_items").select("*").order("sort_order"),
+        GW.sb.from("gw_groups").select("*").order("sort_order").order("name"), // 含 all_companies（HQ：不用切换 Company）
+        GW.sb.from("gw_group_modules").select("group_id, module_id"),
+        // 区块里的 Company 选择：这个 Business 有哪些 Company、哪些模块标了哪些 Company
+        GW.sb.from("gw_business_companies").select("group_id, company_id"),
+        GW.sb.from("gw_companies").select("id, name, code, short_name, opispro_id, has_locations").eq("is_active", true).order("sort_order").order("name"),
+        GW.sb.from("gw_module_companies").select("module_id, company_id"),
+        GW.sb.from("gw_member_companies").select("group_id, company_id").eq("user_id", uid),
+        // Company 在各个系统里的代码（开模块时一起带过去，让那个系统直接切到这家公司）
+        GW.sb.from("gw_company_mappings").select("company_id, module_id, external_id"),
+        // 一家公司底下的 Location（多于一个时区块上多一个 Location 下拉；开模块时带 gw_location / gw_location_id）
+        GW.sb.from("gw_company_locations").select("*").eq("is_active", true).order("sort_order").order("name"),
+        // Notice Board 的表情反应：主页资料一回来就接着拿（数据库还没更新时就没有这个功能，其他照常）
+        homeP.then((r) => (r.data && r.data.announcements && r.data.announcements.length ? GW.sb.rpc("gw_get_notice_reactions", { p_ids: r.data.announcements.map((a) => a.id) }) : { data: [] })),
+      ])
+    : null;
   const profile = await GW.requireProfile("user");
   if (!profile) return;
   const main = GW.shell(profile, "home");
   main.innerHTML = GW.spinner();
   const firstVisit = !profile.layout_initialized;
-  // 第一次登录：按群组自动排好预设版面
-  if (firstVisit) await GW.sb.rpc("gw_init_layout");
-  const [{ data, error }, widgetRes, memberRes, linkRes, imgRes] = await Promise.all([
-    GW.sb.rpc("gw_get_home"),
-    GW.sb.from("gw_user_widgets").select("*").order("sort_order"),
-    GW.sb.from("gw_group_members").select("group_id").eq("user_id", profile.id),
-    GW.sb.from("gw_user_links").select("*").order("sort_order"),
-    GW.sb.from("gw_modules").select("id, image_url"),
-  ]);
+  let [secRes, { data, error }, widgetRes, memberRes, linkRes, imgRes, itemRes, groupRes, gmodRes, bcoRes, coRes, mcoRes, myCoRes, mapRes, locRes, reactRes] = await loads;
+  const sectionsOn = !secRes.error;
+  if (!sectionsOn) {
+    // 旧版：没有区块表 → 区块用的资料都当成没有；第一次登录按群组自动排好预设版面
+    [itemRes, groupRes, gmodRes, bcoRes, coRes, mcoRes, myCoRes, mapRes, locRes, reactRes] = await Promise.all(Array(10).fill(none));
+    if (firstVisit) {
+      await GW.sb.rpc("gw_init_layout");
+      ({ data, error } = await GW.sb.rpc("gw_get_home"));
+    }
+  }
   if (error) return (main.innerHTML = GW.alertBox(t("errors.description")));
+  // 资料库还没有 opispro_id / has_locations 栏位：退回旧栏位
+  if (coRes && coRes.error && /opispro_id|has_locations/.test(coRes.error.message || "")) coRes = await GW.sb.from("gw_companies").select("id, name, code, short_name").eq("is_active", true).order("sort_order").order("name");
   // 模块照片
   const imgs = new Map(((imgRes && imgRes.data) || []).map((m) => [m.id, m.image_url]));
   data.modules.forEach((m) => (m.image_url = imgs.get(m.id) || null));
@@ -68,7 +101,7 @@
   // 新开给他的 App（还没看过、也不在主画面上）：自动放到主画面最后面
   const placed = new Set(data.layout.map((l) => l.module_id));
   const fresh = data.modules.filter((m) => m.is_new && !placed.has(m.id));
-  if (!pending && fresh.length) {
+  if (!pending && !sectionsOn && fresh.length) {
     const start = Math.max(0, ...data.layout.map((l) => l.sort_order));
     const items = fresh.map((m, i) => ({ module_id: m.id, folder_id: null, sort_order: start + i + 1, card_size: "large" }));
     const { error: fillError } = await GW.sb.rpc("gw_save_layout", { p_items: items });
@@ -78,7 +111,31 @@
     }
   }
   main.innerHTML = '<div id="board" class="mx-auto max-w-5xl"></div>';
-  GWHome.render(document.getElementById("board"), data, { widgets, profile, pending, memberOf, links });
+  const reactions = reactRes && !reactRes.error ? reactRes.data || [] : [];
+  const memberSet = new Set(memberOf);
+  const sections = sectionsOn
+    ? {
+        // super_admin 看得到每一个 Business 区块（新加的模块不管标在哪个 Business 都会出现）；其他人只看自己所属的
+        groups: (groupRes.data || []).filter((g) => profile.isSuper || memberSet.has(g.id)),
+        groupModules: gmodRes.data || [],
+        bizCompanies: bcoRes.data || [],
+        companies: coRes.data || [],
+        moduleCompanies: mcoRes.data || [],
+        companyMappings: mapRes.data || [],
+        locations: (locRes && locRes.data) || [],
+        // 在这个 Business 里只属于一个 Company 的人，预设选那个 Company；属于好几个就预设「全部」
+        // 我在每个 Business 被分到的 Company（区块的 Company 下拉只列这些；super_admin 看全部）
+        memberCompanies: myCoRes.data || [],
+        myCompany: Object.fromEntries(
+          (myCoRes.data || [])
+            .filter((m, _i, all) => all.filter((y) => y.group_id === m.group_id).length === 1)
+            .map((m) => [m.group_id, m.company_id]),
+        ),
+        items: itemRes.data || [],
+        state: secRes.data || [],
+      }
+    : null;
+  GWHome.render(document.getElementById("board"), data, { widgets, profile, pending, memberOf, links, sections, reactions });
 })();
 </script>
 </body>

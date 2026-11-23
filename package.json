@@ -1,8 +1,8 @@
 {
-  "name": "mjm-gateway",
+  "name": "mjm-intranet",
   "version": "1.0.0",
   "private": true,
-  "description": "MJM Gateway：纯 HTML 静态网站（GitHub Pages 从分支发布），这里只放本地开发用的工具",
+  "description": "MJM Intranet：纯 HTML 静态网站（GitHub Pages 从分支发布），这里只放本地开发用的工具",
   "scripts": {
     "serve": "npx --yes serve -l 3000 .",
     "key": "node scripts/generate-token-key.mjs",

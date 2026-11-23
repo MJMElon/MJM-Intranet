@@ -1,5 +1,5 @@
 /* ================================================================
-   MJM Connect — 主画面（像 iPhone 的主画面）
+   MJM Intranet — 主画面（像 iPhone 的主画面）
    Notice Board 固定在最上面；下面是固定格子的棋盘，App 图标、小工具、文件夹可以拖到任何空格（手机长按），会自动对齐。
    右下角浮动按钮：Add Widget、Add Apps（把 App 拖到想放的位置）、New Folder、Edit Home Screen。
    位置：App 存 gw_user_layout、文件夹存 gw_user_folders、小工具存 gw_user_widgets，sort_order = 第几格（slot）。
@@ -8,8 +8,20 @@
 window.GWHome = (function () {
   const { sb, t, esc, $, $$, icon, moduleIcon, cls, btn, modal, confirmDialog, toast, openModule, refreshIcons } = GW;
 
-  // App 图标底色（依模块代码固定挑一个）
-  const TILE = [
+  /* App 图标底色。每个人可以自己选（记在 Notice Board 小工具的 config.icons，不用改数据库）：
+       style：glass（预设，白色毛玻璃，像 iPhone 锁定画面的按钮）/ calm（柔和低调）/ colorful（原本的多彩）/ 或固定一个颜色（全部图示同一个颜色）
+       apps：个别 App 自己指定的颜色（优先） */
+  const PALETTE = {
+    slate: ["from-slate-400 to-slate-600", "#64748b"],
+    blue: ["from-sky-400 to-blue-500", "#3b82f6"],
+    teal: ["from-teal-400 to-teal-600", "#0d9488"],
+    green: ["from-emerald-400 to-green-600", "#16a34a"],
+    amber: ["from-amber-300 to-amber-500", "#f59e0b"],
+    rose: ["from-rose-300 to-rose-500", "#f43f5e"],
+    violet: ["from-violet-400 to-violet-600", "#7c3aed"],
+    graphite: ["from-zinc-500 to-zinc-700", "#3f3f46"],
+  };
+  const COLORFUL = [
     "from-sky-400 to-blue-600",
     "from-emerald-400 to-green-600",
     "from-teal-400 to-cyan-600",
@@ -19,17 +31,38 @@ window.GWHome = (function () {
     "from-slate-500 to-slate-700",
     "from-lime-400 to-emerald-600",
   ];
-  const tileColor = (code) => TILE[[...code].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TILE.length];
+  // 预设「calm」：低饱和的几个蓝灰色调
+  const CALM = ["from-slate-400 to-slate-600", "from-sky-400 to-sky-600", "from-slate-500 to-slate-700", "from-teal-400 to-teal-600", "from-indigo-300 to-indigo-500"];
+  let ICON = { style: "glass", apps: {} };
+  const hashOf = (code) => [...String(code)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  // 渐层色的 class；白色（glass）风格而且没有自己选颜色时回 null
+  const tileColor = (code, id, color) => {
+    if (color && PALETTE[color]) return PALETTE[color][0]; // 连结自己选的颜色
+    const own = id && ICON.apps[id];
+    if (own && PALETTE[own]) return PALETTE[own][0];
+    if (PALETTE[ICON.style]) return PALETTE[ICON.style][0];
+    if (ICON.style === "glass") return null;
+    const list = ICON.style === "colorful" ? COLORFUL : CALM;
+    return list[hashOf(code) % list.length];
+  };
+  // 文件夹里的小方块一定要有颜色
+  const miniColor = (code, id, color) => tileColor(code, id, color) || "from-slate-300 to-slate-500";
+  // 白色毛玻璃图示（预设）：白底、细边、深色符号
+  const GLASS = "gw-icon-glass border border-white/80 bg-white/75 text-slate-700 backdrop-blur-md dark:border-white/15 dark:bg-white/15 dark:text-white";
 
   // 小工具种类与可选大小
   const WIDGETS = {
-    greeting: { sizes: ["medium"], icon: "sun" },
+    // 问候、搜寻：已停用（不再提供，主页上旧的也不显示）
+    greeting: { sizes: ["medium"], icon: "sun", hidden: true, retired: true },
     clock: { sizes: ["small", "medium"], icon: "clock" },
-    search: { sizes: ["medium"], icon: "search" },
-    recent: { sizes: ["small", "medium"], icon: "history" },
+    search: { sizes: ["medium"], icon: "search", hidden: true, retired: true },
+    // 最近打开：已停用（不再提供，主页上旧的也不显示）
+    recent: { sizes: ["small", "medium"], icon: "history", hidden: true, retired: true },
     // Notice Board：固定在最上面，只能调大小，不能移动、不能删除，也不能再加第二个
     announcements: { sizes: ["medium", "large"], icon: "megaphone", hidden: true, pinned: true },
     calendar: { sizes: ["small", "medium"], icon: "calendar" },
+    weather: { sizes: ["small", "medium"], icon: "cloud-sun" },
+    ai: { sizes: ["medium", "large"], icon: "bot", soon: true }, // 还没开放：列在最后、灰掉
     notes: { sizes: ["small", "medium", "large"], icon: "sticky-note" },
     // 管理入口已改为右上角齿轮；旧的管理小工具仍照常显示，但不再提供新增
     admin: { sizes: ["medium"], icon: "shield-check", hidden: true },
@@ -51,8 +84,23 @@ window.GWHome = (function () {
     const uninitialized = readOnly && !data.profile.layout_initialized;
 
     const modules = new Map(data.modules.map((m) => [m.id, m]));
+    // Notice Board 的表情反应：{ announcement_id, emoji, user_id, full_name }
+    let reactions = ((opts && opts.reactions) || []).map((r) => ({ ...r }));
+    const reactionsOn = !!(opts && Array.isArray(opts.reactions));
+    const REACT = [
+      ["like", "👍"],
+      ["love", "❤️"],
+      ["congrats", "🎉"],
+    ];
+    {
+      const ic = ((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements");
+      const saved = ic && ic.config && ic.config.icons;
+      // 新设计（白色 glass）之前存的图示设定（任何风格、每个 App 的颜色）都换成 glass 一次；之后存的都带 v: 2，照用户选的
+      const fresh = saved && saved.v === 2;
+      ICON = fresh ? { style: saved.style || "glass", apps: { ...(saved.apps || {}) } } : { style: "glass", apps: {} };
+    }
     let folders = data.folders.map((f) => ({ ...f }));
-    let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })) : [];
+    let widgets = widgetsEnabled ? opts.widgets.map((w) => ({ ...w })).filter((w) => !(WIDGETS[w.widget_type] || {}).retired) : [];
     // 个人连结图示（用户自己加的网址）
     let links = ((opts && opts.links) || []).map((l) => ({ ...l }));
     // App 位置（只记录目前有权限的）
@@ -64,60 +112,6 @@ window.GWHome = (function () {
     let fabOpen = false;
     let lastDragEnd = 0;
     let clockTimer = null;
-
-    // ------------------------------------------------------------ 月历：MJMConnect 的请假 / 去 Estate
-    /* 有 MJMConnect（代码 MJMCONNECT）权限的人，月历小工具会显示 MJMConnect 的资料：
-       紫点 = 有人请假，绿点 = 有人去 Estate；按日期看名单。资料由 MJMConnect 的 intranet-calendar 函数提供，
-       那边会再用 Intranet 的登录 Token 检查一次权限（说明见 mjmconnect-app 的 docs/intranet-calendar-setup.md）。 */
-    const CAL_URL = GW_CONFIG.mjmconnectCalendarUrl;
-    const calEnabled = !readOnly && !!CAL_URL && data.modules.some((m) => m.code === "MJMCONNECT");
-    const cal = { month: null, loading: false, leave: {}, estate: {} };
-    async function loadCal(month, days) {
-      cal.loading = true;
-      const leave = {};
-      const estate = {};
-      try {
-        const { data: s } = await sb.auth.getSession();
-        const token = s && s.session && s.session.access_token;
-        if (token) {
-          const res = await fetch(CAL_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify({ from: month + "-01", days }),
-          });
-          const r = res.ok ? await res.json() : null;
-          if (r && r.ok) {
-            (r.leave || []).forEach((x) => (leave[x.date] = leave[x.date] || []).push(x));
-            (r.estate || []).forEach((x) => (estate[x.date] = estate[x.date] || []).push(x));
-          }
-        }
-      } catch (e) {
-        /* 拿不到就显示普通月历 */
-      }
-      Object.assign(cal, { month, loading: false, leave, estate });
-      if (!editing && root.isConnected) draw();
-    }
-    function calDay(date) {
-      const lv = cal.leave[date] || [];
-      const es = cal.estate[date] || [];
-      const title = new Intl.DateTimeFormat(GW.LOCALE, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(date + "T00:00:00Z"));
-      const row = (dot, name, sub) =>
-        `<li class="flex items-center gap-3 py-2"><span class="size-2.5 shrink-0 rounded-full ${dot}"></span><span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(name)}</span><span class="block truncate text-xs text-slate-500">${esc(sub)}</span></span></li>`;
-      const leaveType = (x) => {
-        const k = "widgets.leaveTypes." + x.leave_type;
-        const name = t(k) === k ? x.leave_type : t(k);
-        return x.day_type && x.day_type !== "FULL" ? `${name} · ${x.day_type === "AM" || x.day_type === "PM" ? x.day_type : t("widgets.hourly")}` : name;
-      };
-      const section = (label, items) => (items.length ? `<p class="mt-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">${esc(label)} (${items.length})</p><ul class="divide-y divide-slate-100 dark:divide-slate-800">${items.join("")}</ul>` : "");
-      const m = modal(
-        title,
-        lv.length || es.length
-          ? section(t("widgets.calLeave"), lv.map((x) => row("bg-violet-500", x.name, leaveType(x)))) + section(t("widgets.calEstate"), es.map((x) => row("bg-emerald-500", x.name, t("widgets.goingTo", { place: x.estate || "—" }))))
-          : `<p class="py-4 text-center text-sm text-slate-400">${esc(t("widgets.calNone"))}</p>`,
-      );
-      refreshIcons();
-      return m;
-    }
 
     // ------------------------------------------------------------ 资料：格子位置（slot）
     /* 主画面是一个固定格子的棋盘（手机 4 栏、平板 6 栏、电脑 8 栏）。
@@ -132,16 +126,91 @@ window.GWHome = (function () {
     function rootItems() {
       const items = [];
       layout.forEach((l, id) => modules.has(id) && !l.folder_id && items.push({ kind: "app", id, slot: l.sort_order, w: 1, h: 1 }));
-      links.forEach((l) => items.push({ kind: "link", id: l.id, slot: l.sort_order, w: 1, h: 1 }));
-      folders.forEach((f) => items.push({ kind: "folder", id: f.id, slot: f.sort_order, w: 1, h: 1 }));
-      widgets.filter((w) => !isPinned(w)).forEach((w) => items.push({ kind: "widget", id: w.id, slot: w.sort_order, w: SIZES[w.size][0], h: SIZES[w.size][1] }));
+      links.filter((l) => !l.folder_id).forEach((l) => items.push({ kind: "link", id: l.id, slot: l.sort_order, w: 1, h: 1 }));
+      folders.filter((f) => !boxOfFolder(f) || homeCopyOf(f.id) != null).forEach((f) => items.push({ kind: "folder", id: f.id, slot: boxOfFolder(f) ? homeCopyOf(f.id) : f.sort_order, w: 1, h: 1 }));
+      widgets.filter((w) => !isPinned(w) && !isFloating(w)).forEach((w) => items.push({ kind: "widget", id: w.id, slot: w.sort_order, w: SIZES[w.size][0], h: SIZES[w.size][1] }));
       return items.sort((a, b) => a.slot - b.slot || a.kind.localeCompare(b.kind));
     }
-    const folderApps = (fid) =>
-      [...layout.entries()]
+    const folderLinks = (fid) => links.filter((l) => l.folder_id === fid).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    /* 分享给我的文件夹（folder.shared_by = 拥有者）：文件夹、连结、App 都是对方的，我只能看、打开，位置记在 gw_folder_shares；
+       里面的 App 只显示我自己也有权限的。自己的文件夹 is_shared = 分享用（可以选分享给谁）。 */
+    const sharedApps = new Map(); // 分享给我的文件夹 → 里面的 App（module id）
+    const folderApps = (fid) => {
+      const f = folders.find((x) => x.id === fid);
+      if (f && f.shared_by) return (sharedApps.get(fid) || []).filter((id) => modules.has(id));
+      return [...layout.entries()]
         .filter(([id, l]) => l.folder_id === fid && modules.has(id))
         .sort((a, b) => a[1].sort_order - b[1].sort_order)
         .map(([id]) => id);
+    };
+    async function loadShared() {
+      if (readOnly) return;
+      const me = data.profile.id;
+      const TAGS = "tag_group_id, tag_company_id, tag_role";
+      let mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas, " + TAGS).eq("user_id", me);
+      let tagCols = TAGS;
+      if (mineRes.error && /tag_role/.test(mineRes.error.message || "")) ((tagCols = "tag_group_id, tag_company_id"), (mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas, " + tagCols).eq("user_id", me)));
+      const tagsOn = !(mineRes.error && /tag_/.test(mineRes.error.message || ""));
+      if (!tagsOn) mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me); // 资料库还没加 Business 标签：照旧
+      let shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order, role").eq("user_id", me);
+      if (shareRes.error && /role/.test(shareRes.error.message || "")) shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order").eq("user_id", me); // 还没套用 role 的资料库：当作可以改
+      if (mineRes.error || shareRes.error) return; // 资料库还没更新：没有分享功能，其他照常
+      (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas, tag_group_id: r.tag_group_id || null, tag_company_id: r.tag_company_id || null, tag_role: r.tag_role || "view" }));
+      const shares = shareRes.data || [];
+      // 分享给我所在 Business 的文件夹（不在 gw_folder_shares 里）：RLS 只给看得到的
+      const bizRes = tagsOn ? await sb.from("gw_user_folders").select("id").neq("user_id", me).not("tag_group_id", "is", null) : { data: [] };
+      const ids = [...new Set([...shares.map((x) => x.folder_id), ...((bizRes.data || []).map((x) => x.id))])];
+      if (ids.length) {
+        const [fs, ls, ly] = await Promise.all([
+          sb.from("gw_user_folders").select("id, user_id, name, color, collapsed, is_shared, canvas" + (tagsOn ? ", " + tagCols : "")).in("id", ids),
+          sb.from("gw_user_links").select("*").in("folder_id", ids),
+          sb.from("gw_user_layout").select("module_id, folder_id").in("folder_id", ids),
+        ]).then((r) => r.map((x) => x.data || []));
+        fs.forEach((f) => {
+          if (folders.some((x) => x.id === f.id)) return;
+          const sh = shares.find((x) => x.folder_id === f.id);
+          // 权限：个人分享和 Business 分享取比较大的（有一个是 Editor 就是 Editor）
+          const viaBiz = f.tag_group_id ? f.tag_role || "view" : null;
+          const viaMe = sh ? sh.role || "edit" : null;
+          folders.push({ ...f, shared_by: f.user_id, sort_order: sh ? sh.sort_order : 0, share_role: viaMe === "edit" || viaBiz === "edit" ? "edit" : "view" });
+        });
+        ls.forEach((l) => !links.some((x) => x.id === l.id) && links.push({ ...l }));
+        ly.forEach((l) => sharedApps.set(l.folder_id, [...(sharedApps.get(l.folder_id) || []), l.module_id]));
+      }
+      draw();
+      askTransfers();
+    }
+    // 有人要把文件夹转给我：问我接不接受（按「之后再说」下次打开首页会再问）
+    async function askTransfers() {
+      const { data: reqs, error } = await sb.rpc("gw_my_folder_transfers");
+      if (error || !reqs || !reqs.length) return;
+      for (const r of reqs) {
+        const answer = await new Promise((resolve) => {
+          const dlg = modal(
+            t("home.transferInTitle"),
+            `<div class="space-y-4">
+              <p class="text-sm">${esc(t("home.transferInBody", { name: r.from_name || "", folder: r.folder_name || "" }))}</p>
+              <div class="flex flex-wrap justify-end gap-2">
+                <button type="button" data-a="later" class="${btn("ghost")}">${esc(t("home.transferLater"))}</button>
+                <button type="button" data-a="no" class="${btn("secondary")}">${esc(t("home.transferDecline"))}</button>
+                <button type="button" data-a="yes" class="${btn("primary")}">${esc(t("home.transferAccept"))}</button>
+              </div>
+            </div>`,
+          );
+          dlg.el.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-a]");
+            if (b) (dlg.close(), resolve(b.dataset.a));
+          });
+        });
+        if (answer === "later") continue;
+        const { error: e2 } = await sb.rpc("gw_answer_folder_transfer", { p_folder: r.folder_id, p_accept: answer === "yes" });
+        if (e2) toast(t("home.saveFailed") + " (" + (e2.message || "") + ")");
+        else if (answer === "yes") {
+          toast(t("home.transferDone"));
+          return setTimeout(() => location.reload(), 600); // 文件夹换了主人：整页重新载入最单纯
+        }
+      }
+    }
 
     // 把 slot 换算成实际位置；重叠的（例如换了装置、栏数不同）往后找空位，只影响显示不改资料
     function positions(skip) {
@@ -173,6 +242,7 @@ window.GWHome = (function () {
     const rowsUsed = (P) => Math.max(0, ...[...P.pos.values()].map((p) => p.r + p.h));
     // 第一个放得下的空位
     function nextSlot(w, h, P) {
+      if (sectionsOn && !P) return homeFreeSlot(); // 区块版：My Home 第一个空格
       P = P || positions();
       for (let slot = 0; ; slot++) {
         const c = slot % P.n, r = Math.floor(slot / P.n);
@@ -195,7 +265,10 @@ window.GWHome = (function () {
       }
       if (kind === "folder") {
         const f = folders.find((x) => x.id === id);
+        // 从 Business 区块复制到 My Home 的文件夹：位置记在自己的 Notice Board 设定里
+        if (f && boxOfFolder(f) && homeCopyOf(id) != null) return setHomeCopy(id, slot);
         if (f) f.sort_order = slot;
+        if (f && f.shared_by) return sb.from("gw_folder_shares").update({ sort_order: slot }).eq("folder_id", id).eq("user_id", data.profile.id);
         return sb.from("gw_user_folders").update({ sort_order: slot }).eq("id", id);
       }
       if (kind === "link") {
@@ -225,6 +298,21 @@ window.GWHome = (function () {
       if (error) toast(t("home.saveFailed"));
     }
 
+    async function moveLinkToFolder(id, fid) {
+      const l = links.find((x) => x.id === id);
+      if (!l) return;
+      const order = fid ? folderLinks(fid).length + 1 : nextSlot(1, 1);
+      l.folder_id = fid;
+      l.sort_order = order;
+      draw();
+      const { error } = await sb.from("gw_user_links").update({ folder_id: fid, sort_order: order }).eq("id", id);
+      if (error) {
+        l.folder_id = null;
+        draw();
+        toast(t("home.saveFailed"));
+      }
+    }
+
     async function moveIntoFolder(id, fid) {
       const order = folderApps(fid).length + 1;
       layout.set(id, { folder_id: fid, sort_order: order });
@@ -235,20 +323,24 @@ window.GWHome = (function () {
     async function addWidget(type, size) {
       if (!widgetsEnabled) return toast(t("widgets.unavailable"));
       const [w, h] = SIZES[size];
-      const { data: row, error } = await sb
-        .from("gw_user_widgets")
-        .insert({ user_id: data.profile.id, widget_type: type, size, sort_order: nextSlot(w, h), config: {} })
-        .select()
-        .single();
+      let row = { user_id: data.profile.id, widget_type: type, size, sort_order: sectionsOn ? 0 : nextSlot(w, h), config: {} };
+      if (sectionsOn) {
+        // 区块版：新增的小工具浮在所有区块上面，之后可以拖到任何位置，或拖进某个区块
+        // 先把「新增小工具」面板收起来重画（面板打开时页面会多出一块空的 My Home，量到的位置会偏低）
+        if (sheet) ((sheet = null), draw());
+        row = { ...row, sort_order: 0, config: { pos: newWidgetPos(type, size) } };
+      }
+      const { data: created, error } = await sb.from("gw_user_widgets").insert(row).select().single();
       if (error) return toast(t("home.saveFailed"));
-      widgets.push(row);
+      widgets.push(created);
       sheet = null;
       draw();
       toast(t("widgets.added"));
-      setTimeout(() => {
-        const el = root.querySelector(`[data-kind="widget"][data-id="${row.id}"]`);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 50);
+      if (!sectionsOn)
+        setTimeout(() => {
+          const el = root.querySelector(`[data-kind="widget"][data-id="${created.id}"]`);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 50);
     }
 
     async function removeWidget(id) {
@@ -271,11 +363,16 @@ window.GWHome = (function () {
     const badge = (attr, ic, label, pos) =>
       `<button type="button" ${attr} aria-label="${esc(label)}" class="no-drag absolute ${pos} z-10 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon(ic, "size-3.5")}</button>`;
 
+    // 只显示传到 Intranet 自己的图片（别的网站的图片会知道谁打开了）
+    const ownPhoto = (u) => String(u).startsWith(GW_CONFIG.supabaseUrl + "/storage/v1/object/public/");
     function appIcon(m, size) {
-      if (m.image_url)
-        return `<span class="relative flex ${size || "size-14 sm:size-16"} overflow-hidden rounded-[26%] bg-white shadow-md shadow-slate-900/10"><img src="${esc(m.image_url)}" alt="" class="size-full object-cover">${newDot(m)}</span>`;
-      return `<span class="relative flex ${size || "size-14 sm:size-16"} items-center justify-center rounded-[26%] bg-gradient-to-br ${tileColor(m.code)} text-white shadow-md shadow-slate-900/10">
-        ${m.icon === "link" ? icon("link", "size-7 sm:size-8") : moduleIcon(m.icon, "size-7 sm:size-8")}${newDot(m)}
+      if (m.image_url && ownPhoto(m.image_url))
+        return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} overflow-hidden rounded-[26%] bg-white"><img src="${esc(m.image_url)}" alt="" class="size-full object-cover">${newDot(m)}</span>`;
+      const grad = tileColor(m.code, m.id, m.color);
+      const skin = grad ? `bg-gradient-to-br ${grad} text-white` : GLASS;
+      const sym = size ? "size-[46%]" : "size-6 sm:size-7";
+      return `<span class="gw-icon relative flex ${size || "size-14 sm:size-16"} items-center justify-center rounded-[26%] ${skin}">
+        ${m.icon === "link" ? icon("link", sym) : moduleIcon(m.icon, sym)}${newDot(m)}
       </span>`;
     }
 
@@ -283,8 +380,8 @@ window.GWHome = (function () {
     function linkTile(l) {
       return `<div data-kind="link" data-id="${l.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-open-link="${l.id}" class="flex flex-col items-center gap-1.5" title="${esc(l.url)}">
-          ${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url })}
-          <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(l.name)}</span>
+          ${appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color })}
+          <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(l.name)}</span>
         </button>
         ${editing ? badge(`data-remove-link="${l.id}"`, "minus", t("home.removeFromHome"), "top-0 left-1/2 -translate-x-[2.4rem]") + badge(`data-edit-link="${l.id}"`, "pencil", t("home.editLink"), "top-0 left-1/2 translate-x-[1rem]") : ""}
       </div>`;
@@ -295,7 +392,7 @@ window.GWHome = (function () {
       return `<div data-kind="app" data-id="${id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-open="${id}" class="flex flex-col items-center gap-1.5" title="${esc(m.description || m.name)}">
           ${appIcon(m)}
-          <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(m.name)}</span>
+          <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(m.name)}</span>
         </button>
         ${editing ? badge(`data-remove-app="${id}"`, "minus", t("home.removeFromHome"), "top-0 left-1/2 -translate-x-[2.4rem]") + badge(`data-app-menu="${id}"`, "ellipsis", t("home.cardMenu"), "top-0 left-1/2 translate-x-[1rem]") : ""}
       </div>`;
@@ -303,19 +400,66 @@ window.GWHome = (function () {
 
     function folderTile(f) {
       const ids = folderApps(f.id);
-      const minis = ids.slice(0, 9).map((id) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${tileColor(modules.get(id).code)}"></span>`).join("");
+      const minis = [
+        ...ids.map((id) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${miniColor(modules.get(id).code, id)}"></span>`),
+        ...folderLinks(f.id).map((l) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${miniColor(l.name)}"></span>`),
+      ].slice(0, 9).join("");
       return `<div data-kind="folder" data-id="${f.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-folder="${f.id}" class="flex flex-col items-center gap-1.5">
-          <span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 rounded-[26%] border border-white/60 bg-white/55 p-2 shadow-md shadow-slate-900/10 backdrop-blur sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>
-          <span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(f.name)}</span>
+          <span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>
+          <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(f.name)}</span>
         </button>
         ${editing ? badge(`data-remove-folder="${f.id}"`, "minus", t("home.deleteFolder"), "top-0 left-1/2 -translate-x-[2.4rem]") : ""}
       </div>`;
     }
 
-    const glass =
-      "relative h-full overflow-hidden rounded-3xl border border-white/70 bg-white/75 p-4 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/70";
+    // 毛玻璃外观（区块、小工具共用）
+    const glassSkin = "rounded-3xl border border-white/60 bg-white/45 shadow-xl shadow-slate-900/10 ring-1 ring-white/40 backdrop-blur-2xl backdrop-saturate-150 ring-inset dark:border-white/10 dark:bg-slate-900/45 dark:ring-white/5";
+    const glass = `relative h-full overflow-hidden p-4 ${glassSkin}`;
     const wTitle = (ic, text) => `<div class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">${icon(ic, "size-3.5")}${esc(text)}</div>`;
+
+    // 表情反应：按表情 = 加 / 取消自己的反应；点旁边的数字 = 看是谁按的
+    function reactionBar(a) {
+      if (!reactionsOn || readOnly) return "";
+      return `<div class="no-drag mt-1.5 flex flex-wrap gap-1.5">${REACT.map(([k, e]) => {
+        const rs = reactions.filter((r) => r.announcement_id === a.id && r.emoji === k);
+        const mine = rs.some((r) => r.user_id === profile.id);
+        return `<span class="inline-flex items-center overflow-hidden rounded-full border text-xs ${mine ? "border-brand-500 bg-brand-50 dark:bg-brand-700/20" : "border-slate-200 bg-white/60 dark:border-slate-700 dark:bg-white/5"}">
+          <button type="button" data-react="${a.id}:${k}" aria-label="${esc(t("widgets.react." + k))}" title="${esc(t("widgets.react." + k))}" class="px-2 py-0.5 hover:bg-white/70 dark:hover:bg-white/10">${e}</button>
+          ${rs.length ? `<button type="button" data-who="${a.id}:${k}" title="${esc(rs.map((r) => r.full_name || "").filter(Boolean).join(", "))}" class="border-l border-slate-200 px-1.5 py-0.5 font-semibold hover:bg-white/70 dark:border-slate-700 dark:hover:bg-white/10">${rs.length}</button>` : ""}
+        </span>`;
+      }).join("")}</div>`;
+    }
+    async function toggleReaction(aid, kind) {
+      const mine = reactions.find((r) => r.announcement_id === aid && r.emoji === kind && r.user_id === profile.id);
+      if (mine) {
+        reactions = reactions.filter((r) => r !== mine);
+        draw();
+        const { error } = await sb.from("gw_notice_reactions").delete().eq("announcement_id", aid).eq("user_id", profile.id).eq("emoji", kind);
+        if (error) toast(t("home.saveFailed"));
+        return;
+      }
+      reactions.push({ announcement_id: aid, emoji: kind, user_id: profile.id, full_name: profile.full_name });
+      draw();
+      const { error } = await sb.from("gw_notice_reactions").insert({ announcement_id: aid, user_id: profile.id, emoji: kind });
+      if (error) {
+        reactions = reactions.filter((r) => !(r.announcement_id === aid && r.emoji === kind && r.user_id === profile.id));
+        draw();
+        toast(t("home.saveFailed"));
+      }
+    }
+    // 谁按了这个反应
+    function whoReacted(aid, kind) {
+      const emoji = REACT.find(([k]) => k === kind)[1];
+      const rs = reactions.filter((r) => r.announcement_id === aid && r.emoji === kind);
+      const dlg = modal(
+        `${emoji} ${t("widgets.react." + kind)}`,
+        rs.length
+          ? `<ul class="space-y-1.5">${rs.map((r) => `<li class="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-800"><span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold dark:bg-slate-700">${esc((r.full_name || "?").slice(0, 1))}</span><span class="truncate">${esc(r.full_name || "—")}${r.user_id === profile.id ? ` <span class="text-xs text-slate-400">(${esc(t("widgets.you"))})</span>` : ""}</span></li>`).join("")}</ul>`
+          : `<p class="text-sm text-slate-500">${esc(t("widgets.noReactions"))}</p>`,
+      );
+      return dlg;
+    }
 
     function widgetBody(w) {
       const now = new Date();
@@ -336,9 +480,13 @@ window.GWHome = (function () {
         }
         case "clock":
           return `<div class="flex h-full flex-col justify-center ${w.size === "small" ? "items-center text-center" : ""}">
-            <div data-clock class="font-bold tabular-nums ${w.size === "small" ? "text-3xl" : "text-5xl"}">${esc(fmt({ hour: "2-digit", minute: "2-digit", hour12: false }))}</div>
+            <div data-clock class="font-bold tabular-nums ${w.size === "small" ? "text-3xl" : "text-5xl"}">${esc(fmt({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }))}</div>
             <div class="mt-1 text-sm text-slate-500">${esc(fmt({ weekday: "short", day: "numeric", month: "short" }))}</div>
           </div>`;
+        case "ai":
+          return aiBody();
+        case "weather":
+          return `<div data-weather="${w.size === "small" ? "small" : "medium"}" class="h-full">${weatherInner(w.size === "small" ? "small" : "medium")}</div>`;
         case "search":
           return `${wTitle("search", t("widgets.types.search"))}
             <input data-widget-search type="search" placeholder="${esc(t("home.searchPlaceholder"))}" class="${cls.input} no-drag rounded-xl bg-white/80 dark:bg-slate-800/80">
@@ -365,7 +513,7 @@ window.GWHome = (function () {
               data.announcements.length
                 ? `<ul class="no-drag -mr-2 space-y-2 overflow-y-auto pr-2 h-[calc(100%-2.25rem)]">${data.announcements
                     .map(
-                      (a) => `<li class="flex gap-2.5 rounded-xl px-3 py-2 text-sm ${a.level === "warning" ? "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-slate-50 dark:bg-white/5"}">${icon(a.level === "warning" ? "triangle-alert" : "info", `mt-0.5 size-4 shrink-0 ${a.level === "warning" ? "text-amber-500" : "text-sky-500"}`)}<div class="min-w-0 flex-1"><p class="whitespace-pre-line break-words">${esc(a.message)}</p><p class="mt-0.5 text-[11px] text-slate-400">${esc([when(a.starts_at), a.author].filter(Boolean).join(" · "))}</p></div>${
+                      (a) => `<li class="flex gap-2.5 rounded-xl px-3 py-2 text-sm ${a.level === "warning" ? "bg-amber-100/60 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-white/50 dark:bg-white/5"}">${icon(a.level === "warning" ? "triangle-alert" : "info", `mt-0.5 size-4 shrink-0 ${a.level === "warning" ? "text-amber-500" : "text-sky-500"}`)}<div class="min-w-0 flex-1"><p class="whitespace-pre-line break-words">${esc(a.message)}</p><p class="mt-0.5 text-[11px] text-slate-400">${esc([when(a.starts_at), a.author].filter(Boolean).join(" · "))}</p>${reactionBar(a)}</div>${
                         !editing && (canEditNotice(a) || canDeleteNotice(a))
                           ? `<span class="flex shrink-0 items-start gap-0.5">${canEditNotice(a) ? `<button type="button" data-edit-notice="${a.id}" aria-label="${esc(t("widgets.editNotice"))}" title="${esc(t("widgets.editNotice"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-white/10">${icon("pencil", "size-3.5")}</button>` : ""}${canDeleteNotice(a) ? `<button type="button" data-del-notice="${a.id}" aria-label="${esc(t("widgets.deleteNotice"))}" title="${esc(t("widgets.deleteNotice"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("trash-2", "size-3.5")}</button>` : ""}</span>`
                           : ""
@@ -383,37 +531,26 @@ window.GWHome = (function () {
           const days = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
           const names = [...Array(7)].map((_, i) => new Intl.DateTimeFormat(GW.LOCALE, { weekday: "narrow", timeZone: "UTC" }).format(new Date(Date.UTC(2023, 0, 1 + i))));
           const cells = [...Array(first).fill(""), ...[...Array(days)].map((_, i) => i + 1)];
-          const month = `${y}-${String(mo + 1).padStart(2, "0")}`;
-          if (calEnabled && cal.month !== month && !cal.loading) loadCal(month, days);
-          const dateOf = (d) => `${month}-${String(d).padStart(2, "0")}`;
-          const dots = (d) => {
-            const lv = (cal.leave[dateOf(d)] || []).length;
-            const es = (cal.estate[dateOf(d)] || []).length;
-            return lv || es
-              ? `<span class="pointer-events-none absolute -bottom-0.5 left-1/2 flex -translate-x-1/2 gap-0.5">${lv ? `<span class="size-1 rounded-full bg-violet-500"></span>` : ""}${es ? `<span class="size-1 rounded-full bg-emerald-500"></span>` : ""}</span>`
-              : "";
-          };
-          const cell = (d) => {
-            if (!d) return "<span></span>";
-            const num = `<span class="${d === today ? "mx-auto flex size-5 items-center justify-center rounded-full bg-rose-500 font-bold text-white" : ""}">${d}</span>`;
-            const mark = dots(d);
-            return mark && !editing
-              ? `<button type="button" data-cal-day="${dateOf(d)}" class="no-drag relative rounded-md pb-1 hover:bg-slate-900/5 dark:hover:bg-white/10">${num}${mark}</button>`
-              : `<span class="relative pb-1">${num}${mark}</span>`;
-          };
-          const legend =
-            calEnabled && w.size !== "small"
-              ? `<span class="flex items-center gap-2 text-[10px] font-medium text-slate-500"><span class="flex items-center gap-1"><span class="size-1.5 rounded-full bg-violet-500"></span>${esc(t("widgets.calLeave"))}</span><span class="flex items-center gap-1"><span class="size-1.5 rounded-full bg-emerald-500"></span>${esc(t("widgets.calEstate"))}</span></span>`
-              : "";
-          return `<div class="mb-1 flex items-center justify-between gap-2"><span class="text-sm font-semibold text-rose-500">${esc(fmt({ month: "long" }))}</span>${legend}</div>
+          return `<div class="mb-1 text-sm font-semibold text-rose-500">${esc(fmt({ month: "long" }))}</div>
             <div class="grid grid-cols-7 gap-y-0.5 text-center ${w.size === "small" ? "text-[10px]" : "text-xs"}">
               ${names.map((n) => `<span class="font-semibold text-slate-400">${esc(n)}</span>`).join("")}
-              ${cells.map(cell).join("")}
+              ${cells.map((d) => `<span class="${d === today ? "mx-auto flex size-5 items-center justify-center rounded-full bg-rose-500 font-bold text-white" : ""}">${d}</span>`).join("")}
             </div>`;
         }
-        case "notes":
+        case "notes": {
+          // 便条：上面是待办清单（圆圈打勾，像 Apple 备忘录），下面是自由文字
+          const todos = w.config && Array.isArray(w.config.todos) ? w.config.todos : [];
+          const item = (td) => `<li class="flex items-center gap-2">
+              <button type="button" data-todo-toggle="${w.id}:${td.id}" ${readOnly ? "disabled" : ""} aria-label="${esc(t("widgets.todoDone"))}" class="no-drag flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${td.done ? "border-amber-500 bg-amber-500 text-white" : "border-slate-400 hover:border-amber-500 dark:border-slate-500"}">${td.done ? icon("check", "size-3") : ""}</button>
+              <input data-todo-text="${w.id}:${td.id}" value="${esc(td.text || "")}" maxlength="200" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.todoPlaceholder"))}" class="no-drag min-w-0 flex-1 bg-transparent text-sm outline-none ${td.done ? "text-slate-400 line-through" : ""}">
+            </li>`;
           return `${wTitle("sticky-note", t("widgets.types.notes"))}
-            <textarea data-note="${w.id}" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.notesPlaceholder"))}" class="no-drag h-[calc(100%-1.75rem)] w-full resize-none bg-transparent text-sm outline-none">${esc((w.config && w.config.text) || "")}</textarea>`;
+            <div class="flex h-[calc(100%-1.75rem)] flex-col gap-1.5">
+              ${todos.length ? `<ul data-todos="${w.id}" class="no-drag max-h-[70%] shrink-0 space-y-1 overflow-y-auto pr-1">${todos.map(item).join("")}</ul>` : ""}
+              ${readOnly ? "" : `<button type="button" data-todo-add="${w.id}" class="no-drag flex items-center gap-1.5 self-start rounded-full px-1.5 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/10 dark:hover:text-slate-200">${icon("list-checks", "size-3.5")}${esc(t("widgets.todoAdd"))}</button>`}
+              <textarea data-note="${w.id}" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.notesPlaceholder"))}" class="no-drag min-h-0 w-full flex-1 resize-none bg-transparent text-sm outline-none">${esc((w.config && w.config.text) || "")}</textarea>
+            </div>`;
+        }
         case "admin":
           return `${wTitle("shield-check", t("home.adminSection"))}
             <div class="grid content-start gap-2 ${isSuper ? "grid-cols-2" : "grid-cols-1"}">
@@ -424,21 +561,24 @@ window.GWHome = (function () {
       return "";
     }
 
-    function widgetTile(w, p) {
-      return `<div data-kind="widget" data-id="${w.id}" class="gw-item relative" style="grid-column:${p.c + 1} / span ${p.w};grid-row:${p.r + 1} / span ${p.h}">
+    function widgetTile(w, p, key) {
+      return `<div data-kind="widget" data-id="${w.id}" ${key ? `data-key="${key}"` : ""} class="gw-item relative ${key ? "p-2" : ""}" style="grid-column:${p.c + 1} / span ${p.w};grid-row:${p.r + 1} / span ${p.h}">
         <div class="${glass}">${widgetBody(w)}</div>
         ${editing ? badge(`data-remove-widget="${w.id}"`, "minus", t("widgets.remove"), "-top-2 -left-2") : ""}
         ${editing && WIDGETS[w.widget_type].sizes.length > 1 ? badge(`data-resize="${w.id}"`, "scaling", t("widgets.resize"), "-right-2 -bottom-2") : ""}
       </div>`;
     }
 
-    // Notice Board：固定在最上面、占满整行；只能调高度
+    // Notice Board：固定在最上面、占满整行；区块版拖拉下缘调高度（高度记在这个小工具的 config.height）
     function boardHtml() {
       const w = board();
       if (!w) return "";
-      return `<div data-kind="widget" data-id="${w.id}" class="gw-pinned relative mb-4 ${w.size === "large" ? "h-[22rem]" : "h-[13rem]"}">
+      const h = Number(w.config && w.config.height);
+      const sized = sectionsOn && h > 0;
+      return `<div data-kind="widget" data-id="${w.id}" class="gw-pinned relative ${sectionsOn ? "mx-2 mb-2" : "mb-4"} ${sized ? "" : w.size === "large" ? "h-[22rem]" : "h-[13rem]"}" ${sized ? `style="height:${Math.round(h)}px"` : ""}>
         <div class="${glass}">${widgetBody(w)}</div>
-        ${editing ? badge(`data-resize="${w.id}"`, "scaling", t("widgets.resize"), "-right-2 -bottom-2") : ""}
+        ${editing && !sectionsOn ? badge(`data-resize="${w.id}"`, "scaling", t("widgets.resize"), "-right-2 -bottom-2") : ""}
+        ${sectionsOn && editing ? `<div data-board-resize title="${esc(t("widgets.resize"))}" aria-label="${esc(t("widgets.resize"))}" class="absolute inset-x-0 -bottom-3 z-10 flex h-6 cursor-ns-resize touch-none items-center justify-center"><span class="h-1.5 w-14 rounded-full bg-slate-400/60 shadow backdrop-blur"></span></div>` : ""}
       </div>`;
     }
 
@@ -447,6 +587,7 @@ window.GWHome = (function () {
       const onHome = new Set([...layout.keys()].filter((id) => modules.has(id)));
       return `<div class="mb-3 flex items-center justify-between"><h3 class="font-semibold">${esc(t("fab.addApps"))}</h3>${iconBtn("data-close-sheet", t("home.close"), "x")}</div>
         <p class="mb-3 text-xs text-slate-500">${esc(t("fab.addAppsHint"))}</p>
+        ${hiddenAppsHtml()}
         <input data-sheet-search type="search" placeholder="${esc(t("home.searchPlaceholder"))}" class="${cls.input} mb-3">
         ${
           data.modules.length
@@ -465,18 +606,21 @@ window.GWHome = (function () {
     }
 
     function widgetsSheet() {
-      const types = Object.entries(WIDGETS).filter(([, d]) => !d.hidden);
+      // 只列名称；还没开放的（soon）排最后、灰掉、写「coming soon」
+      const types = Object.entries(WIDGETS)
+        .filter(([, d]) => !d.hidden)
+        .sort(([, a], [, b]) => (a.soon ? 1 : 0) - (b.soon ? 1 : 0));
       return `<div class="mb-3 flex items-center justify-between"><h3 class="font-semibold">${esc(t("fab.addWidget"))}</h3>${iconBtn("data-close-sheet", t("home.close"), "x")}</div>
-        <p class="mb-3 text-xs text-slate-500">${esc(t("fab.addWidgetHint"))}</p>
         <div class="space-y-2">${types
           .map(
-            ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+            ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800 ${d.soon ? "opacity-50" : ""}">
               <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${icon(d.icon, "size-5")}</span>
-              <span class="min-w-0 flex-1">
-                <span class="block text-sm font-semibold">${esc(t("widgets.types." + type))}</span>
-                <span class="block text-xs text-slate-500">${esc(t("widgets.desc." + type))}</span>
-              </span>
-              <span class="flex gap-1">${d.sizes.map((s) => `<button type="button" data-add-widget="${type}" data-size="${s}" class="${btn("secondary", "sm")} px-2">${esc(t("widgets.sizes." + s))}</button>`).join("")}</span>
+              <span class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(t("widgets.types." + type))}</span>
+              ${
+                d.soon
+                  ? `<span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">${esc(t("settings.comingSoon"))}</span>`
+                  : `<span class="flex gap-1">${d.sizes.map((s) => `<button type="button" data-add-widget="${type}" data-size="${s}" class="${btn("secondary", "sm")} px-2">${esc(t("widgets.sizes." + s))}</button>`).join("")}</span>`
+              }
             </div>`,
           )
           .join("")}</div>`;
@@ -491,10 +635,10 @@ window.GWHome = (function () {
       if (editing) {
         return `<button type="button" data-done class="fixed right-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-40 flex h-12 items-center gap-2 rounded-full bg-slate-900 px-5 font-semibold text-white shadow-xl sm:bottom-8 dark:bg-white dark:text-slate-900">${icon("check")} ${esc(t("fab.done"))}</button>`;
       }
+      // 只放四样；图示颜色在编辑模式（长按图示）的「…」选单里
       const items = [
-        ["add-link", "link", t("fab.addLink")],
         ["add-widget", "layout-dashboard", t("fab.addWidget")],
-        ["add-apps", "layout-grid", t("fab.addApps")],
+        ["add-link", "link", t("fab.addLink")],
         ["new-folder", "folder-plus", t("fab.newFolder")],
         ["edit", "move", t("fab.edit")],
       ];
@@ -512,7 +656,1565 @@ window.GWHome = (function () {
       </div>`;
     }
 
-    // ------------------------------------------------------------ 整页
+    // ------------------------------------------------------------ Business 区块（Section box）
+    /* 主页 = 上面固定的 Notice Board，下面每个 Business 一个区块（还有「My Home」）：里面是这个人在这个 Business 里有权限的 App。
+       区块有三种大小（只看标题 / 第一行 / 全部）；区块里的东西放在格子上（像 iPad 文件夹：图示和名字之间横竖间距一样）。
+       长按（或右下角按钮 Edit Home Screen）进入编辑：东西会抖动，才可以拖拉、调整大小、拿掉。 */
+    const S = opts && opts.sections ? opts.sections : null;
+    const sectionsOn = !!S && !readOnly;
+    let sItems = S ? S.items.map((x) => ({ ...x })) : [];
+    const expanded = new Map(S ? S.state.map((x) => [x.group_id, !!x.expanded]) : []);
+    let companyMenuGid = null; // 打开着 Company 选单的区块
+    let estateMenuGid = null; // 打开着 Location 选单的区块
+    // 每个区块选的 Location：记在 Notice Board 小工具的 config.locations
+    const estateSel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.locations || {}));
+    const estatesOf = (cid, gid) => (S && S.locations ? S.locations : []).filter((x) => x.company_id === cid && (!x.group_id || x.group_id === gid));
+    // 每个区块选的 Company（"all" = 全部）：记在 Notice Board 小工具的 config.companies；没选过就用自己在那个 Business 的 Company
+    const companySel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companies || {}));
+    // 用户自己排的 Company 顺序：记在 Notice Board 小工具的 config.companyOrder（每个 Business 一份）
+    const companyOrder = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companyOrder || {}));
+    // 这个 Business 底下我可以选的 Company：super_admin 全部；其他人只有 HR 分给我的
+    const bizHasCompanies = (gid) => S.bizCompanies.some((x) => x.group_id === gid);
+    const companiesOf = (gid) => {
+      const mine = new Set((S.memberCompanies || []).filter((x) => x.group_id === gid).map((x) => x.company_id));
+      const ids = new Set(S.bizCompanies.filter((x) => x.group_id === gid && (isSuper || mine.has(x.company_id))).map((x) => x.company_id));
+      const list = S.companies.filter((c) => ids.has(c.id));
+      const ord = companyOrder.get(gid) || [];
+      const at = (id) => { const i = ord.indexOf(id); return i < 0 ? 1e6 : i; };
+      return list.map((c, i) => [c, i]).sort((a, b) => at(a[0].id) - at(b[0].id) || a[1] - b[1]).map((x) => x[0]);
+    };
+    // HQ 类型的 Business（Master Manage 勾「HQ」）：不用切换 Company，我所有的 Company 一起看
+    const isHq = (gid) => !!(S.groups.find((g) => g.id === gid) || {}).all_companies;
+    const selectedCompany = (gid) => {
+      const list = companiesOf(gid);
+      if (isHq(gid)) return list.length || isSuper || !bizHasCompanies(gid) ? "hq" : "none";
+      // Business 有 Company、但还没分给我任何一家：不算任何 Company（标了 Company 的 App / 文件夹不显示）
+      if (!list.length) return bizHasCompanies(gid) && !isSuper ? "none" : "all";
+      if (list.length === 1) return list[0].id; // 只有一家：就是那一家（标给别家 Company 的 App 不显示）
+      // 一定选一个 Company：自己选过的 → 自己的 Company → 第一个
+      const v = companySel.get(gid) || S.myCompany[gid];
+      return list.some((c) => c.id === v) ? v : list[0].id;
+    };
+    // 区块里现在的 Company 物件（选「全部」而这个 Business 只有一家时就是那一家）
+    const currentCompany = (gid) => {
+      const list = companiesOf(gid);
+      const sel = selectedCompany(gid);
+      return sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel) || null;
+    };
+    // 区块里选的 Location：公司只有一个（或没有）Location 就是那一个；多于一个时用选过的，没选过用第一个
+    const selectedEstate = (gid) => {
+      const c = currentCompany(gid);
+      if (!c) return null;
+      const list = estatesOf(c.id, gid);
+      if (list.length < 2) return list[0] || null;
+      const v = estateSel.get(gid);
+      return list.find((x) => x.id === v) || list[0];
+    };
+    // 从别的系统（CMMS 2）回来时网址带 gw_company：每个有这家 Company 的 Business 区块都切到它，
+    // 这样 Intranet 的 Company 跟模块里最后用的一样。记下来后把参数从网址拿掉。
+    (function companyFromUrl() {
+      let u;
+      try { u = new URL(location.href); } catch (e) { return; }
+      const asks = ["gw_company", "gw_company_name", "gw_company_short"].map((k) => (u.searchParams.get(k) || "").trim().toLowerCase()).filter(Boolean);
+      if (!asks.length) return;
+      ["gw_company", "gw_company_name", "gw_company_short"].forEach((k) => u.searchParams.delete(k));
+      try { history.replaceState(null, "", u.toString()); } catch (e) { /* 忽略 */ }
+      const hit = S.companies.find((c) => [c.code, c.name, c.short_name, c.id].some((v) => v && asks.includes(String(v).trim().toLowerCase())));
+      if (!hit) return;
+      let changed = false;
+      S.bizCompanies.filter((x) => x.company_id === hit.id).forEach((x) => {
+        if (companySel.get(x.group_id) !== hit.id) { companySel.set(x.group_id, hit.id); changed = true; }
+      });
+      const w = board();
+      if (!changed || !w) return;
+      w.config = { ...(w.config || {}), companies: Object.fromEntries(companySel) };
+      sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+    })();
+    // 模块有标 Company 的，只在选了那个 Company（或选全部）时显示；没标 Company 的模块一律显示
+    const shownFor = (gid, moduleId) => {
+      const sel = selectedCompany(gid);
+      if (sel === "all") return true;
+      const tags = S.moduleCompanies.filter((x) => x.module_id === moduleId);
+      if (sel === "none") return !tags.length;
+      if (sel === "hq") return !tags.length || tags.some((x) => companiesOf(gid).some((c) => c.id === x.company_id));
+      return !tags.length || tags.some((x) => x.company_id === sel);
+    };
+    const bySort = (a, b) => (a.sort_order || 0) - (b.sort_order || 0);
+    const modsOfGroup = (gid) => {
+      const ids = new Set(S.groupModules.filter((x) => x.group_id === gid).map((x) => x.module_id));
+      return data.modules.filter((m) => ids.has(m.id));
+    };
+    // 从区块拿掉的 App：只是这个区块不显示（权限不变），记在 Notice Board 小工具的 config.hidden = { Business id: [模块 id] }；Add Apps 可以放回去
+    const boardCfg = () => (board() && board().config) || {};
+    // Business 区块里的 App 一律显示（以前拿掉过的也回来）：区块的内容由 Business 决定，只有 My Home 可以自己加减
+    const hiddenIn = () => new Set();
+    // My Home 里从 Business 区块复制来的文件夹
+    const homeCopyOf = (fid) => {
+      const v = (boardCfg().homeFolders || {})[fid];
+      return v == null ? null : v;
+    };
+    function setHomeCopy(fid, slot) {
+      const bw = board();
+      if (!bw) return Promise.resolve();
+      const hf = { ...(boardCfg().homeFolders || {}) };
+      if (slot == null) delete hf[fid];
+      else hf[fid] = slot;
+      bw.config = { ...(bw.config || {}), homeFolders: hf };
+      return saveBoardConfig();
+    }
+    // 标了 Business（和 Company）的文件夹：放在那个 Business 区块里（固定在最后面，不能拖走）；我看不到那个区块就照旧在 My Home
+    function boxOfFolder(f) {
+      if (!f || !f.tag_group_id || !sectionsOn || !S.groups.some((g) => g.id === f.tag_group_id)) return null;
+      return f.tag_group_id;
+    }
+    // 这个区块现在要显示的文件夹（标了 Company 的，只在区块选那家 Company 时出现）
+    const boxFolders = (gid) =>
+      folders.filter((f) => {
+        if (boxOfFolder(f) !== gid) return false;
+        const sel = selectedCompany(gid);
+        return !f.tag_company_id || ["all", f.tag_company_id].includes(sel) || (sel === "hq" && companiesOf(gid).some((c) => c.id === f.tag_company_id));
+      });
+    // 区块最上层的东西：有记录的按记录排；还没记录的 App 按默认顺序补在后面
+    function boxItems(gid) {
+      const mods = new Map(modsOfGroup(gid).map((m) => [m.id, m]));
+      const hid = hiddenIn(gid);
+      const visible = (mid) => mods.has(mid) && shownFor(gid, mid) && !hid.has(mid);
+      const own = sItems.filter((x) => x.group_id === gid && !x.parent_id && (x.kind !== "module" || visible(x.module_id))).sort(bySort);
+      const have = new Set(sItems.filter((x) => x.group_id === gid && x.kind === "module").map((x) => x.module_id));
+      let n = own.length ? own[own.length - 1].sort_order : 0;
+      const extra = [...mods.values()].filter((m) => !have.has(m.id) && visible(m.id)).map((m) => ({ id: "new:" + m.id, virtual: true, group_id: gid, kind: "module", module_id: m.id, parent_id: null, sort_order: ++n }));
+      const sf = boxFolders(gid).map((f) => ({ id: "sf:" + f.id, virtual: true, group_id: gid, kind: "sfolder", folder_id: f.id, parent_id: null, sort_order: ++n }));
+      return [...own, ...extra, ...sf];
+    }
+    const folderKids = (fid) => sItems.filter((x) => x.parent_id === fid && modules.has(x.module_id) && shownFor(x.group_id, x.module_id)).sort(bySort);
+
+    // ---- 格子：一格 = 一个图示加名字，横竖间距一样（像 iPad 文件夹）
+    /* cw / rh：一格的宽和高；lw：名字的宽；icon：图示大小；
+       px / pt / pb：区块左右 / 上 / 下的内距，th / tg：标题高度和标题下面的空隙。
+       数字是算好的：区块外框（含外面 8px 的空隙）刚好 = 整数格高、宽 = 整数格 + 半格，
+       所以区块和页面上的小工具都在同一个格线上，彼此之间的空隙一样（16px）。 */
+    const MET = () =>
+      matchMedia("(min-width: 640px)").matches
+        ? { cw: 104, rh: 124, lw: 80, icon: 64, px: 17, pt: 20, th: 24, tg: 24, pb: 24 }
+        : { cw: 88, rh: 108, lw: 72, icon: 56, px: 13, pt: 14, th: 24, tg: 18, pb: 20 };
+    // 页面格线：以半格为单位，页面宽度 = 整数个半格（置中）
+    const pageGeo = () => {
+      const m = MET();
+      const hw = m.cw / 2;
+      const halves = Math.max(5, Math.floor((root.clientWidth || 1000) / hw));
+      return { ...m, hw, halves, width: halves * hw, fit: Math.max(1, Math.floor((halves - 1) / 2)), wide: m.cw > 100 };
+    };
+    // ---- 区块的大小（几栏、几行）和模式，记在 Notice Board 小工具的 config.layout
+    const secLayout = (key) => ({ w: null, h: null, cols: null, rows: null, mode: null, ...((boardCfg().layout && boardCfg().layout[key]) || {}) });
+    // 三种大小：title = 只看标题（Business 和 Company 名字）；row = 第一行 App；full = 全部 App
+    const modeOf = (key) => (key === "home" ? "full" : secLayout(key).mode || (expanded.get(key) ? "full" : "row"));
+    const MODES = ["title", "row", "full"];
+    // 先改画面用的资料（马上重画才会看到），再存到数据库
+    function setLayout(key, patch) {
+      const bw = board();
+      if (!bw) return null;
+      const layout = { ...(boardCfg().layout || {}), [key]: { ...secLayout(key), ...patch } };
+      bw.config = { ...(bw.config || {}), layout };
+      return bw;
+    }
+    async function saveBoardConfig() {
+      const bw = board();
+      if (!bw) return;
+      const { error } = await sb.from("gw_user_widgets").update({ config: bw.config }).eq("id", bw.id);
+      if (error) toast(t("home.saveFailed"));
+    }
+    function saveLayout(key, patch) {
+      return setLayout(key, patch) ? saveBoardConfig() : Promise.resolve();
+    }
+
+    // ---- 区块里的东西：每个占几格、存的位置（c 栏、r 行；还没存过 = null）
+    // My Home 的位置以前存「第几格」（行 × 装置栏数 + 栏），改成跟 Business 区块一样的「行 × 100 + 栏」（config.homeGrid = 2）
+    const homeIsV2 = () => boardCfg().homeGrid === 2;
+    const decode = (slot, base) => ({ c: Math.max(0, slot || 0) % base, r: Math.floor(Math.max(0, slot || 0) / base) });
+    const fwCell = (w) => ({ key: "fw:" + w.id, kind: "fw", id: w.id, w: w.config.pos.w, h: w.config.pos.h, c: w.config.pos.x, r: w.config.pos.y });
+    const boxWidgets = (key) => widgets.filter((w) => isFloating(w) && w.config.pos.box === key);
+    function boxModel(key) {
+      if (key === "home") {
+        const base = homeIsV2() ? 100 : cols();
+        return rootItems().map((it) => ({ key: it.kind + ":" + it.id, kind: it.kind, id: it.id, w: it.w, h: it.h, ...decode(it.slot, base) })).concat(boxWidgets("home").map(fwCell));
+      }
+      return boxItems(key)
+        .map((it) => ({ key: it.id, kind: it.kind, id: it.id, item: it, w: it.kind === "note" ? 2 : 1, h: 1, ...(it.virtual ? { c: null, r: null } : decode(it.sort_order, 100)) }))
+        .concat(boxWidgets(key).map(fwCell));
+    }
+
+    /* 把东西排进 n 栏（最多 R 行，R = null 不限）：
+       - 存的位置都放得下 → 照存的位置（重叠的往后找空位）
+       - 区块被拉小、放不下 → 照阅读顺序（上到下、左到右）往上 / 往左挤；只影响显示，不改存的位置，区块拉大就回到原位 */
+    function packInto(items, n, R) {
+      const taken = new Set();
+      const pos = new Map();
+      const fits = (c, r, w, h) => {
+        if (c < 0 || c + w > n) return false;
+        for (let y = r; y < r + h; y++) for (let x = c; x < c + w; x++) if (taken.has(y * 1000 + x)) return false;
+        return true;
+      };
+      const put = (it, c, r, w, h) => {
+        for (let y = r; y < r + h; y++) for (let x = c; x < c + w; x++) taken.add(y * 1000 + x);
+        pos.set(it.key, { c, r, w, h });
+      };
+      const scan = (it, r0, c0) => {
+        const w = Math.min(it.w, n);
+        for (let r = r0; ; r++) for (let c = r === r0 ? c0 : 0; c + w <= n; c++) if (fits(c, r, w, it.h)) return put(it, c, r, w, it.h);
+      };
+      const fixed = items.filter((it) => it.c != null);
+      const reflow = fixed.some((it) => it.c + it.w > n || (R && it.r + it.h > R));
+      if (reflow) [...fixed].sort((a, b) => a.r - b.r || a.c - b.c).forEach((it) => scan(it, 0, 0));
+      else fixed.forEach((it) => (fits(it.c, it.r, Math.min(it.w, n), it.h) ? put(it, it.c, it.r, Math.min(it.w, n), it.h) : scan(it, it.r, it.c)));
+      items.filter((it) => it.c == null).forEach((it) => scan(it, 0, 0));
+      return { pos, rows: Math.max(1, ...[...pos.values()].map((p) => p.r + p.h)), reflow };
+    }
+    // 最少要几行：全部东西挤在一起（只看数量，不看位置）
+    const minRowsAt = (model, n) => packInto(model.map((it) => ({ ...it, c: null, r: null })), n, null).rows;
+
+    // 区块现在的大小和里面东西的位置（over = 调整大小时的预览）
+    function boxGeo(key, over) {
+      const g = pageGeo();
+      const lay = secLayout(key);
+      const model = boxModel(key);
+      // 最窄：放得下最宽的东西，而且至少两栏（标题才放得下）
+      const minC = Math.min(g.fit, Math.max(2, ...model.map((it) => it.w)));
+      let want = lay.cols;
+      if (want == null && lay.w > 0 && lay.w < 1) want = Math.floor((lay.w * g.width - g.hw) / g.cw); // 旧版：宽度存比例
+      // 手机上区块一律占满整行（并排太挤）；电脑 / 平板才照存的栏数
+      const n = over ? over.n : Math.max(minC, Math.min(g.fit, (g.wide && want) || g.fit));
+      // 旧版高度存 px（一行 100px）
+      const R = over ? over.R : lay.rows != null ? lay.rows : lay.h > 0 ? Math.max(1, Math.round(lay.h / 100)) : null;
+      const L = packInto(model, n, R);
+      return { g, n, R, rows: Math.max(L.rows, R || 0), fill: n >= g.fit, model, L, minC };
+    }
+
+    // ---- 区块外观
+    const LABEL = "w-[72px] text-center text-xs leading-tight font-medium break-words text-slate-700 sm:w-20 dark:text-slate-200"; // 名字太长就换行，整个名字都要看得到
+    // 编辑时图示左上角 / 右上角的小圆钮（对准图示的角）
+    const BADGE_L = "top-0 left-[calc(50%-36px)] sm:top-1 sm:left-[calc(50%-40px)]";
+    const BADGE_R = "top-0 right-[calc(50%-36px)] sm:top-1 sm:right-[calc(50%-40px)]";
+    const cellCss = (p) => `grid-column:${p.c + 1} / span ${p.w};grid-row:${p.r + 1} / span ${p.h}`;
+    // 分享的文件夹：蓝色文件夹图示，右下角小小的「人」（一眼看得出是大家一起用的）
+    const sharedFolderIcon = (f) =>
+      `<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="gw-icon relative flex size-14 items-center justify-center rounded-[26%] bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-sm sm:size-16">${icon("folder-open", "size-[46%]")}<span class="absolute right-1 bottom-1 flex size-[1.15rem] items-center justify-center rounded-full bg-white text-sky-600 shadow-sm">${icon("users", "size-3")}</span></span>`;
+    const folderIcon = (minis) => `<span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>`;
+    function cellTile({ key, kind, p, btnAttr, iconHtml, label, title, badges }) {
+      return `<div data-key="${key}" data-kind="${kind}" style="${cellCss(p)}" class="gw-item relative flex flex-col items-center justify-start pt-2.5 sm:pt-3 ${editing ? "touch-none" : ""}">
+        <button type="button" ${btnAttr} class="flex flex-col items-center gap-1.5" ${title ? `title="${esc(title)}"` : ""}>${iconHtml}<span class="${LABEL}">${esc(label)}</span></button>${editing ? badges || "" : ""}</div>`;
+    }
+    // Business 区块里的一个东西
+    function sTile(gid, it, p) {
+      if (it.kind === "sfolder") {
+        const f = folders.find((x) => x.id === it.folder_id);
+        return cellTile({ key: it.id, kind: "sfolder", p, btnAttr: `data-folder="${f.id}"`, iconHtml: sharedFolderIcon(f), label: f.name, title: f.name });
+      }
+      if (it.kind === "module") {
+        const m = modules.get(it.module_id);
+        // Business 区块里的 App 固定在那里（不能拿掉）；要整理就拖一份到 My Home
+        return cellTile({ key: it.id, kind: "module", p, btnAttr: `data-open="${m.id}" data-gid="${gid}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name });
+      }
+      const del = badge(`data-del-item="${it.id}"`, "minus", t("home.delete"), BADGE_L);
+      if (it.kind === "folder") {
+        const minis = folderKids(it.id).slice(0, 9).map((k) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${miniColor(modules.get(k.module_id).code, k.module_id)}"></span>`).join("");
+        return cellTile({ key: it.id, kind: "folder", p, btnAttr: `data-open-folder="${it.id}"`, iconHtml: folderIcon(minis), label: it.name || "", badges: del });
+      }
+      // 便条（占两格宽）
+      return `<div data-key="${it.id}" data-kind="note" style="${cellCss(p)}" class="gw-item relative flex items-center px-2 sm:px-3 ${editing ? "touch-none" : ""}">
+        <button type="button" data-open-note="${it.id}" class="flex h-[78px] w-full flex-col items-start overflow-hidden gw-icon rounded-2xl border border-white/50 bg-amber-200/60 p-3 text-left text-amber-950 backdrop-blur-xl sm:h-[86px] dark:bg-amber-200/70">
+          <span class="flex w-full items-center gap-1.5 text-xs font-semibold">${icon("sticky-note", "size-3.5")}<span class="truncate">${esc(it.name || t("home.noteDefault"))}</span></span>
+          <span class="mt-1 line-clamp-3 w-full text-xs whitespace-pre-line break-words">${esc(it.body || "")}</span>
+        </button>${editing ? badge(`data-del-item="${it.id}"`, "minus", t("home.delete"), "-top-1 left-0") : ""}</div>`;
+    }
+    // My Home 里的一个东西（App、连结、文件夹、旧版小工具）
+    function homeTile(it, p) {
+      if (it.kind === "app") {
+        const m = modules.get(it.id);
+        return cellTile({ key: it.key, kind: "app", p, btnAttr: `data-open="${m.id}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name, badges: badge(`data-remove-app="${m.id}"`, "minus", t("home.removeFromHome"), BADGE_L) + badge(`data-app-menu="${m.id}"`, "ellipsis", t("home.cardMenu"), BADGE_R) });
+      }
+      if (it.kind === "link") {
+        const l = links.find((x) => x.id === it.id);
+        return cellTile({ key: it.key, kind: "link", p, btnAttr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }), label: l.name, title: l.url, badges: badge(`data-remove-link="${l.id}"`, "minus", t("home.removeFromHome"), BADGE_L) + badge(`data-edit-link="${l.id}"`, "pencil", t("home.editLink"), BADGE_R) });
+      }
+      if (it.kind === "folder") {
+        const f = folders.find((x) => x.id === it.id);
+        const minis = [...folderApps(f.id).map((id) => miniColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => miniColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
+        const shared = f.is_shared || f.shared_by;
+        const iconHtml = shared ? sharedFolderIcon(f) : folderIcon(minis);
+        const copy = boxOfFolder(f) && homeCopyOf(f.id) != null;
+        return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(copy ? "home.removeFromHome" : f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
+      }
+      return widgetTile(widgets.find((w) => w.id === it.id), p, it.key);
+    }
+    const secGrip = () => `<span class="sec-grip flex size-7 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-white/60 hover:text-slate-600 active:cursor-grabbing dark:hover:bg-white/10" title="${esc(t("home.moveSection"))}" aria-label="${esc(t("home.moveSection"))}">${icon("grip-vertical", "size-4")}</span>`;
+    // 区块（各 Business 和 My Home）的先后顺序，记在 Notice Board 小工具的 config.order
+    const sectionOrder = () => (Array.isArray(boardCfg().order) ? boardCfg().order : []);
+    // 右下角：拖拉调整区块大小（编辑时才有）
+    const resizeGrip = (key) => `<span data-sec-resize="${key}" title="${esc(t("home.resizeSection"))}" aria-label="${esc(t("home.resizeSection"))}" class="absolute right-1.5 bottom-1.5 z-20 flex size-6 cursor-nwse-resize touch-none items-end justify-end p-1 text-slate-400 hover:text-slate-600"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M11 1 1 11M11 6 6 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>`;
+
+    // 区块标题列：标题的左边对准第一个图示，右边是拖拉握把（一直显示，按住就能拖，不用先进编辑）和大小按钮
+    function boxHead(key, title, B, mode) {
+      const { g, n } = B;
+      const wrapW = B.fill ? g.width : (2 * n + 1) * g.hw;
+      const extra = Math.max(0, Math.round((wrapW - 18 - 2 * g.px - n * g.cw) / 2));
+      const side = extra + (g.cw - g.icon) / 2;
+      const step = (dir, ic, label, off) => `<button type="button" data-mode="${dir}" aria-label="${esc(label)}" title="${esc(label)}" ${off ? "disabled" : ""} class="flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 disabled:pointer-events-none disabled:opacity-25 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
+      const steps = key === "home" ? "" : step("less", "chevron-up", t("home.collapse"), mode === "title") + step("more", "chevron-down", t("home.expand"), mode === "full");
+      return `<div class="flex min-w-0 items-center gap-2" style="height:${g.th}px;${mode === "title" ? "" : `margin-bottom:${g.tg}px;`}padding:0 ${Math.max(0, side - 6)}px 0 ${side}px">
+        <h2 class="min-w-0 truncate text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${key === "home" ? "" : companyPicker(key) + estatePicker(key)}
+        <div class="ml-auto flex shrink-0 items-center">${sectionsOn ? secGrip() : ""}${steps}</div></div>`;
+    }
+    // 一个区块（My Home 也一样）：外框宽 = 整数格 + 半格，高 = 整数格
+    function boxShell(key, title, B, tiles) {
+      const { g, n } = B;
+      const mode = modeOf(key);
+      const shownRows = mode === "full" ? B.rows : 1;
+      const pad = mode === "title" ? `${g.pt + g.tg / 2}px ${g.px}px ${g.pb + g.tg / 2}px` : `${g.pt}px ${g.px}px ${g.pb}px`;
+      const emptyBiz = key !== "home" && !modsOfGroup(key).length && !sItems.some((x) => x.group_id === key);
+      const body = tiles || `<p class="col-span-full row-start-1 self-center px-3 text-sm text-slate-500">${esc(t(emptyBiz ? "home.noModulesInBusiness" : "home.noAppsForCompany"))}</p>`;
+      const grid =
+        mode === "title"
+          ? ""
+          : `<div data-list="${key}" data-fw-host="${key}" data-cols="${n}" class="relative mx-auto grid ${mode === "row" ? "overflow-hidden" : ""}" style="width:${n * g.cw}px;grid-template-columns:repeat(${n},${g.cw}px);grid-template-rows:repeat(${shownRows},${g.rh}px);grid-auto-rows:${g.rh}px;${mode === "row" ? `height:${g.rh}px;` : ""}">${body}<div data-box-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div></div>`;
+      return `<div data-sec-wrap data-sec-key="${key}" class="p-2" style="width:${B.fill ? "100%" : (2 * n + 1) * g.hw + "px"};max-width:100%">
+        <section data-box="${key}" data-pad="${pad}" class="relative ${glassSkin} ${companyMenuGid === key || estateMenuGid === key ? "z-20" : ""}" style="padding:${pad}">${boxHead(key, title, B, mode)}${grid}${editing && mode !== "title" ? resizeGrip(key) : ""}</section></div>`;
+    }
+    // 区块里的格子内容（图示 / 便条 / 小工具）
+    function boxTiles(key, B) {
+      return B.model
+        .map((it) => {
+          const p = B.L.pos.get(it.key);
+          if (it.kind === "fw") return cellWidget(widgets.find((w) => w.id === it.id), p, B.g);
+          return key === "home" ? homeTile(it, p) : sTile(key, it.item, p);
+        })
+        .join("");
+    }
+    // 区块标题旁边的 Company 选择
+    const companyPicker = (gid) => {
+      const list = companiesOf(gid);
+      if (!list.length) return "";
+      // HQ：不用选，显示「All companies」（滑过去看是哪几家）
+      if (isHq(gid)) return `<span title="${esc(list.map((c) => c.name).join(", "))}" class="inline-flex max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(list.length === 1 ? list[0].name : t("home.hqAllCompanies", { count: list.length }))}</span></span>`;
+      // 只有一个 Company：只显示它的名字，不用下拉选单
+      if (list.length === 1) return `<span class="inline-flex max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(list[0].name)}</span></span>`;
+      const sel = selectedCompany(gid);
+      const cur = list.find((c) => c.id === sel);
+      const label = cur ? cur.short_name || cur.code || cur.name : list[0].name;
+      const row = (id, text) => `<div data-co-row="${id}" class="flex items-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+          <span data-co-grip class="flex size-8 shrink-0 cursor-grab touch-none items-center justify-center text-slate-400 hover:text-slate-600 active:cursor-grabbing" title="${esc(t("home.dragToSort"))}">${icon("grip-vertical", "size-4")}</span>
+          <button type="button" data-company-pick="${id}" data-gid="${gid}" class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2.5 text-left text-sm"><span class="truncate">${esc(text)}</span>${sel === id ? icon("check", "size-4 shrink-0 text-emerald-600") : ""}</button>
+        </div>`;
+      return `<div data-pick-wrap class="relative min-w-0">
+        <button type="button" data-company-menu="${gid}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
+        ${companyMenuGid === gid ? `<div data-co-list="${gid}" class="absolute top-full left-0 z-30 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map((c) => row(c.id, c.name)).join("")}</div>` : ""}
+      </div>`;
+    };
+
+    // 区块标题旁边的 Location 选择（公司有多于一个 Location 才出现）
+    const estatePicker = (gid) => {
+      const c = currentCompany(gid);
+      const list = c ? estatesOf(c.id, gid) : [];
+      if (list.length < 2) return "";
+      const cur = selectedEstate(gid);
+      const label = cur ? cur.name : list[0].name;
+      const row = (x) => `<button type="button" data-estate-pick="${x.id}" data-gid="${gid}" class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"><span class="truncate">${esc(x.name)}</span>${cur && cur.id === x.id ? icon("check", "size-4 text-emerald-600") : ""}</button>`;
+      return `<div data-pick-wrap class="relative min-w-0">
+        <button type="button" data-estate-menu="${gid}" title="${esc(t("home.location"))}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("map-pin", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
+        ${estateMenuGid === gid ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-64 w-60 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map(row).join("")}</div>` : ""}
+      </div>`;
+    };
+
+    // ---- 存位置
+    // 区块里的 App 记下新位置（还没记过的先建一笔；先改画面再存，不会闪回去）
+    function placeInBox(gid, id, slot, parentId) {
+      let it = sItems.find((x) => x.id === id);
+      if (it) {
+        it.sort_order = slot;
+        if (parentId !== undefined) it.parent_id = parentId;
+        return sb.from("gw_user_section_items").update(parentId !== undefined ? { sort_order: slot, parent_id: parentId } : { sort_order: slot }).eq("id", id).then(({ error }) => error && toast(t("home.saveFailed")));
+      }
+      const moduleId = id.slice(4);
+      it = { id: "tmp:" + moduleId, user_id: data.profile.id, group_id: gid, kind: "module", module_id: moduleId, parent_id: parentId || null, sort_order: slot };
+      sItems.push(it);
+      return sb
+        .from("gw_user_section_items")
+        .insert({ user_id: data.profile.id, group_id: gid, kind: "module", module_id: moduleId, parent_id: parentId || null, sort_order: slot })
+        .select()
+        .single()
+        .then(({ data: created, error }) => {
+          if (error) return toast(t("home.saveFailed"));
+          it.id = created.id;
+        });
+    }
+    // 小工具的位置（格子单位，v = 2）
+    function saveWidgetPos(w, pos) {
+      w.config = { ...w.config, pos: { box: pos.box || null, x: pos.x, y: pos.y, w: pos.w, h: pos.h, v: 2 } };
+      return sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+    }
+    // 区块里一个东西放到第 c 栏第 r 行
+    function saveCell(key, it, c, r) {
+      if (it.kind === "sfolder") return Promise.resolve(); // 标了 Business 的文件夹固定在区块最后，不存位置
+      if (it.kind === "fw") return saveWidgetPos(widgets.find((w) => w.id === it.id), { box: key, x: c, y: r, w: it.w, h: it.h });
+      if (key === "home") return saveSlot(it.kind, it.id, r * 100 + c);
+      return placeInBox(key, it.id, r * 100 + c);
+    }
+    // 把区块里现在看到的位置全部记下来（区块被拉小、图示被挤过之后，用户真的移动了东西才会这样做）
+    function commitBox(key, L, skip) {
+      const legacy = key === "home" && !homeIsV2();
+      const model = boxModel(key); // 先拿旧的编码解出来的位置，再切换编码
+      const saves = [];
+      if (legacy && board()) {
+        board().config = { ...board().config, homeGrid: 2 };
+        saves.push(saveBoardConfig());
+      }
+      model.forEach((it) => {
+        const p = L.pos.get(it.key);
+        if (!p || skip.includes(it.key) || (!legacy && it.c === p.c && it.r === p.r)) return;
+        saves.push(saveCell(key, it, p.c, p.r));
+      });
+      return saves;
+    }
+    // My Home 第一个空格（新增 App / 连结 / 文件夹用）；第一次用时把 My Home 换成新的位置编码
+    function homeFreeSlot() {
+      let B = boxGeo("home");
+      if (!homeIsV2()) (commitBox("home", B.L, []), (B = boxGeo("home")));
+      const fake = { key: "__new", w: 1, h: 1, c: null, r: null };
+      const L = packInto([...B.model.map((it) => ({ ...it, ...B.L.pos.get(it.key) })), fake], B.n, null);
+      const p = L.pos.get("__new");
+      return p.r * 100 + p.c;
+    }
+
+    // ------------------------------------------------------------ 编辑模式（像 iPhone）：长按进入，东西会抖动；按 Done、点空白处或 Esc 离开
+    function setEditing(on) {
+      editing = on;
+      if (on) ((sheet = null), (fabOpen = false));
+      draw();
+    }
+    let lp = null; // 长按计时
+    const LONG_PRESS = 500;
+    root.addEventListener("pointerdown", (e) => {
+      if (!sectionsOn || editing || e.button !== 0) return;
+      const el = e.target.closest(".gw-item, .gw-pinned, [data-fw], [data-box]");
+      if (!el || e.target.closest("input, textarea, select, a, [data-company-menu], [data-estate-menu], [data-pick-wrap], [data-mode], .gw-sheet, .sec-grip")) return; // 握把直接拖区块，不算长按
+      lp = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      lp.timer = setTimeout(() => {
+        lp.fired = true;
+        lastDragEnd = Date.now();
+        setEditing(true);
+      }, LONG_PRESS);
+    });
+    root.addEventListener("pointermove", (e) => {
+      if (lp && !lp.fired && e.pointerId === lp.id && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8) (clearTimeout(lp.timer), (lp = null));
+    });
+    const lpEnd = () => {
+      if (!lp) return;
+      clearTimeout(lp.timer);
+      if (lp.fired) lastDragEnd = Date.now(); // 长按放开的那一下不算点击
+      lp = null;
+    };
+    addEventListener("pointerup", lpEnd);
+    addEventListener("pointercancel", lpEnd);
+    // 编辑中点页面空白处：离开编辑
+    document.addEventListener("click", (e) => {
+      if (sectionsOn && editing && downOnEmpty && Date.now() - lastDragEnd > 400 && (e.target === document.body || e.target === document.documentElement || e.target.id === "main")) setEditing(false);
+    });
+    const EDIT_KEEP = "button, a, input, textarea, select, label, .gw-item, [data-fw], .gw-sheet, [data-sec-resize], .sec-grip, [data-board-resize]";
+    // 按下去的地方也要是空白处（在按钮上按下、拖到别处放开，不算点空白）
+    let downOnEmpty = false;
+    document.addEventListener("pointerdown", (e) => (downOnEmpty = !e.target.closest(EDIT_KEEP)), true);
+
+    // ------------------------------------------------------------ 区块里拖东西（编辑时）：放到哪个空格就留在哪；放到文件夹上 = 收进去；两个 1×1 = 交换
+    let bdrag = null;
+    let bpress = null;
+    function boxTarget(e) {
+      const { list, key, id, w, h, B } = bdrag;
+      const lr = list.getBoundingClientRect();
+      const g = B.g;
+      const gc = Math.floor((e.clientX - lr.left) / g.cw);
+      const gr = Math.max(0, Math.floor((e.clientY - lr.top) / g.rh));
+      const maxR = modeOf(key) === "full" ? B.rows : 0; // 只显示第一行时，只能放在第一行；全部显示时可以放到下面新的一行
+      const c = Math.max(0, Math.min(B.n - w, gc - bdrag.offC));
+      const r = Math.min(Math.max(0, gr - bdrag.offR), maxR);
+      const hits = [];
+      B.L.pos.forEach((p, k) => k !== id && c < p.c + p.w && c + w > p.c && r < p.r + p.h && r + h > p.r && hits.push(k));
+      let action = null;
+      if (!hits.length) action = { type: "place", c, r };
+      else if (hits.length === 1) {
+        const other = B.model.find((x) => x.key === hits[0]);
+        const p = B.L.pos.get(hits[0]);
+        if (other.kind === "folder" && ["module", "app", "link"].includes(bdrag.kind)) action = { type: "folder", fid: other.id };
+        else if (other.kind !== "fw" && other.kind !== "sfolder" && w === 1 && h === 1 && p.w === 1 && p.h === 1) action = { type: "swap", key: hits[0], c: p.c, r: p.r };
+      }
+      return { c, r, action };
+    }
+    function startBoxDrag(e, el) {
+      const list = el.closest("[data-list]");
+      const key = list.dataset.list;
+      const id = el.dataset.key;
+      const B = boxGeo(key);
+      const p = B.L.pos.get(id) || { c: 0, r: 0, w: 1, h: 1 };
+      const rect = el.getBoundingClientRect();
+      bdrag = { el, list, key, id, kind: el.dataset.kind, B, w: p.w, h: p.h, from: p, offC: Math.min(p.w - 1, Math.floor((e.clientX - rect.left) / B.g.cw)), offR: Math.min(p.h - 1, Math.floor((e.clientY - rect.top) / B.g.rh)), dx: e.clientX - rect.left, dy: e.clientY - rect.top, target: null };
+      const ghost = el.cloneNode(true);
+      ghost.removeAttribute("data-key");
+      ghost.style.cssText = `position:fixed;left:0;top:0;width:${rect.width}px;height:${rect.height}px;z-index:60;pointer-events:none;transform:translate(${rect.left}px,${rect.top}px) scale(1.08);opacity:.95;transition:none;margin:0`;
+      ghost.className = ghost.className.replace("gw-item", "gw-ghost");
+      document.body.appendChild(ghost);
+      bdrag.ghost = ghost;
+      el.classList.add("opacity-30");
+      document.body.classList.add("gw-dragging");
+    }
+    // 从 Business 区块拖到 My Home：复制一份过去（Business 区块里的不动）
+    const HOME_HL = ["ring-4", "ring-brand-500/60"];
+    function homeDropAt(e) {
+      if (bdrag.key === "home" || !["module", "sfolder"].includes(bdrag.kind)) return null;
+      const box = $('[data-box="home"]', root);
+      const list = $('[data-list="home"]', root);
+      if (!box || !list) return null;
+      const br = box.getBoundingClientRect();
+      if (e.clientX < br.left || e.clientX > br.right || e.clientY < br.top || e.clientY > br.bottom) return null;
+      const B = boxGeo("home");
+      const lr = list.getBoundingClientRect();
+      const c = Math.max(0, Math.min(B.n - 1, Math.floor((e.clientX - lr.left) / B.g.cw)));
+      const r = Math.max(0, Math.floor((e.clientY - lr.top) / B.g.rh));
+      let free = true;
+      B.L.pos.forEach((p) => c >= p.c && c < p.c + p.w && r >= p.r && r < p.r + p.h && (free = false));
+      return { c: free ? c : null, r: free ? r : null };
+    }
+    function moveBoxDrag(e) {
+      bdrag.ghost.style.transform = `translate(${e.clientX - bdrag.dx}px,${e.clientY - bdrag.dy}px) scale(1.08)`;
+      if (e.clientY < 90) scrollBy(0, -14);
+      else if (e.clientY > innerHeight - 90) scrollBy(0, 14);
+      bdrag.toHome = homeDropAt(e);
+      const hb = $('[data-box="home"]', root);
+      if (hb) hb.classList.toggle(HOME_HL[0], !!bdrag.toHome), hb.classList.toggle(HOME_HL[1], !!bdrag.toHome);
+      if (bdrag.toHome) {
+        bdrag.target = null;
+        const h = $("[data-box-hint]", bdrag.list);
+        if (h) h.className = "pointer-events-none hidden";
+        return;
+      }
+      bdrag.target = boxTarget(e);
+      const hint = $("[data-box-hint]", bdrag.list);
+      if (!hint) return;
+      const tg = bdrag.target;
+      hint.className = `pointer-events-none rounded-2xl border-2 border-dashed ${tg.action ? "border-brand-500/70 bg-brand-500/10" : "border-rose-400/70 bg-rose-400/10"}`;
+      hint.style.gridColumn = `${tg.c + 1} / span ${bdrag.w}`;
+      hint.style.gridRow = `${tg.r + 1} / span ${bdrag.h}`;
+    }
+    // 放下：区块被拉小过（图示被挤过）就把现在看到的位置全部记下来；不然只记还没记过的
+    function boxDropSaves(d, a) {
+      const skip = [d.id, a.type === "swap" ? a.key : null];
+      if (d.B.L.reflow || (d.key === "home" && !homeIsV2())) return commitBox(d.key, d.B.L, skip);
+      return d.B.model.filter((it) => it.c == null && !skip.includes(it.key)).map((it) => saveCell(d.key, it, d.B.L.pos.get(it.key).c, d.B.L.pos.get(it.key).r));
+    }
+    async function copyToHome(me, at) {
+      if (!homeIsV2()) homeFreeSlot(); // 第一次：先把 My Home 换成新的位置编码
+      const slot = at.c != null ? at.r * 100 + at.c : homeFreeSlot();
+      const it = me && me.item;
+      if (it && it.kind === "module") {
+        const l = layout.get(it.module_id);
+        if (l) return (draw(), toast(t("home.alreadyInHome")));
+        layout.set(it.module_id, { folder_id: null, sort_order: slot });
+        draw();
+        toast(t("home.copiedToHome"));
+        return saveApps([{ module_id: it.module_id, folder_id: null, sort_order: slot }]);
+      }
+      if (it && it.kind === "sfolder") {
+        if (homeCopyOf(it.folder_id) != null) return (draw(), toast(t("home.alreadyInHome")));
+        const p = setHomeCopy(it.folder_id, slot);
+        draw();
+        toast(t("home.copiedToHome"));
+        return p;
+      }
+      draw();
+    }
+    async function endBoxDrag(cancelled) {
+      const d = bdrag;
+      bdrag = null;
+      d.ghost.remove();
+      d.el.classList.remove("opacity-30");
+      document.body.classList.remove("gw-dragging");
+      lastDragEnd = Date.now();
+      if (!cancelled && d.toHome) return copyToHome(d.B.model.find((x) => x.key === d.id), d.toHome);
+      const a = !cancelled && d.target && d.target.action;
+      if (!a) return draw();
+      const me = d.B.model.find((x) => x.key === d.id);
+      const saves = boxDropSaves(d, a);
+      if (a.type === "place") {
+        saves.push(saveCell(d.key, me, a.c, a.r));
+        if (d.B.R && a.r + d.h > d.B.R) saves.push(saveLayout(d.key, { rows: a.r + d.h })); // 放到新的一行：区块跟着长高
+      } else if (a.type === "swap") saves.push(saveCell(d.key, me, a.c, a.r), saveCell(d.key, d.B.model.find((x) => x.key === a.key), d.from.c, d.from.r));
+      else if (a.type === "folder") {
+        if (d.key !== "home") saves.push(placeInBox(d.key, d.id, 0, a.fid));
+        else saves.push(me.kind === "link" ? moveLinkToFolder(me.id, a.fid) : moveIntoFolder(me.id, a.fid));
+      }
+      draw();
+      settlePage(true);
+      return Promise.all(saves);
+    }
+    root.addEventListener("pointerdown", (e) => {
+      if (!sectionsOn || !editing || bdrag || e.button !== 0) return;
+      const el = e.target.closest("[data-list] > .gw-item[data-key]");
+      if (!el || e.target.closest(".no-drag")) return;
+      bpress = { el, x: e.clientX, y: e.clientY, id: e.pointerId };
+    });
+    root.addEventListener("pointermove", (e) => {
+      if (bdrag) return moveBoxDrag(e);
+      if (!bpress || e.pointerId !== bpress.id) return;
+      if (Math.hypot(e.clientX - bpress.x, e.clientY - bpress.y) > 8) (startBoxDrag(e, bpress.el), moveBoxDrag(e), (bpress = null));
+    });
+    const boxUp = (e) => {
+      bpress = null;
+      if (bdrag) endBoxDrag(e.type === "pointercancel");
+    };
+    root.addEventListener("pointerup", boxUp);
+    root.addEventListener("pointercancel", boxUp);
+    addEventListener("pointerup", (e) => bdrag && boxUp(e));
+    document.addEventListener("touchmove", (e) => bdrag && e.preventDefault(), { passive: false });
+
+    // ------------------------------------------------------------ 区块右下角：拖拉调整大小（编辑时）
+    /* 宽度按整数栏、高度按整数行吸附。最小 = 放得下全部东西的格数（只看数量）；
+       比存的位置小时，里面的东西照顺序往上 / 往左挤（只是显示）；拉大回来就回到原位。
+       放开后：区块盖到的页面小工具搬到区块下面（存起来）。 */
+    function previewBox(key, wrap, list, n, R) {
+      const B = boxGeo(key, { n, R });
+      const g = B.g;
+      wrap.style.width = B.fill ? "100%" : (2 * n + 1) * g.hw + "px";
+      if (!list) return;
+      list.dataset.cols = n;
+      list.style.width = n * g.cw + "px";
+      list.style.gridTemplateColumns = `repeat(${n},${g.cw}px)`;
+      list.style.gridTemplateRows = `repeat(${R > 1 || modeOf(key) === "full" ? B.rows : 1},${g.rh}px)`;
+      if (R > 1) ((list.style.height = ""), list.classList.remove("overflow-hidden"));
+      $$("[data-key]", list).forEach((el) => {
+        const p = B.L.pos.get(el.dataset.key);
+        if (p) ((el.style.gridColumn = `${p.c + 1} / span ${p.w}`), (el.style.gridRow = `${p.r + 1} / span ${p.h}`));
+      });
+    }
+    root.addEventListener("pointerdown", (e) => {
+      const grab = e.target.closest("[data-sec-resize]");
+      if (!grab || e.button !== 0 || !editing) return;
+      e.preventDefault();
+      const key = grab.dataset.secResize;
+      const wrap = grab.closest("[data-sec-wrap]");
+      const list = $("[data-list]", wrap);
+      const B0 = boxGeo(key);
+      const g = B0.g;
+      const start = wrap.getBoundingClientRect();
+      const sx = e.clientX;
+      const sy = e.clientY;
+      let n = B0.n;
+      let R = modeOf(key) === "full" ? B0.rows : 1;
+      document.body.classList.add("gw-dragging");
+      const move = (ev) => {
+        if (g.wide) n = Math.max(B0.minC, Math.min(g.fit, Math.round((start.width + ev.clientX - sx - g.hw) / g.cw)));
+        R = Math.max(minRowsAt(B0.model, n), Math.round((start.height + ev.clientY - sy) / g.rh) - 1);
+        previewBox(key, wrap, list, n, R);
+      };
+      const up = async () => {
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+        removeEventListener("pointercancel", up);
+        document.body.classList.remove("gw-dragging");
+        lastDragEnd = Date.now();
+        // 手机上只改高度，不动电脑 / 平板存的栏数
+        const patch = g.wide ? { cols: n >= g.fit ? null : n, rows: R, w: null, h: null } : { rows: R };
+        if (key !== "home" && modeOf(key) !== "full" && R > 1) {
+          patch.mode = "full";
+          expanded.set(key, true);
+          sb.from("gw_user_sections").upsert({ user_id: data.profile.id, group_id: key, expanded: true });
+        }
+        if (key !== "home" && modeOf(key) !== "full" && R <= 1) delete patch.rows;
+        setLayout(key, patch);
+        const saving = saveLayout(key, patch);
+        draw();
+        await Promise.all([saving, ...settlePage(true)]);
+      };
+      addEventListener("pointermove", move);
+      addEventListener("pointerup", up);
+      addEventListener("pointercancel", up);
+    });
+
+    // 区块（My Home 和各 Business）用握把拖着换位置（不用进编辑，按住握把马上可以拖）：上下左右都可以。
+    // 放开前一直照鼠标位置找最近的区块：压在哪个区块上就排在它前面或后面（窄的区块看左右，整行宽的看上下），空白处找最近的。
+    root.addEventListener("pointerdown", (e) => {
+      const grip = e.target.closest(".sec-grip");
+      if (!grip || e.button !== 0 || readOnly || !sectionsOn) return;
+      const stack = $("#gw-stack", root);
+      const wrap = grip.closest("[data-sec-wrap]");
+      if (!stack || !wrap) return;
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const sx = e.clientX;
+      const sy = e.clientY;
+      let ghost = null;
+      let moved = false;
+      const dist = (r, x, y) => Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      const place = (x, y) => {
+        const mine = wrap.getBoundingClientRect();
+        if (x >= mine.left && x <= mine.right && y >= mine.top && y <= mine.bottom) return; // 还在自己的位置上
+        const others = $$("[data-sec-wrap]", stack).filter((el) => el !== wrap);
+        if (!others.length) return;
+        let target = others[0];
+        let best = Infinity;
+        for (const el of others) {
+          const d = dist(el.getBoundingClientRect(), x, y);
+          if (d < best) ((best = d), (target = el));
+        }
+        const r = target.getBoundingClientRect();
+        const narrow = r.width < stack.clientWidth * 0.8;
+        const before = y < r.top ? true : y > r.bottom ? false : narrow ? x < r.left + r.width / 2 : y < r.top + r.height / 2;
+        if (before) {
+          if (target.previousElementSibling !== wrap) stack.insertBefore(wrap, target);
+        } else if (target.nextElementSibling !== wrap) stack.insertBefore(wrap, target.nextElementSibling);
+      };
+      if (lp) (clearTimeout(lp.timer), (lp = null));
+      lastDragEnd = Date.now(); // 按握把放开的那一下不算点击（不会打开 App、不会离开编辑）
+      // 手指拖握把时不要捲动页面
+      const noScroll = (ev) => ev.cancelable && ev.preventDefault();
+      document.addEventListener("touchmove", noScroll, { passive: false });
+      const move = (ev) => {
+        if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+        if (!moved) {
+          moved = true;
+          document.body.classList.add("gw-dragging");
+          ghost = wrap.cloneNode(true);
+          ghost.removeAttribute("data-sec-wrap");
+          ghost.querySelectorAll("[data-fw-host], [data-list], [data-box]").forEach((el) => (el.removeAttribute("data-fw-host"), el.removeAttribute("data-list"), el.removeAttribute("data-box")));
+          ghost.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;z-index:80;pointer-events:none;opacity:.88;transform:scale(.98);filter:drop-shadow(0 18px 30px rgba(15,23,42,.25))`;
+          document.body.appendChild(ghost);
+          wrap.style.opacity = "0.3";
+        }
+        ghost.style.left = rect.left + ev.clientX - sx + "px";
+        ghost.style.top = rect.top + ev.clientY - sy + "px";
+        if (ev.clientY < 90) scrollBy(0, -16);
+        else if (ev.clientY > innerHeight - 90) scrollBy(0, 16);
+        place(ev.clientX, ev.clientY);
+      };
+      const up = async () => {
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+        removeEventListener("pointercancel", up);
+        document.removeEventListener("touchmove", noScroll);
+        document.body.classList.remove("gw-dragging");
+        lastDragEnd = Date.now();
+        if (!moved) return;
+        ghost.remove();
+        wrap.style.opacity = "";
+        const order = $$("[data-sec-wrap]", stack).map((el) => el.dataset.secKey);
+        if (order.join() === sectionOrder().join()) return;
+        const w = board();
+        if (!w) return;
+        w.config = { ...(w.config || {}), order };
+        const saving = saveBoardConfig();
+        draw();
+        await Promise.all([saving, ...settlePage(true)]);
+      };
+      addEventListener("pointermove", move);
+      addEventListener("pointerup", up);
+      addEventListener("pointercancel", up);
+    });
+    // 窗口宽度变了、格线跟着变时重画
+    let lastGeo = "";
+    const geoSig = () => (sectionsOn ? [pageGeo().halves, MET().cw].join(",") : "");
+    addEventListener("resize", () => {
+      if (!sectionsOn || geoSig() === lastGeo) return;
+      lastGeo = geoSig();
+      draw();
+    });
+
+    // ------------------------------------------------------------ 小工具：放在页面上（任何空位）或放进某个区块（占区块里的格子）
+    /* 位置用格子算（config.pos.v = 2）：
+       区块里：x / y = 第几栏 / 第几行，w / h = 几栏 / 几行；
+       页面上：x = 第几个半格（才能贴着区块的边），y = 第几行（从区块最上面算），w / h = 几栏 / 几行。
+       高度一定是整数行，同一排的小工具上缘、下缘对齐，彼此之间的空隙都一样。 */
+    const isFloating = (w) => !!(w && w.config && w.config.pos);
+    const pageWidgets = () => widgets.filter((w) => isFloating(w) && !w.config.pos.box);
+    const CELLS = { small: [2, 2], medium: [4, 2], large: [4, 4] };
+    const CELLS_BY_TYPE = { calendar: { small: [2, 2], medium: [3, 2] }, ai: { medium: [4, 4], large: [6, 6] } };
+    const MIN_ROWS = { ai: 3 };
+    const cellsFor = (type, size) => (CELLS_BY_TYPE[type] && CELLS_BY_TYPE[type][size]) || CELLS[size] || [4, 2];
+    // 旧版的位置是 px（一格 104 × 100）：读的时候换成格子，不改数据库（下次移动时才存新的）
+    const OLD_W = 104;
+    const OLD_H = 100;
+    let migrated = false;
+    function migratePos(w) {
+      const p = w.config.pos;
+      if (p.v === 2) return;
+      const cw = (v) => Math.max(1, Math.round(v / OLD_W));
+      const ch = (v) => Math.max(1, Math.round(v / OLD_H));
+      const down = (v) => Math.max(0, Math.ceil(v - 0.5)); // 刚好一半时往上靠
+      let np;
+      if (p.box) np = { box: p.box, x: down(p.x / OLD_W), y: down(p.y / OLD_H), w: cw(p.w), h: ch(p.h) };
+      else {
+        // 以前 y 从整个主画面最上面算（含 Notice Board），x 从格线左边算（g = 1）或从页面左边算
+        const bw = board();
+        const top = (bw && Number(bw.config && bw.config.height)) || (bw && bw.size === "large" ? 352 : 208);
+        const oldOff = Math.max(0, Math.round(((root.clientWidth || 1000) - Math.floor(((root.clientWidth || 1000) - 48) / OLD_W) * OLD_W) / 2));
+        np = { box: null, x: down((p.g ? p.x : p.x - oldOff) / (OLD_W / 2)), y: down((p.y - top - 16) / OLD_H), w: cw(p.w), h: ch(p.h) };
+      }
+      w.config = { ...w.config, pos: { ...np, v: 2 } };
+      migrated = true;
+    }
+    function fwInner(w, p, inset) {
+      const size = p.w <= 2 ? "small" : p.h >= 4 && p.w >= 4 ? "large" : "medium";
+      const at = `top:${inset - 8}px;left:${inset - 8}px`;
+      return `<div class="gw-fw-body h-full"><div class="${glass.replace("bg-white/45", "bg-white/80").replace("dark:bg-slate-900/45", "dark:bg-slate-900/80")} ${editing ? "cursor-grab" : ""} p-3!">${widgetBody({ ...w, size })}</div></div>
+        ${editing ? `<button type="button" data-remove-fw="${w.id}" aria-label="${esc(t("widgets.remove"))}" title="${esc(t("widgets.remove"))}" class="no-drag absolute z-10 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900" style="${at}">${icon("x", "size-3.5")}</button>
+        <span data-fw-resize title="${esc(t("widgets.resize"))}" class="no-drag absolute z-10 flex size-6 cursor-nwse-resize touch-none items-end justify-end p-1 text-slate-400 hover:text-slate-600" style="right:${inset + 2}px;bottom:${inset + 2}px"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M11 1 1 11M11 6 6 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>` : ""}`;
+    }
+    // 区块里的小工具：占整数格，四边留跟图示一样的空隙
+    function cellWidget(w, p, g) {
+      const inset = (g.cw - g.lw) / 2;
+      return `<div data-fw="${w.id}" data-key="fw:${w.id}" class="gw-fw relative ${editing ? "touch-none" : ""}" style="${cellCss(p)};padding:${inset}px">${fwInner(w, { w: p.w, h: p.h }, inset)}</div>`;
+    }
+    // 页面上的小工具（位置之后由 settlePage 摆好）
+    function pageWidget(w, g) {
+      const p = w.config.pos;
+      return `<div data-fw="${w.id}" class="gw-fw absolute p-2 ${editing ? "touch-none" : ""}" style="left:${p.x * g.hw}px;top:${p.y * g.rh}px;width:${p.w * g.cw}px;height:${p.h * g.rh}px">${fwInner(w, p, 8)}</div>`;
+    }
+
+    // ---- 页面上的摆放（单位：横 = 半格，竖 = 行）
+    const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const wRect = (p) => ({ x: p.x, y: p.y, w: p.w * 2, h: p.h });
+    const shown = new Map(); // 页面小工具现在显示的位置（被区块盖到时会暂时挪开）
+    const shownOf = (w) => shown.get(w.id) || w.config.pos;
+    // 每个区块的高度补到「整数行」（页面格子 rh 的倍数）：区块底边才会和旁边的小工具底边对齐、下一个区块也从格线开始
+    function alignBoxes() {
+      const page = $("#gw-page", root);
+      if (!page) return;
+      const g = pageGeo();
+      $$("[data-sec-wrap]", page).forEach((el) => {
+        const box = $("[data-box]", el);
+        if (!box) return;
+        box.style.padding = box.dataset.pad || "";
+        const h = el.getBoundingClientRect().height;
+        const target = Math.ceil(h / g.rh - 0.02) * g.rh;
+        const extra = Math.max(0, target - h);
+        if (extra) box.style.paddingBottom = Math.round(parseFloat(getComputedStyle(box).paddingBottom) + extra) + "px";
+      });
+    }
+    function boxRectsPage() {
+      const page = $("#gw-page", root);
+      if (!page) return [];
+      alignBoxes();
+      const g = pageGeo();
+      const pr = page.getBoundingClientRect();
+      return $$("[data-sec-wrap]", page).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: Math.round((r.left - pr.left) / g.hw), y: Math.round((r.top - pr.top) / g.rh), w: Math.max(1, Math.round(r.width / g.hw)), h: Math.max(1, Math.ceil(r.height / g.rh - 0.05)) };
+      });
+    }
+    // 第一个放得下的空位：从第 y0 行开始，由左到右、由上到下
+    function pageFree(w, h, blocks, y0) {
+      const g = pageGeo();
+      const W = Math.max(1, Math.min(w, Math.floor(g.halves / 2)));
+      for (let y = y0 || 0; y < 400; y++) for (let x = 0; x + 2 * W <= g.halves; x++) if (!blocks.some((b) => hit({ x, y, w: 2 * W, h }, b))) return { x, y, w: W, h };
+      return { x: 0, y: 400, w: W, h };
+    }
+    // 离 (x, y) 最近的空位
+    function pageNear(x, y, w, h, blocks) {
+      const g = pageGeo();
+      const ok = (cx, cy) => cx >= 0 && cy >= 0 && cx + 2 * w <= g.halves && !blocks.some((b) => hit({ x: cx, y: cy, w: 2 * w, h }, b));
+      for (let k = 0; k <= 40; k++)
+        for (let dy = -k; dy <= k; dy++)
+          for (let dx = -2 * k; dx <= 2 * k; dx++) {
+            if (Math.max(Math.abs(dx) / 2, Math.abs(dy)) < k - 0.5 && k) continue;
+            if (ok(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+          }
+      return pageFree(w, h, blocks, 0);
+    }
+    const blocksExcept = (id) => [...boxRectsPage(), ...pageWidgets().filter((o) => o.id !== id).map((o) => wRect(shownOf(o)))];
+    // 同一排（上下范围有重叠）的小工具：能对齐就对齐成一样的上缘、下缘
+    function alignTo(ids, top, bottom) {
+      const changed = [];
+      const boxes = boxRectsPage();
+      ids.forEach((id) => {
+        const w = widgets.find((x) => x.id === id);
+        const cur = shownOf(w);
+        const p = { ...cur, y: top, h: bottom - top };
+        if (p.h < (MIN_ROWS[w.widget_type] || 1) || (p.y === cur.y && p.h === cur.h)) return;
+        const others = pageWidgets().filter((o) => o.id !== id).map((o) => wRect(shownOf(o)));
+        if ([...boxes, ...others].some((b) => hit(wRect(p), b))) return;
+        shown.set(id, p);
+        changed.push(id);
+      });
+      return changed;
+    }
+    const overlapsRows = (a, b) => a.y < b.y + b.h && a.y + a.h > b.y;
+    // mode：drop = 放下的跟旁边的对齐；resize = 旁边的跟着改大小的对齐；all = 每一排各自对齐
+    function alignBand(leadId, mode) {
+      const list = pageWidgets();
+      if (mode === "all") {
+        const done = new Set();
+        const changed = [];
+        [...list].sort((a, b) => shownOf(a).y - shownOf(b).y).forEach((w) => {
+          if (done.has(w.id)) return;
+          const band = [w];
+          for (let i = 0; i < band.length; i++) list.forEach((o) => !band.includes(o) && overlapsRows(shownOf(o), shownOf(band[i])) && band.push(o));
+          band.forEach((o) => done.add(o.id));
+          if (band.length < 2) return;
+          const top = Math.min(...band.map((o) => shownOf(o).y));
+          const bottom = Math.max(...band.map((o) => shownOf(o).y + shownOf(o).h));
+          changed.push(...alignTo(band.map((o) => o.id), top, bottom));
+        });
+        return changed;
+      }
+      const lead = shownOf(widgets.find((w) => w.id === leadId));
+      const band = list.filter((o) => o.id !== leadId && overlapsRows(shownOf(o), lead));
+      if (!band.length) return [];
+      if (mode === "resize") return alignTo(band.map((o) => o.id), lead.y, lead.y + lead.h);
+      const top = Math.min(...band.map((o) => shownOf(o).y));
+      const bottom = Math.max(...band.map((o) => shownOf(o).y + shownOf(o).h));
+      return alignTo([leadId, ...band.map((o) => o.id)], top, bottom);
+    }
+    // 把显示的位置套到画面上
+    function applyShown() {
+      const page = $("#gw-page", root);
+      if (!page) return;
+      const g = pageGeo();
+      let bottom = 0;
+      pageWidgets().forEach((w) => {
+        const p = shownOf(w);
+        bottom = Math.max(bottom, p.y + p.h);
+        const el = $(`#gw-float [data-fw="${w.id}"]`, root);
+        if (el) Object.assign(el.style, { left: p.x * g.hw + "px", top: p.y * g.rh + "px", width: p.w * g.cw + "px", height: p.h * g.rh + "px" });
+      });
+      page.style.minHeight = bottom * g.rh + "px";
+    }
+    // 显示的位置存起来（只存有变的）
+    function commitShown(ids) {
+      return pageWidgets()
+        .filter((w) => (!ids || ids.includes(w.id)) && shown.has(w.id))
+        .filter((w) => ["x", "y", "w", "h"].some((k) => shown.get(w.id)[k] !== w.config.pos[k]) || w.config.pos.v !== 2)
+        .map((w) => saveWidgetPos(w, { ...shown.get(w.id), box: null }));
+    }
+    /* 画完之后摆好页面上的小工具：被区块盖到的搬到那个区块下面第一个空位（由左到右，保持原来的先后）。
+       save = true（区块被调整过）：搬过的存起来；false（只是打开页面）：只改显示。回传存档的 promise。 */
+    function settlePage(save) {
+      if (!$("#gw-page", root)) return [];
+      const g = pageGeo();
+      const boxes = boxRectsPage();
+      const placed = [];
+      shown.clear();
+      [...pageWidgets()]
+        .sort((a, b) => a.config.pos.y - b.config.pos.y || a.config.pos.x - b.config.pos.x)
+        .forEach((w) => {
+          let p = { ...w.config.pos };
+          p.w = Math.max(1, Math.min(p.w, Math.floor(g.halves / 2)));
+          p.x = Math.max(0, Math.min(p.x, g.halves - 2 * p.w));
+          const under = boxes.filter((b) => hit(wRect(p), b));
+          if (under.length || placed.some((b) => hit(wRect(p), b))) {
+            const y0 = under.length ? Math.max(...under.map((b) => b.y + b.h)) : p.y;
+            p = { ...p, ...pageFree(p.w, p.h, [...boxes, ...placed], y0) };
+          }
+          placed.push(wRect(p));
+          shown.set(w.id, p);
+        });
+      // 旧版位置换过来后，同一排的先对齐（只改记忆中的资料，下次移动时才存）
+      if (migrated) {
+        migrated = false;
+        alignBand(null, "all").forEach((id) => {
+          const w = widgets.find((x) => x.id === id);
+          w.config = { ...w.config, pos: { ...w.config.pos, y: shown.get(id).y, h: shown.get(id).h } };
+        });
+      }
+      applyShown();
+      return save ? commitShown() : [];
+    }
+    // 整理页面上的小工具：照原来的上下左右顺序重新排整齐，同一排对齐
+    async function tidyWidgets() {
+      const list = [...pageWidgets()].sort((a, b) => shownOf(a).y - shownOf(b).y || shownOf(a).x - shownOf(b).x);
+      if (!list.length) return toast(t("home.nothingToTidy"));
+      const boxes = boxRectsPage();
+      const placed = [];
+      list.forEach((w) => {
+        const p = shownOf(w);
+        const s = pageFree(p.w, p.h, [...boxes, ...placed], 0);
+        shown.set(w.id, { ...p, ...s });
+        placed.push(wRect(shown.get(w.id)));
+      });
+      alignBand(null, "all");
+      applyShown();
+      const results = await Promise.all(commitShown());
+      if (results.some((r) => r && r.error)) toast(t("home.saveFailed"));
+    }
+    // 新增的小工具放在页面上第一个空位
+    function newWidgetPos(type, size) {
+      const [w, h] = cellsFor(type, size);
+      const blocks = [...boxRectsPage(), ...pageWidgets().map((o) => wRect(shownOf(o)))];
+      return { box: null, ...pageFree(w, h, blocks, 0), v: 2 };
+    }
+
+    // ---- 拖小工具（编辑时）：放在页面上 = 最近的空位、跟同一排对齐；放在区块上 = 那个区块里最近的空格
+    async function dropOnPage(w, r) {
+      const g = pageGeo();
+      const pr = $("#gw-page", root).getBoundingClientRect();
+      const pw = Math.max(1, Math.min(w.config.pos.w, Math.floor(g.halves / 2)));
+      const ph = w.config.pos.h;
+      w.config = { ...w.config, pos: { ...w.config.pos, box: null, w: pw, h: ph, x: 0, y: 9999 } }; // 先移出原来的地方
+      draw();
+      const x = Math.max(0, Math.min(g.halves - 2 * pw, Math.round((r.left - pr.left) / g.hw)));
+      const y = Math.max(0, Math.round((r.top - pr.top) / g.rh));
+      const spot = pageNear(x, y, pw, ph, blocksExcept(w.id));
+      shown.set(w.id, { x: spot.x, y: spot.y, w: pw, h: ph });
+      const changed = alignBand(w.id, "drop");
+      applyShown();
+      await Promise.all(commitShown([w.id, ...changed]));
+    }
+    async function dropInBox(w, key, r) {
+      let list = $(`[data-list="${key}"]`, root);
+      if (!list || modeOf(key) !== "full") {
+        // 放进收起的区块：先展开，才看得到
+        expanded.set(key, true);
+        setLayout(key, { mode: "full" });
+        sb.from("gw_user_sections").upsert({ user_id: data.profile.id, group_id: key, expanded: true });
+        saveBoardConfig();
+        draw();
+        list = $(`[data-list="${key}"]`, root);
+      }
+      const B = boxGeo(key);
+      const lr = list.getBoundingClientRect();
+      const pw = Math.min(w.config.pos.w, B.n);
+      const ph = w.config.pos.h;
+      const me = "fw:" + w.id;
+      const others = B.model.filter((it) => it.key !== me).map((it) => ({ ...it, ...B.L.pos.get(it.key) }));
+      const c0 = Math.max(0, Math.min(B.n - pw, Math.round((r.left - lr.left) / B.g.cw)));
+      const r0 = Math.max(0, Math.round((r.top - lr.top) / B.g.rh));
+      // 从放下的地方往后（由左到右、由上到下）找第一个空格
+      const taken = (c, rr) => others.some((o) => c < o.c + o.w && c + pw > o.c && rr < o.r + o.h && rr + ph > o.r);
+      let spot = null;
+      for (let rr = r0; !spot && rr < r0 + 60; rr++) for (let c = rr === r0 ? c0 : 0; !spot && c + pw <= B.n; c++) if (!taken(c, rr)) spot = { c, r: rr };
+      // 区块被拉小过：现在看到的位置全部记下来；不然只记还没记过位置的 App（才不会被小工具挤走）
+      const saves = B.L.reflow || (key === "home" && !homeIsV2()) ? commitBox(key, B.L, [me]) : others.filter((it) => B.model.find((m) => m.key === it.key).c == null).map((it) => saveCell(key, it, it.c, it.r));
+      saves.push(saveWidgetPos(w, { box: key, x: spot.c, y: spot.r, w: pw, h: ph }));
+      if (B.R && spot.r + ph > B.R) saves.push(saveLayout(key, { rows: spot.r + ph }));
+      draw();
+      saves.push(...settlePage(true));
+      await Promise.all(saves);
+    }
+    // 拖拉调整小工具大小：放开时吸附到整数格；同一排的跟着对齐
+    async function resizeWidgetEnd(w, el) {
+      const g = pageGeo();
+      const p = w.config.pos;
+      const nw = Math.max(1, Math.round(el.getBoundingClientRect().width / g.cw));
+      const nh = Math.max(MIN_ROWS[w.widget_type] || 1, Math.round(el.getBoundingClientRect().height / g.rh));
+      if (p.box) {
+        const B = boxGeo(p.box);
+        const at = B.L.pos.get("fw:" + w.id) || { c: p.x, r: p.y };
+        const cw = Math.min(nw, B.n);
+        const clash = B.model.some((it) => it.key !== "fw:" + w.id && (() => { const o = B.L.pos.get(it.key); return at.c < o.c + o.w && at.c + cw > o.c && at.r < o.r + o.h && at.r + nh > o.r; })());
+        const saves = B.L.reflow ? commitBox(p.box, B.L, ["fw:" + w.id]) : [];
+        // 压到别的东西：放到区块里第一个放得下的空格
+        const fixedPos = clash ? null : { c: at.c, r: at.r };
+        if (!fixedPos) {
+          const others = B.model.filter((it) => it.key !== "fw:" + w.id).map((it) => ({ ...it, ...B.L.pos.get(it.key) }));
+          const L = packInto([...others, { key: "me", w: cw, h: nh, c: null, r: null }], B.n, null);
+          Object.assign(at, L.pos.get("me"));
+        }
+        saves.push(saveWidgetPos(w, { box: p.box, x: at.c, y: at.r, w: cw, h: nh }));
+        if (B.R && at.r + nh > B.R) saves.push(saveLayout(p.box, { rows: at.r + nh }));
+        draw();
+        saves.push(...settlePage(true));
+        return Promise.all(saves);
+      }
+      const cur = shownOf(w);
+      const W = Math.min(nw, Math.floor(g.halves / 2));
+      const blocks = blocksExcept(w.id);
+      let spot = { x: Math.min(cur.x, g.halves - 2 * W), y: cur.y };
+      if (blocks.some((b) => hit({ x: spot.x, y: spot.y, w: 2 * W, h: nh }, b))) spot = pageNear(spot.x, spot.y, W, nh, blocks);
+      shown.set(w.id, { x: spot.x, y: spot.y, w: W, h: nh });
+      const changed = alignBand(w.id, "resize");
+      const saves = commitShown([w.id, ...changed]); // 先存（会改记忆中的位置），再重画
+      draw();
+      await Promise.all(saves);
+    }
+    root.addEventListener("pointerdown", (e) => {
+      const fw = e.target.closest("[data-fw]");
+      if (!fw || e.button !== 0 || readOnly || !editing) return;
+      const resizing = !!e.target.closest("[data-fw-resize]");
+      if (!resizing && e.target.closest(".no-drag, button, input, textarea, select, a")) return;
+      const w = widgets.find((x) => x.id === fw.dataset.fw);
+      if (!w) return;
+      e.preventDefault();
+      const rect = fw.getBoundingClientRect();
+      const sx = e.clientX;
+      const sy = e.clientY;
+      let moved = false;
+      if (resizing) {
+        document.body.classList.add("gw-dragging");
+        fw.style.zIndex = "50";
+        const move = (ev) => {
+          fw.style.width = Math.max(pageGeo().cw, rect.width + ev.clientX - sx) + "px";
+          fw.style.height = Math.max(pageGeo().rh, rect.height + ev.clientY - sy) + "px";
+          if (fw.style.gridColumn) ((fw.style.gridColumn = ""), (fw.style.gridRow = ""), (fw.style.position = "absolute"), (fw.style.left = fw.offsetLeft + "px"));
+        };
+        const up = () => {
+          removeEventListener("pointermove", move);
+          removeEventListener("pointerup", up);
+          removeEventListener("pointercancel", up);
+          document.body.classList.remove("gw-dragging");
+          lastDragEnd = Date.now();
+          resizeWidgetEnd(w, fw);
+        };
+        addEventListener("pointermove", move);
+        addEventListener("pointerup", up);
+        addEventListener("pointercancel", up);
+        return;
+      }
+      e.stopPropagation();
+      if (lp) (clearTimeout(lp.timer), (lp = null));
+      lastDragEnd = Date.now(); // 按握把放开的那一下不算点击（不会打开 App、不会离开编辑）
+      // 手指拖握把时不要捲动页面
+      const noScroll = (ev) => ev.cancelable && ev.preventDefault();
+      document.addEventListener("touchmove", noScroll, { passive: false });
+      const move = (ev) => {
+        if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+        if (!moved) {
+          moved = true;
+          // 拖的时候搬到 body 底下（区块有毛玻璃，里面的 fixed 位置会跑掉）
+          fw.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;z-index:70;padding:${getComputedStyle(fw).padding}`;
+          document.body.appendChild(fw);
+          document.body.classList.add("gw-dragging");
+        }
+        fw.style.left = rect.left + ev.clientX - sx + "px";
+        fw.style.top = rect.top + ev.clientY - sy + "px";
+        if (ev.clientY < 90) scrollBy(0, -14);
+        else if (ev.clientY > innerHeight - 90) scrollBy(0, 14);
+      };
+      const up = (ev) => {
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+        removeEventListener("pointercancel", up);
+        document.body.classList.remove("gw-dragging");
+        lastDragEnd = Date.now();
+        if (!moved) return;
+        const r = fw.getBoundingClientRect();
+        fw.remove();
+        // 放在哪个区块上面：那个区块；都不是 = 页面上
+        const sec = $$("[data-box]", root).find((s) => {
+          const b = s.getBoundingClientRect();
+          return ev.clientX >= b.left && ev.clientX <= b.right && ev.clientY >= b.top && ev.clientY <= b.bottom;
+        });
+        if (sec) return dropInBox(w, sec.dataset.box, r);
+        dropOnPage(w, r);
+      };
+      addEventListener("pointermove", move);
+      addEventListener("pointerup", up);
+      addEventListener("pointercancel", up);
+    });
+    const drawSections = () => draw();
+
+    // ------------------------------------------------------------ AI 助手：聊天问资料、要报表，报表可以直接下载（Excel / CSV）
+    /* 问题送到 Edge Function gw-ai-chat；它用这个人自己的权限查资料。
+       聊天记录只在这台装置记文字（最近 30 则）；报表的资料只留在这次打开的页面，重新整理后要再问一次才能下载。 */
+    const AI_KEY = "gw_ai_chat_" + profile.id;
+    let aiMsgs = [];
+    try {
+      aiMsgs = JSON.parse(localStorage.getItem(AI_KEY) || "[]").filter((m) => m && typeof m.text === "string");
+    } catch (e) {
+      /* 忽略 */
+    }
+    let aiBusy = false;
+    let aiDraft = "";
+    const aiSave = () => {
+      try {
+        localStorage.setItem(AI_KEY, JSON.stringify(aiMsgs.slice(-30).map((m) => ({ role: m.role, text: m.text, reports: (m.reports || []).map((r) => ({ id: r.id, title: r.title, total: r.total })) }))));
+      } catch (e) {
+        /* 忽略 */
+      }
+    };
+    // 简单的 markdown：表格、列表、粗体、行内代码
+    function mdLite(text) {
+      const inline = (x) => esc(x).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, '<code class="rounded bg-slate-200/70 px-1 dark:bg-slate-700">$1</code>');
+      const lines = String(text).split("\n");
+      let out = "";
+      for (let i = 0; i < lines.length; i++) {
+        const ln = lines[i];
+        if (/^\s*\|/.test(ln)) {
+          const rows = [];
+          while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(lines[i++]);
+          i--;
+          const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+          const body = rows.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r));
+          out += `<div class="my-1 overflow-x-auto"><table class="min-w-full text-xs">${body.map((r, k) => `<tr>${cells(r).map((c) => (k === 0 ? `<th class="border-b border-slate-300 px-2 py-1 text-left font-semibold">${inline(c)}</th>` : `<td class="border-b border-slate-200/70 px-2 py-1">${inline(c)}</td>`)).join("")}</tr>`).join("")}</table></div>`;
+        } else if (/^\s*[-*]\s+/.test(ln)) {
+          const items = [];
+          while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*[-*]\s+/, ""));
+          i--;
+          out += `<ul class="my-1 list-disc space-y-0.5 pl-4">${items.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`;
+        } else if (!ln.trim()) out += '<div class="h-1.5"></div>';
+        else out += `<p>${inline(ln)}</p>`;
+      }
+      return out;
+    }
+    function aiBody() {
+      const ta = (k, v) => t("widgets.ai." + k, v);
+      const bubble = (m, idx) =>
+        m.role === "user"
+          ? `<div class="flex justify-end"><div class="max-w-[85%] rounded-2xl rounded-br-md bg-brand-600 px-3 py-1.5 text-sm text-white whitespace-pre-wrap break-words">${esc(m.text)}</div></div>`
+          : `<div class="flex justify-start"><div class="max-w-[92%] min-w-0 rounded-2xl rounded-bl-md bg-white/70 px-3 py-2 text-sm break-words dark:bg-white/10">${mdLite(m.text)}${(m.reports || [])
+              .map(
+                (r) => `<div class="mt-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 p-2 dark:border-slate-700 dark:bg-slate-900/60">
+                  ${icon("file-spreadsheet", "size-4 shrink-0 text-emerald-600")}<span class="min-w-0 flex-1 truncate text-xs font-semibold" title="${esc(r.title)}">${esc(r.title)}</span><span class="text-[11px] text-slate-500">${esc(ta("rows", { count: r.total }))}</span>
+                  ${r.rows ? `<button type="button" data-ai-dl="${idx}:${r.id}:xlsx" class="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">${esc(ta("excel"))}</button><button type="button" data-ai-dl="${idx}:${r.id}:csv" class="rounded-full border border-slate-300 px-2.5 py-1 text-xs font-semibold hover:bg-white dark:border-slate-600">${esc(ta("csv"))}</button>` : `<span class="text-[11px] text-slate-400">${esc(ta("expired"))}</span>`}
+                </div>`,
+              )
+              .join("")}</div></div>`;
+      const intro = `<div class="space-y-2 text-sm text-slate-600 dark:text-slate-300"><p>${esc(ta("intro"))}</p><div class="flex flex-wrap gap-1.5">${[1, 2, 3].map((n) => `<button type="button" data-ai-suggest="${esc(ta("s" + n))}" class="rounded-full border border-slate-300 bg-white/70 px-2.5 py-1 text-left text-xs hover:bg-white dark:border-slate-600 dark:bg-white/10">${esc(ta("s" + n))}</button>`).join("")}</div></div>`;
+      return `<div class="flex h-full min-h-0 flex-col">
+        <div class="mb-2 flex items-center justify-between gap-2"><div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">${icon("bot", "size-3.5")}${esc(t("widgets.types.ai"))}</div>
+          ${aiMsgs.length ? `<button type="button" data-ai-clear class="no-drag rounded-full px-2 py-0.5 text-[11px] text-slate-500 hover:bg-white/70 dark:hover:bg-white/10">${esc(ta("clear"))}</button>` : ""}</div>
+        <div data-ai-log class="no-drag min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">${aiMsgs.length ? aiMsgs.map(bubble).join("") : intro}${aiBusy ? `<div class="flex justify-start"><div class="rounded-2xl rounded-bl-md bg-white/70 px-3 py-1.5 text-sm text-slate-500 dark:bg-white/10">${esc(ta("thinking"))}</div></div>` : ""}</div>
+        <form data-ai-form class="no-drag mt-2 flex gap-1.5"><input data-ai-input autocomplete="off" maxlength="1000" value="${esc(aiDraft)}" placeholder="${esc(ta("placeholder"))}" ${aiBusy ? "disabled" : ""} class="${cls.input} h-9 min-w-0 flex-1 rounded-full bg-white/80 text-sm dark:bg-slate-800/80"><button type="submit" ${aiBusy ? "disabled" : ""} aria-label="${esc(ta("send"))}" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white disabled:opacity-50 dark:bg-white dark:text-slate-900">${icon("send", "size-4")}</button></form>
+      </div>`;
+    }
+    function aiAfterDraw() {
+      $$("[data-ai-log]", root).forEach((el) => (el.scrollTop = el.scrollHeight));
+    }
+    async function aiAsk(text) {
+      text = String(text || "").trim();
+      if (!text || aiBusy) return;
+      aiMsgs.push({ role: "user", text });
+      aiDraft = "";
+      aiBusy = true;
+      aiSave();
+      draw();
+      const r = await GW.invoke("gw-ai-chat", { messages: aiMsgs.slice(-12).map((m) => ({ role: m.role, content: m.text })) });
+      aiBusy = false;
+      if (r && r.ok) aiMsgs.push({ role: "assistant", text: r.reply, reports: r.reports || [] });
+      else aiMsgs.push({ role: "assistant", text: t("widgets.ai.errors." + ((r && r.error) || "failed"), { limit: r && r.limit }) });
+      aiSave();
+      draw();
+      const input = $("[data-ai-input]", root);
+      if (input) input.focus();
+    }
+    async function aiDownload(spec) {
+      const [idx, rid, fmt] = spec.split(":");
+      const m = aiMsgs[Number(idx)];
+      const rep = m && (m.reports || []).find((x) => x.id === rid);
+      if (!rep || !rep.rows) return toast(t("widgets.ai.expired"));
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: GW_CONFIG.timeZone }).format(new Date());
+      const base = (rep.title || "report").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 50) || "report";
+      if (fmt === "xlsx")
+        return GW.downloadXlsx(`${base}-${day}.xlsx`, (wb) => {
+          const ws = wb.addWorksheet((rep.title || "Report").replace(/[\\/?*[\]:]/g, " ").slice(0, 30));
+          ws.columns = rep.columns.map((c) => ({ header: c.label, key: c.key, width: Math.max(12, Math.min(34, c.label.length + 6)) }));
+          rep.rows.forEach((row) => ws.addRow(rep.columns.map((c) => (c.type === "number" && row[c.key] !== null && row[c.key] !== "" ? Number(row[c.key]) : row[c.key] ?? ""))));
+          ws.getRow(1).font = { bold: true };
+          ws.views = [{ state: "frozen", ySplit: 1 }];
+        });
+      const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const lines = [rep.columns.map((c) => q(c.label)).join(","), ...rep.rows.map((row) => rep.columns.map((c) => (c.type === "number" && row[c.key] !== null ? row[c.key] : q(row[c.key]))).join(","))];
+      GW.downloadBlob(`${base}-${day}.csv`, new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" }));
+    }
+    root.addEventListener("submit", (e) => {
+      if (!e.target.matches("[data-ai-form]")) return;
+      e.preventDefault();
+      aiAsk($("[data-ai-input]", e.target).value);
+    });
+    root.addEventListener("input", (e) => {
+      if (e.target.matches("[data-ai-input]")) aiDraft = e.target.value;
+    });
+
+    // ------------------------------------------------------------ 天气：用浏览器的位置，Open-Meteo（免费，不用 key）
+    let weather = null; // { at, temp, code, hi, lo, rain, wind, place } 或 { error }
+    let weatherBusy = false;
+    const WCODE = (c) => (c === 0 ? ["sun", "clear"] : c <= 2 ? ["cloud-sun", "partly"] : c === 3 ? ["cloud", "cloudy"] : c <= 48 ? ["cloud-fog", "fog"] : c <= 57 ? ["cloud-drizzle", "drizzle"] : c <= 67 ? ["cloud-rain", "rain"] : c <= 77 ? ["snowflake", "snow"] : c <= 82 ? ["cloud-rain", "rain"] : c <= 86 ? ["snowflake", "snow"] : ["cloud-lightning", "storm"]);
+    function weatherInner(size) {
+      const tw = (k, v) => t("widgets.weather." + k, v);
+      if (!weather) return `<div class="flex h-full items-center justify-center text-sm text-slate-500">${esc(tw("loading"))}</div>`;
+      if (weather.error)
+        return `<div class="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-slate-500">${icon("map-pin-off", "size-6")}<span>${esc(tw(weather.error))}</span><button type="button" data-weather-retry class="no-drag rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white dark:bg-white dark:text-slate-900">${esc(tw("retry"))}</button></div>`;
+      const [ic, key] = WCODE(weather.code);
+      return `<div class="flex h-full flex-col justify-between">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0"><div class="flex items-center gap-1 truncate text-xs font-semibold text-slate-500 uppercase">${icon("map-pin", "size-3.5 shrink-0")}<span class="truncate">${esc(weather.place || tw("yourLocation"))}</span></div>
+            <div class="mt-1 text-4xl font-bold tabular-nums">${Math.round(weather.temp)}°</div></div>
+          ${icon(ic, size === "small" ? "size-10 text-sky-500" : "size-14 text-sky-500")}
+        </div>
+        <div>
+          <div class="text-sm font-medium">${esc(tw(key))}</div>
+          <div class="mt-0.5 text-xs text-slate-500">${esc(tw("high"))} ${Math.round(weather.hi)}° · ${esc(tw("low"))} ${Math.round(weather.lo)}°${size === "small" ? "" : ` · ${esc(tw("rainChance"))} ${weather.rain ?? 0}%`}</div>
+        </div>
+      </div>`;
+    }
+    async function loadWeather(force) {
+      if (weatherBusy || (weather && !weather.error && !force && Date.now() - weather.at < 30 * 60e3)) return;
+      weatherBusy = true;
+      try {
+        let geo = null;
+        try {
+          const saved = JSON.parse(localStorage.getItem("gw_geo") || "null");
+          if (saved && !force && Date.now() - saved.at < 6 * 3600e3) geo = saved;
+        } catch (e) {
+          /* 忽略 */
+        }
+        if (!geo) {
+          geo = await new Promise((resolve) => {
+            if (!navigator.geolocation) return resolve(null);
+            navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, at: Date.now() }), () => resolve(null), { timeout: 10000, maximumAge: 3600e3 });
+          });
+          if (geo)
+            try {
+              localStorage.setItem("gw_geo", JSON.stringify(geo));
+            } catch (e) {
+              /* 忽略 */
+            }
+        }
+        if (!geo) weather = { error: "needLocation" };
+        else {
+          const url = `https://api.open-meteo.com/v1/forecast?latitude=${geo.lat}&longitude=${geo.lon}&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1`;
+          const j = await (await fetch(url)).json();
+          let place = "";
+          try {
+            const g = await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${geo.lat}&longitude=${geo.lon}&localityLanguage=en`)).json();
+            place = g.locality || g.city || g.principalSubdivision || "";
+          } catch (e) {
+            /* 名字取不到就算了 */
+          }
+          weather = { at: Date.now(), temp: j.current.temperature_2m, code: j.current.weather_code, wind: j.current.wind_speed_10m, hi: j.daily.temperature_2m_max[0], lo: j.daily.temperature_2m_min[0], rain: j.daily.precipitation_probability_max[0], place };
+        }
+      } catch (e) {
+        weather = { error: "failed" };
+      }
+      weatherBusy = false;
+      $$("[data-weather]", root).forEach((el) => (el.innerHTML = weatherInner(el.dataset.weather)));
+      refreshIcons();
+    }
+
+    // Notice Board 的高度不能小过里面的内容
+    function boardMinHeight() {
+      const el = $(".gw-pinned", root);
+      const ul = el && $("ul", el);
+      if (!ul) return 150;
+      const kids = [...ul.children];
+      const content = kids.reduce((a, k) => a + k.offsetHeight, 0) + Math.max(0, kids.length - 1) * 8;
+      return Math.max(150, Math.ceil(content + 72));
+    }
+    function fitBoard() {
+      const w = board();
+      const el = $(".gw-pinned", root);
+      if (!el || !(w && w.config && Number(w.config.height) > 0)) return;
+      const min = boardMinHeight();
+      if (el.getBoundingClientRect().height < min - 1) el.style.height = min + "px";
+    }
+
+    // 往大一级 / 小一级：只看标题 ⇄ 第一行 ⇄ 全部
+    async function stepBox(key, dir) {
+      const i = MODES.indexOf(modeOf(key)) + (dir === "more" ? 1 : -1);
+      if (i < 0 || i > 2) return;
+      const mode = MODES[i];
+      expanded.set(key, mode === "full");
+      setLayout(key, { mode });
+      draw();
+      await Promise.all([saveLayout(key, { mode }), sb.from("gw_user_sections").upsert({ user_id: data.profile.id, group_id: key, expanded: mode === "full" }), ...settlePage(true)]);
+    }
+
+    // 删除区块里的文件夹 / 便条（先问一下）；文件夹里的 App 回到区块里
+    async function deleteBoxItem(item, before) {
+      if (!item) return;
+      const isNote = item.kind === "note";
+      const ok = isNote
+        ? await confirmDialog(t("home.deleteNoteTitle"), t("home.deleteNoteBody"), t("home.delete"), t("home.cancel"))
+        : await confirmDialog(t("home.deleteFolderTitle"), t("home.deleteFolderBody", { name: item.name }), t("home.delete"), t("home.cancel"));
+      if (!ok) return;
+      if (before) before();
+      if (!isNote) {
+        sItems.filter((x) => x.parent_id === item.id).forEach((x) => (x.parent_id = null));
+        await sb.from("gw_user_section_items").update({ parent_id: null }).eq("parent_id", item.id);
+      }
+      sItems = sItems.filter((x) => x.id !== item.id);
+      drawSections();
+      const { error } = await sb.from("gw_user_section_items").delete().eq("id", item.id);
+      if (error) toast(t("home.saveFailed"));
+    }
+    // 从区块拿掉 / 放回一个 App（只改这个人的主页，权限不变）
+    function hideModule(gid, mid, hide) {
+      const bw = board();
+      if (!bw) return toast(t("widgets.unavailable"));
+      const hidden = { ...(boardCfg().hidden || {}) };
+      const set = new Set(hidden[gid] || []);
+      if (hide) set.add(mid);
+      else set.delete(mid);
+      if (set.size) hidden[gid] = [...set];
+      else delete hidden[gid];
+      bw.config = { ...bw.config, hidden };
+      draw();
+      if (!hide) toast(t("home.added"));
+      return saveBoardConfig();
+    }
+    // Add Apps 面板：从区块拿掉过的 App，可以放回去
+    function hiddenAppsHtml() {
+      if (!sectionsOn) return "";
+      const rows = [];
+      Object.entries(boardCfg().hidden || {}).forEach(([gid, ids]) => {
+        const grp = S.groups.find((x) => x.id === gid);
+        ids.forEach((mid) => grp && modules.has(mid) && rows.push([grp, modules.get(mid)]));
+      });
+      if (!rows.length) return "";
+      return `<p class="mb-2 ${cls.label}">${esc(t("fab.hiddenApps"))}</p>
+        <div class="mb-4 space-y-1.5">${rows
+          .map(([grp, m]) => `<div class="flex items-center gap-3 rounded-xl border border-slate-200 px-2.5 py-2 dark:border-slate-800">${appIcon(m, "size-9")}<span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(m.name)}</span><span class="block truncate text-xs text-slate-500">${esc(grp.name)}</span></span><button type="button" data-unhide="${grp.id}:${m.id}" class="${btn("secondary", "sm")}">${icon("plus", "size-3.5")} ${esc(t("fab.putBack"))}</button></div>`)
+          .join("")}</div>`;
+    }
+
+    // 文件夹名称 / 便条内容
+    function itemDialog(item, gid, kind, order) {
+      const isNote = kind === "note";
+      const dlg = modal(
+        item ? t(isNote ? "home.editNote" : "home.editFolder") : t(isNote ? "home.newNote" : "home.newFolder"),
+        `<form class="space-y-4">
+          <input name="name" maxlength="40" ${isNote ? "" : "required"} value="${esc(item ? item.name || "" : "")}" placeholder="${esc(t(isNote ? "home.noteTitle" : "home.folderName"))}" class="${cls.input}">
+          ${isNote ? `<textarea name="body" rows="6" maxlength="2000" placeholder="${esc(t("home.noteBody"))}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900">${esc(item ? item.body || "" : "")}</textarea>` : ""}
+          <div class="flex justify-between gap-2">
+            ${item ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2", "size-4")} ${esc(t("home.delete"))}</button>` : "<span></span>"}
+            <div class="flex gap-2"><button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button><button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button></div>
+          </div>
+        </form>`,
+      );
+      refreshIcons();
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      $("[name=name]", dlg.el).focus();
+      if (item) $("[data-del]", dlg.el).onclick = () => deleteBoxItem(item, dlg.close);
+      $("form", dlg.el).addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const fields = { name: f.name.value.trim() || null, body: isNote ? f.body.value : null };
+        if (item) {
+          const { error } = await sb.from("gw_user_section_items").update(fields).eq("id", item.id);
+          if (error) return toast(t("home.saveFailed"));
+          Object.assign(item, fields);
+        } else {
+          const { data: created, error } = await sb.from("gw_user_section_items").insert({ ...fields, user_id: data.profile.id, group_id: gid, kind, sort_order: order }).select().single();
+          if (error) return toast(t("home.saveFailed"));
+          sItems.push(created);
+        }
+        dlg.close();
+        drawSections();
+      });
+    }
+
+    // 文件夹：放大成浮动窗，名字在上面；可以加 App 进来、拿出去、改名、删除
+    function openBoxFolder(fid) {
+      const f = sItems.find((x) => x.id === fid);
+      if (!f) return;
+      const kids = folderKids(fid);
+      const wrap = document.createElement("div");
+      wrap.setAttribute("role", "dialog");
+      wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-6 backdrop-blur-md";
+      wrap.innerHTML = `
+        <h2 class="mb-5 max-w-full truncate px-4 text-3xl font-bold text-white drop-shadow sm:text-4xl">${esc(f.name || "")}</h2>
+        <div data-win class="w-full max-w-md rounded-[2rem] border border-white/60 bg-white/75 p-6 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/75">
+          ${
+            kids.length
+              ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${kids
+                  .map(
+                    (k) => `<div class="relative flex flex-col items-center gap-1.5">
+                      <button type="button" data-open="${k.module_id}" class="flex flex-col items-center gap-1.5">${appIcon(modules.get(k.module_id), "size-14 sm:size-16")}<span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(modules.get(k.module_id).name)}</span></button>
+                      <button type="button" data-out="${k.id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>
+                    </div>`,
+                  )
+                  .join("")}</div>`
+              : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`
+          }
+        </div>
+        <div class="mt-4 flex gap-2">
+          <button type="button" data-fadd class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("plus", "size-4")} ${esc(t("home.addApps"))}</button>
+          <button type="button" data-frename class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("pencil", "size-4")} ${esc(t("home.editFolder"))}</button>
+        </div>`;
+      document.body.appendChild(wrap);
+      refreshIcons();
+      const close = () => wrap.remove();
+      const onKey = (e) => e.key === "Escape" && (close(), document.removeEventListener("keydown", onKey));
+      document.addEventListener("keydown", onKey);
+      wrap.addEventListener("click", async (e) => {
+        const b = e.target.closest("button");
+        if (!b) {
+          if (!e.target.closest("[data-win]")) close();
+          return;
+        }
+        if (b.dataset.open) return close(), open(b.dataset.open);
+        if (b.dataset.out) {
+          const it = sItems.find((x) => x.id === b.dataset.out);
+          it.parent_id = null;
+          it.sort_order = Math.max(-1, ...sItems.filter((x) => x.group_id === f.group_id && !x.parent_id).map((x) => x.sort_order)) + 1;
+          close();
+          drawSections();
+          await sb.from("gw_user_section_items").update({ parent_id: null, sort_order: it.sort_order }).eq("id", it.id);
+          return openBoxFolder(fid);
+        }
+        if ("frename" in b.dataset) return close(), itemDialog(f, f.group_id, "folder");
+        if ("fadd" in b.dataset) return close(), folderAddDialog(f);
+      });
+    }
+    // 把区块里还没放进文件夹的 App 勾选放进来
+    function folderAddDialog(f) {
+      const loose = boxItems(f.group_id).filter((x) => x.kind === "module");
+      const dlg = modal(
+        t("home.addApps"),
+        loose.length
+          ? `<form class="space-y-4"><div class="space-y-1.5">${loose.map((x) => `<label class="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-800"><input type="checkbox" name="pick" value="${x.id}" class="size-4 accent-emerald-600">${appIcon(modules.get(x.module_id), "size-8")}<span class="truncate">${esc(modules.get(x.module_id).name)}</span></label>`).join("")}</div>
+            <div class="flex justify-end gap-2"><button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button><button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button></div></form>`
+          : `<p class="text-sm text-slate-500">${esc(t("home.noLooseApps"))}</p>`,
+      );
+      refreshIcons();
+      const cancel = $("[data-cancel]", dlg.el);
+      if (cancel) cancel.onclick = dlg.close;
+      const form = $("form", dlg.el);
+      if (form)
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const picked = $$("[name=pick]:checked", form).map((x) => x.value);
+          dlg.close();
+          let n = folderKids(f.id).length;
+          const rows = [];
+          for (const key of picked) {
+            if (key.startsWith("new:")) rows.push({ user_id: data.profile.id, group_id: f.group_id, kind: "module", module_id: key.slice(4), parent_id: f.id, sort_order: n++ });
+            else {
+              const it = sItems.find((x) => x.id === key);
+              it.parent_id = f.id;
+              it.sort_order = n++;
+              await sb.from("gw_user_section_items").update({ parent_id: f.id, sort_order: it.sort_order }).eq("id", it.id);
+            }
+          }
+          if (rows.length) {
+            const { data: created, error } = await sb.from("gw_user_section_items").insert(rows).select();
+            if (error) toast(t("home.saveFailed"));
+            else sItems.push(...created);
+          }
+          drawSections();
+          openBoxFolder(f.id);
+        });
+    }
+
+    // 区块版整页：Notice Board、区块（Business 和 My Home，顺序可以拖拉调整）、页面上的小工具，全部在同一个格线上
+    function pageHtml(showHome) {
+      const g = pageGeo();
+      const parts = [];
+      S.groups.forEach((grp) => {
+        // 一般人：Business 里有 App 才出现；super admin：新开的 Business 还没有模块也显示（空的区块）
+        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id) || folders.some((f) => boxOfFolder(f) === grp.id))) return;
+        const B = boxGeo(grp.id);
+        parts.push([grp.id, boxShell(grp.id, grp.name, B, modeOf(grp.id) === "title" ? "" : boxTiles(grp.id, B))]);
+      });
+      if (showHome) {
+        const B = boxGeo("home");
+        parts.push(["home", boxShell("home", t("home.myHome"), B, boxTiles("home", B))]);
+      }
+      const order = sectionOrder();
+      const rank = (k) => (order.indexOf(k) === -1 ? 999 : order.indexOf(k));
+      parts.sort((a, b) => rank(a[0]) - rank(b[0]));
+      return `<div id="gw-frame" class="mx-auto max-w-full" style="width:${g.width}px">
+        ${boardHtml()}
+        ${editing ? `<p class="mx-2 mb-2 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
+        <div id="gw-page" class="relative mb-6">
+          <div id="gw-stack" class="flex flex-wrap items-start">${parts.map((x) => x[1]).join("")}</div>
+          <div id="gw-float" class="pointer-events-none absolute inset-0 z-10 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g)).join("")}</div>
+        </div>
+      </div>`;
+    }
 
     function draw() {
       clearInterval(clockTimer);
@@ -538,28 +2240,61 @@ window.GWHome = (function () {
         if (it.kind === "link") return linkTile(links.find((l) => l.id === it.id)).replace('class="gw-item', at + ' class="gw-item');
         return widgetTile(widgets.find((w) => w.id === it.id), p);
       };
-      root.innerHTML = `
-        ${uninitialized ? `<div class="mb-4 rounded-2xl bg-white/70 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">${esc(t("home.previewUninitialized"))}</div>` : ""}
-        ${boardHtml()}
-        ${editing ? `<p class="mb-3 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
-        <div id="gw-grid" data-cols="${P.n}" class="${editing ? "gw-editing" : ""} relative grid gap-x-2 gap-y-4 [grid-auto-rows:5.25rem] sm:[grid-auto-rows:5.75rem]"
+      // 区块版：Notice Board 下面是各 Business 区块和「My Home」（自由摆放：App、小工具、文件夹、连结），顺序可以拖拉调整
+      const showGrid = !sectionsOn || items.length > 0 || editing || !!sheet;
+      const gridHtml = showGrid
+        ? `<div id="gw-grid" data-cols="${P.n}" class="${editing ? "gw-editing" : ""} relative grid gap-x-2 gap-y-4 [grid-auto-rows:5.25rem] sm:[grid-auto-rows:5.75rem]"
              style="grid-template-columns:repeat(${P.n},minmax(0,1fr));grid-template-rows:repeat(${Math.max(rows, 1)},var(--gw-row,5.25rem))">
           ${items.map(tile).join("")}
           <div data-drop-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div>
-        </div>
-        ${items.length === 0 ? `<div class="${cls.empty} mt-2 bg-white/60 dark:bg-slate-900/40">${esc(data.modules.length ? t("fab.emptyHome") : t("home.noModules"))}</div>` : ""}
+        </div>`
+        : "";
+      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || editing || !!sheet) : "";
+      root.innerHTML = `
+        ${uninitialized ? `<div class="mb-4 rounded-2xl bg-white/70 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">${esc(t("home.previewUninitialized"))}</div>` : ""}
+        ${sectionsOn ? stackHtml : boardHtml()}
+        ${editing && !sectionsOn ? `<p class="mb-3 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
+        ${sectionsOn ? "" : gridHtml}
+        ${items.length === 0 && !sectionsOn ? `<div class="${cls.empty} mt-2 bg-white/60 dark:bg-slate-900/40">${esc(data.modules.length ? t("fab.emptyHome") : t("home.noModules"))}</div>` : ""}
         ${
           sheet
-            ? `<aside class="gw-sheet fixed inset-x-0 bottom-0 z-50 max-h-[62vh] overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-4 shadow-2xl sm:inset-x-auto sm:top-20 sm:right-4 sm:bottom-4 sm:max-h-none sm:w-96 sm:rounded-3xl dark:border-slate-800 dark:bg-slate-900">${sheet === "apps" ? appsSheet() : widgetsSheet()}</aside>`
+            ? `<aside class="gw-sheet fixed inset-x-0 bottom-0 z-50 max-h-[62vh] overflow-y-auto rounded-t-3xl border border-white/60 bg-white/75 p-4 shadow-2xl backdrop-blur-2xl sm:inset-x-auto sm:top-20 sm:right-4 sm:bottom-4 sm:max-h-none sm:w-96 sm:rounded-3xl dark:border-white/10 dark:bg-slate-900/75">${sheet === "apps" ? appsSheet() : widgetsSheet()}</aside>`
             : ""
         }
         ${fabHtml()}`;
       refreshIcons();
+      if (sectionsOn) {
+        root.classList.toggle("gw-jiggle", editing);
+        lastGeo = geoSig();
+        fitBoard();
+        settlePage(false);
+      }
+      const coList = $("[data-co-list]", root);
+      if (coList && window.Sortable) {
+        Sortable.create(coList, {
+          handle: "[data-co-grip]",
+          draggable: "[data-co-row]",
+          animation: 150,
+          ghostClass: "opacity-40",
+          onEnd: () => {
+            const gid = coList.dataset.coList;
+            companyOrder.set(gid, $$("[data-co-row]", coList).map((x) => x.dataset.coRow));
+            lastDragEnd = Date.now();
+            draw();
+            const w = board();
+            if (!w) return;
+            w.config = { ...(w.config || {}), companyOrder: Object.fromEntries(companyOrder) };
+            sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+          },
+        });
+      }
+      if ($("[data-weather]", root)) loadWeather();
+      aiAfterDraw();
       if ($("[data-clock]", root)) {
         clockTimer = setInterval(() => {
-          const now = new Intl.DateTimeFormat(GW.LOCALE, { timeZone: GW_CONFIG.timeZone, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+          const now = new Intl.DateTimeFormat(GW.LOCALE, { timeZone: GW_CONFIG.timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date());
           $$("[data-clock]", root).forEach((el) => (el.textContent = now));
-        }, 15000);
+        }, 1000);
       }
     }
     // 栏数随视窗宽度变（手机 4、平板 6、电脑 8）
@@ -604,7 +2339,7 @@ window.GWHome = (function () {
         const key = [...hits][0];
         const [kind, id] = key.split(":");
         const p = P.pos.get(key);
-        if (kind === "folder" && (drag.kind === "app" || drag.kind === "lib")) action = { type: "folder", fid: id };
+        if (kind === "folder" && (drag.kind === "app" || drag.kind === "lib" || drag.kind === "link")) action = { type: "folder", fid: id };
         else if (drag.w === 1 && drag.h === 1 && p.w === 1 && p.h === 1 && drag.kind !== "lib") action = { type: "swap", kind, id, theirSlot: p.slot, mySlot: drag.slot };
       }
       return { c, r, g, action };
@@ -680,7 +2415,7 @@ window.GWHome = (function () {
         draw();
         return saving;
       }
-      if (a.type === "folder") return moveIntoFolder(d.id, a.fid);
+      if (a.type === "folder") return d.kind === "link" ? moveLinkToFolder(d.id, a.fid) : moveIntoFolder(d.id, a.fid);
       if (a.type === "swap") {
         const saving = Promise.all([saveSlot(d.kind, d.id, a.theirSlot), saveSlot(a.kind, a.id, a.mySlot)]);
         draw();
@@ -688,10 +2423,41 @@ window.GWHome = (function () {
       }
       draw();
     }
+    // Notice Board 下缘：按住往上 / 往下拖调高度，放开时记住
+    root.addEventListener("pointerdown", (e) => {
+      const grab = e.target.closest("[data-board-resize]");
+      if (!grab || e.button !== 0) return;
+      const el = grab.closest(".gw-pinned");
+      const startY = e.clientY;
+      const startH = el.getBoundingClientRect().height;
+      let h = startH;
+      e.preventDefault();
+      document.body.classList.add("gw-dragging");
+      const move = (ev) => {
+        h = Math.max(boardMinHeight(), Math.min(Math.max(720, boardMinHeight()), startH + ev.clientY - startY));
+        el.style.height = h + "px";
+        el.classList.remove("h-[13rem]", "h-[22rem]");
+      };
+      const up = async () => {
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+        removeEventListener("pointercancel", up);
+        document.body.classList.remove("gw-dragging");
+        lastDragEnd = Date.now();
+        const w = board();
+        if (!w) return;
+        w.config = { ...(w.config || {}), height: Math.round(h) };
+        const { error } = await sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id);
+        if (error) toast(t("home.saveFailed"));
+      };
+      addEventListener("pointermove", move);
+      addEventListener("pointerup", up);
+      addEventListener("pointercancel", up);
+    });
     // 长按（手机）或拖动（滑鼠）开始
     let press = null;
     root.addEventListener("pointerdown", (e) => {
-      if (readOnly || drag || e.button !== 0) return;
+      if (readOnly || sectionsOn || drag || e.button !== 0) return;
       const el = e.target.closest("#gw-grid > .gw-item, .gw-sheet-apps [data-lib]:not(.gw-added)");
       if (!el || e.target.closest(".no-drag")) return;
       const touch = e.pointerType !== "mouse";
@@ -718,8 +2484,11 @@ window.GWHome = (function () {
 
     // ------------------------------------------------------------ App 选单 / 文件夹
     // 个人连结图示：名称、网址、图示
-    function linkDialog(link) {
+    // o.folderId：直接建在这个文件夹里；o.onSaved：存好之后叫
+    function linkDialog(link, o) {
       let chosen = link ? link.icon : "link";
+      let color = link ? link.color || "" : "";
+      let photo = link ? link.image_url || null : null;
       const dlg = modal(
         link ? t("home.editLink") : t("fab.addLink"),
         `<form class="space-y-4">
@@ -729,6 +2498,15 @@ window.GWHome = (function () {
           <div>
             <p class="mb-1.5 ${cls.label}">${esc(t("home.linkIcon"))}</p>
             <div class="flex flex-wrap gap-1.5">${["link", ...Object.keys(GW.MODULE_ICONS)].filter((v, i, a) => a.indexOf(v) === i).map((k) => `<button type="button" data-pick-icon="${k}" class="flex size-9 items-center justify-center rounded-lg border"></button>`).join("")}</div>
+          </div>
+          <div>
+            <p class="mb-1.5 ${cls.label}">${esc(t("home.linkColor"))}</p>
+            <div class="flex flex-wrap gap-1.5">${["", ...Object.keys(PALETTE)].map((c) => `<button type="button" data-pick-color="${c}" title="${esc(c || t("home.iconAuto"))}" class="size-7 rounded-full border-2 shadow ${c ? "" : "bg-gradient-to-br from-slate-300 to-slate-500"}" style="${c ? `background:${PALETTE[c][1]}` : ""}"></button>`).join("")}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span data-photo-preview></span>
+            <label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(t("home.linkPhoto"))}<input type="file" data-photo accept="image/*" class="hidden"></label>
+            <button type="button" data-nophoto class="${btn("ghost", "sm")} hidden text-red-600 dark:text-red-400">${icon("image-off", "size-4")} ${esc(t("home.linkRemovePhoto"))}</button>
           </div>
           <div class="flex justify-end gap-2">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
@@ -741,14 +2519,38 @@ window.GWHome = (function () {
           b.className = `flex size-9 items-center justify-center rounded-lg border ${b.dataset.pickIcon === chosen ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-700/20 dark:text-brand-100" : "border-slate-200 text-slate-500 dark:border-slate-700"}`;
           b.innerHTML = b.dataset.pickIcon === "link" ? icon("link", "size-4") : moduleIcon(b.dataset.pickIcon, "size-4");
         });
+      const paintExtra = () => {
+        $$("[data-pick-color]", dlg.el).forEach((b) => {
+          b.classList.toggle("border-slate-900", b.dataset.pickColor === color);
+          b.classList.toggle("dark:border-white", b.dataset.pickColor === color);
+          b.classList.toggle("border-white", b.dataset.pickColor !== color);
+        });
+        $("[data-photo-preview]", dlg.el).innerHTML = photo ? `<img src="${esc(photo)}" alt="" class="size-9 rounded-lg object-cover ring-1 ring-slate-200">` : "";
+        $("[data-nophoto]", dlg.el).classList.toggle("hidden", !photo);
+      };
       paint();
+      paintExtra();
       refreshIcons();
       $$("[data-pick-icon]", dlg.el).forEach((b) => b.addEventListener("click", () => ((chosen = b.dataset.pickIcon), paint(), refreshIcons())));
+      $$("[data-pick-color]", dlg.el).forEach((b) => b.addEventListener("click", () => ((color = b.dataset.pickColor), paintExtra())));
+      $("[data-nophoto]", dlg.el).addEventListener("click", () => ((photo = null), paintExtra()));
+      // 自己的照片当图示：先传到 link-icons，按 Save 才记到连结上
+      $("[data-photo]", dlg.el).addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) return toast(t("home.linkPhotoTooBig"));
+        const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
+        const path = `${data.profile.id}/${crypto.randomUUID()}.${ext}`; // 随机档名：猜不到别人的图片网址
+        const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type, upsert: true });
+        if (up.error) return toast(t("home.saveFailed") + " (" + (up.error.message || "") + ")");
+        photo = sb.storage.from("link-icons").getPublicUrl(path).data.publicUrl;
+        paintExtra();
+      });
       $("[data-cancel]", dlg.el).onclick = dlg.close;
       $("form", dlg.el).addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
-        const row = { name: f.name.value.trim(), url: f.url.value.trim(), icon: chosen };
+        const row = { name: f.name.value.trim(), url: f.url.value.trim(), icon: chosen, color: color || null, image_url: photo };
         if (!/^https?:\/\//i.test(row.url)) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.badUrl")));
         if (link) {
           const { error } = await sb.from("gw_user_links").update(row).eq("id", link.id);
@@ -757,7 +2559,7 @@ window.GWHome = (function () {
         } else {
           const { data: created, error } = await sb
             .from("gw_user_links")
-            .insert({ ...row, user_id: data.profile.id, sort_order: nextSlot(1, 1) })
+            .insert({ ...row, user_id: (o && o.ownerId) || data.profile.id, sort_order: nextSlot(1, 1), ...(o && o.folderId ? { folder_id: o.folderId } : {}) })
             .select()
             .single();
           if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.saveFailed")));
@@ -765,6 +2567,7 @@ window.GWHome = (function () {
         }
         dlg.close();
         draw();
+        if (o && o.onSaved) o.onSaved();
       });
     }
 
@@ -783,12 +2586,14 @@ window.GWHome = (function () {
           <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("home.moveTo"))}</span>
             <select data-move class="${cls.input}">
               <option value="">${esc(t("fab.homeScreen"))}</option>
-              ${folders.map((f) => `<option value="${f.id}" ${current === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}
+              ${folders.filter((f) => !f.shared_by).map((f) => `<option value="${f.id}" ${current === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}
             </select>
           </label>
+          <button data-colors class="${btn("secondary")} w-full">${icon("palette")} ${esc(t("fab.iconColors"))}</button>
           <button data-remove class="${btn("ghost")} w-full text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(t("home.removeFromHome"))}</button>
         </div>`,
       );
+      $("[data-colors]", dlg.el).onclick = () => (dlg.close(), iconColorsDialog());
       $("[data-move]", dlg.el).addEventListener("change", async (e) => {
         const folderId = e.target.value || null;
         const order = folderId ? folderApps(folderId).length + 1 : nextSlot(1, 1);
@@ -800,42 +2605,172 @@ window.GWHome = (function () {
       $("[data-remove]", dlg.el).onclick = () => (dlg.close(), removeApp(id));
     }
 
-    // 文件夹：像 iPhone 一样放大成一个浮动窗，名字在上面
+    // 文件夹：像 iPhone 一样放大成一个浮动窗，名字在上面（长按名字可以改名）
+    /* mode = "grid"（图示格子）| "map"（心智图：视窗放大，右边一排工具；还是浮动窗，不换页）
+       右上角小小的「两个人」= 分享给谁（分享用的文件夹、拥有者才有）；分享给我的文件夹右上角是淡蓝的「两个人」。
+       分享给我的：不能移出里面的东西、不能改名。 */
+    // 文件夹标签：放在哪个 Business / Company 的区块
+    function folderTagChip(f, canChange) {
+      if (!sectionsOn) return "";
+      const g = f.tag_group_id && S.groups.find((x) => x.id === f.tag_group_id);
+      const co = f.tag_company_id && S.companies.find((x) => x.id === f.tag_company_id);
+      const label = g ? g.name + (co ? " · " + (co.short_name || co.code || co.name) : "") + " · " + t(f.tag_role === "edit" ? "home.shareRoleEdit" : "home.shareRoleView") : t("home.folderTagAdd");
+      if (!g && !canChange) return "";
+      const cls_ = "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium shadow-sm backdrop-blur " + (g ? "bg-white/85 text-slate-700 dark:bg-slate-800/85 dark:text-slate-200" : "border border-dashed border-white/70 bg-white/20 text-white");
+      return canChange
+        ? `<button type="button" data-folder-tag class="${cls_} hover:bg-white">${icon(g ? "briefcase-business" : "tag", "size-3.5")}${esc(label)}${g ? icon("pencil", "size-3 opacity-60") : ""}</button>`
+        : `<span class="${cls_}">${icon("briefcase-business", "size-3.5")}${esc(label)}</span>`;
+    }
+    function folderTagDialog(f, done) {
+      const coOpts = (gid) =>
+        `<option value="">${esc(t("home.folderTagAllCo"))}</option>` + (gid ? companiesOf(gid).map((c) => `<option value="${c.id}" ${f.tag_company_id === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("") : "");
+      const dlg = modal(
+        t("home.folderTagTitle"),
+        `<form class="space-y-4">
+          <p class="text-sm text-slate-500">${esc(t("home.folderTagHint"))}</p>
+          <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("home.folderTagBusiness"))}</span>
+            <select name="g" class="${cls.input}"><option value="">${esc(t("home.folderTagNone"))}</option>${S.groups.map((g) => `<option value="${g.id}" ${f.tag_group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>
+          </label>
+          <label data-co-wrap class="block space-y-1.5 ${f.tag_group_id ? "" : "hidden"}"><span class="${cls.label}">${esc(t("home.folderTagCompany"))}</span>
+            <select name="c" class="${cls.input}">${coOpts(f.tag_group_id)}</select>
+          </label>
+          <label data-role-wrap class="block space-y-1.5 ${f.tag_group_id ? "" : "hidden"}"><span class="${cls.label}">${esc(t("home.shareRole"))}</span>
+            <select name="r" class="${cls.input}">
+              <option value="view" ${f.tag_role !== "edit" ? "selected" : ""}>${esc(t("home.shareRoleView"))}</option>
+              <option value="edit" ${f.tag_role === "edit" ? "selected" : ""}>${esc(t("home.shareRoleEdit"))}</option>
+            </select>
+          </label>
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </form>`,
+      );
+      const form = $("form", dlg.el);
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      form.g.addEventListener("change", () => {
+        form.c.innerHTML = coOpts(form.g.value);
+        $("[data-co-wrap]", dlg.el).classList.toggle("hidden", !form.g.value);
+        $("[data-role-wrap]", dlg.el).classList.toggle("hidden", !form.g.value);
+      });
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        // 分享给 Business：那个 Business（或 Company）的人都看得到；文件夹也就变成分享用的
+        const row = { tag_group_id: form.g.value || null, tag_company_id: (form.g.value && form.c.value) || null, tag_role: form.r.value || "view", ...(form.g.value ? { is_shared: true } : {}) };
+        let { error } = await sb.from("gw_user_folders").update(row).eq("id", f.id);
+        if (error && /tag_role/.test(error.message || "")) {
+          delete row.tag_role; // 资料库还没加 Viewer / Editor：先只放区块
+          ({ error } = await sb.from("gw_user_folders").update(row).eq("id", f.id));
+          if (!error) toast(t("home.folderTagNeedsDb"));
+        }
+        if (error) return toast(/tag_/.test(error.message || "") ? t("home.folderTagNeedsDb") : t("home.saveFailed") + " (" + (error.message || "") + ")");
+        Object.assign(f, row);
+        dlg.close();
+        draw();
+        if (done) done();
+      });
+    }
+
     function openFolder(fid) {
       const f = folders.find((x) => x.id === fid);
-      const ids = folderApps(fid);
+      if (!f) return;
+      const mineF = !f.shared_by;
+      const canOut = !readOnly && mineF;
+      const canRename = mineF && !readOnly;
       const wrap = document.createElement("div");
       wrap.setAttribute("role", "dialog");
-      wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-6 backdrop-blur-md";
+      wrap.className = "fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md sm:p-6";
+      const pill = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon(ic, "size-4")} ${esc(label)}</button>`;
       wrap.innerHTML = `
-        <h2 class="mb-5 max-w-full truncate px-4 text-3xl font-bold text-white drop-shadow sm:text-4xl">${esc(f.name)}</h2>
-        <div data-win class="w-full max-w-md rounded-[2rem] border border-white/60 bg-white/75 p-6 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/75">
-          ${
-            ids.length
-              ? `<div class="grid grid-cols-3 gap-5 sm:grid-cols-4">${ids
-                  .map(
-                    (id) => `<div class="relative flex flex-col items-center gap-1.5">
-                      <button type="button" data-open="${id}" class="flex flex-col items-center gap-1.5">${appIcon(modules.get(id), "size-14 sm:size-16")}<span class="w-20 truncate text-center text-xs font-medium text-slate-700 dark:text-slate-200">${esc(modules.get(id).name)}</span></button>
-                      ${readOnly ? "" : `<button type="button" data-out="${id}" title="${esc(t("fab.moveOut"))}" aria-label="${esc(t("fab.moveOut"))}" class="absolute -top-1 right-1 flex size-6 items-center justify-center rounded-full bg-slate-700/90 text-white shadow ring-2 ring-white dark:ring-slate-900">${icon("arrow-up-right", "size-3.5")}</button>`}
-                    </div>`,
-                  )
-                  .join("")}</div>`
-              : `<p class="py-6 text-center text-sm text-slate-500">${esc(t("fab.emptyFolder"))}</p>`
-          }
+        <div class="mb-4 flex max-w-full items-center gap-2 px-4">
+          <h2 data-title class="min-w-0 truncate text-3xl font-bold text-white drop-shadow outline-none select-none sm:text-4xl ${canRename ? "cursor-pointer" : ""}" ${canRename ? `title="${esc(t("home.renameHint"))}"` : ""} style="touch-action:manipulation">${esc(f.name)}</h2>
         </div>
-        ${readOnly ? "" : `<button type="button" data-rename class="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 shadow backdrop-blur dark:bg-slate-800/80 dark:text-slate-200">${icon("pencil", "size-4")} ${esc(t("home.editFolder"))}</button>`}`;
+        <div data-tag-row class="-mt-2 mb-4 flex justify-center">${folderTagChip(f, canRename)}</div>
+        <div data-win class="relative w-full max-w-5xl rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
+          ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
+          ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
+          <div data-shelf-host></div>
+        </div>`;
       document.body.appendChild(wrap);
       refreshIcons();
-      const close = () => wrap.remove();
-      const onKey = (e) => e.key === "Escape" && (close(), document.removeEventListener("keydown", onKey));
+      const close = () => {
+        wrap.remove();
+        document.removeEventListener("keydown", onKey);
+      };
+      // Esc：上面还有弹窗（分享名单、加连结）就不动
+      const onKey = (e) => {
+        if (e.key !== "Escape" || document.querySelector(".gw-modal")) return;
+        close();
+      };
       document.addEventListener("keydown", onKey);
+      const canEditF = !readOnly && (mineF || f.share_role === "edit");
+      mountShelves(f, $("[data-shelf-host]", wrap), { canEdit: canEditF, isOwner: canOut, reopen: () => (close(), openFolder(fid)) });
+      // 长按名字 → 名字原地变成可以打字；按 ✓、Enter 或点别的地方就存，Esc 取消
+      if (canRename) {
+        const h = $("[data-title]", wrap);
+        let timer = null, renaming = false;
+        const stop = () => (clearTimeout(timer), (timer = null));
+        const finish = async (commit) => {
+          if (!renaming) return;
+          renaming = false;
+          h.contentEditable = "false";
+          h.classList.remove("rounded-xl", "bg-white/20", "ring-2", "ring-white/80", "px-2");
+          const ok = $("[data-rename-ok]", wrap);
+          if (ok) ok.remove();
+          const name = (h.innerText || "").trim().slice(0, 40);
+          if (!commit || !name || name === f.name) return (h.textContent = f.name);
+          h.textContent = name;
+          const { error } = await sb.from("gw_user_folders").update({ name }).eq("id", f.id);
+          if (error) return ((h.textContent = f.name), toast(t("home.saveFailed")));
+          f.name = name;
+          draw();
+        };
+        const start = () => {
+          if (renaming) return;
+          renaming = true;
+          h.contentEditable = "true";
+          h.classList.add("rounded-xl", "bg-white/20", "ring-2", "ring-white/80", "px-2");
+          h.insertAdjacentHTML("afterend", `<button type="button" data-rename-ok aria-label="${esc(t("home.save"))}" class="flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-slate-900 shadow">${icon("check", "size-5")}</button>`);
+          refreshIcons();
+          h.focus();
+          const r = document.createRange();
+          r.selectNodeContents(h);
+          const s0 = getSelection();
+          s0.removeAllRanges();
+          s0.addRange(r);
+        };
+        h.addEventListener("pointerdown", () => {
+          if (!renaming) timer = setTimeout(() => ((timer = null), start()), 600);
+        });
+        ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => h.addEventListener(ev, stop));
+        h.addEventListener("contextmenu", (e) => e.preventDefault());
+        h.addEventListener("keydown", (e) => {
+          if (!renaming) return;
+          e.stopPropagation();
+          if (e.key === "Enter") (e.preventDefault(), finish(true));
+          if (e.key === "Escape") (e.preventDefault(), finish(false));
+        });
+        h.addEventListener("blur", () => setTimeout(() => renaming && finish(true), 150));
+        wrap.addEventListener("click", (e) => e.target.closest("[data-rename-ok]") && finish(true));
+      }
       wrap.addEventListener("click", async (e) => {
+        if (!e.target.isConnected) return; // 里面的工具刚重画过（图示换掉了）：不是点外面
         const b = e.target.closest("button");
         if (!b) {
-          if (!e.target.closest("[data-win]")) close();
+          if (!e.target.closest("[data-win]") && !e.target.closest("[data-title]")) close();
           return;
         }
+        if (!wrap.contains(b) || "renameOk" in b.dataset) return;
         if (b.dataset.open) return close(), open(b.dataset.open);
+        if (b.dataset.openLink) {
+          const l = links.find((x) => x.id === b.dataset.openLink);
+          return l && window.open(l.url, "_blank", "noopener,noreferrer");
+        }
+        if (b.dataset.outLink) {
+          close();
+          await moveLinkToFolder(b.dataset.outLink, null);
+          return openFolder(fid);
+        }
         if (b.dataset.out) {
           const id = b.dataset.out;
           const slot = nextSlot(1, 1);
@@ -845,10 +2780,312 @@ window.GWHome = (function () {
           await saveApps([{ module_id: id, folder_id: null, sort_order: slot }]);
           return openFolder(fid);
         }
-        if ("rename" in b.dataset) {
-          close();
-          folderDialog(f);
+        if ("share" in b.dataset) return sharePicker(f, () => (($("[data-tag-row]", wrap).innerHTML = folderTagChip(f, canRename)), refreshIcons()));
+        if ("folderTag" in b.dataset) return folderTagDialog(f, () => ($("[data-tag-row]", wrap).innerHTML = folderTagChip(f, canRename), refreshIcons()));
+      });
+    }
+
+    // ------------------------------------------------------------ 文件夹「柜子」看法
+    /* 一个文件夹 = 一个柜子，里面好几个标题（Section），每个标题下面一条条连结 / App（↳ 1.1、1.2…，像总表）。
+       电脑上标题排成两栏。能改的人（拥有者、被分享成 Can edit 的人）：
+         - 把连结拖到某个标题上（标题会亮起来）→ 放到那个标题下面
+         - 也可以拖到列表里任何位置排顺序；拖标题左边的握把排标题
+         - 按 Edit 改标题名字 / 删标题
+       拥有者另外可以加连结、改连结（名字、网址、图示、颜色、照片）、把东西移出文件夹。
+       存在 gw_user_folders.canvas.shelves = [{ id, name, items: ["a:模块id" | "l:连结id"] }]；
+       还没放到标题下的在最下面「Not in a section」，顺序记在 canvas.loose。 */
+    function mountShelves(f, host, hooks) {
+      const canEdit = !!hooks.canEdit, isOwner = !!hooks.isOwner;
+      const uid = () => Math.random().toString(36).slice(2, 10);
+      let editMode = false;
+      const cv0 = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
+      let shelves = (Array.isArray(cv0.shelves) ? cv0.shelves : []).filter((x) => x && typeof x === "object").map((x) => ({ id: /^[A-Za-z0-9_-]{1,40}$/.test(String(x.id || "")) ? String(x.id) : uid(), name: String(x.name || "").slice(0, 40), items: Array.isArray(x.items) ? x.items.map(String) : [] })); // id 只收字母数字（文件夹内容别人也能改：不能让奇怪的字进到画面）
+      let looseOrder = Array.isArray(cv0.loose) ? cv0.loose.map(String) : [];
+      const allKeys = () => [...folderApps(f.id).map((id) => "a:" + id), ...folderLinks(f.id).map((l) => "l:" + l.id)];
+      // 已经不在文件夹的拿掉；同一个东西只放一个标题；剩下的 = 还没分
+      function loose() {
+        const have = new Set(allKeys());
+        const seen = new Set();
+        shelves.forEach((x) => (x.items = x.items.filter((k) => have.has(k) && !seen.has(k) && seen.add(k))));
+        const rest = allKeys().filter((k) => !seen.has(k));
+        const at = (k) => { const i = looseOrder.indexOf(k); return i < 0 ? 1e6 : i; };
+        return rest.map((k, i) => [k, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map((x) => x[0]);
+      }
+      const info = (k) => {
+        const id = k.slice(2);
+        if (k[0] === "a") {
+          const m = modules.get(id);
+          return { attr: `data-open="${id}"`, iconHtml: appIcon(m, "size-7"), name: m.name, title: m.description || m.name, sub: t("home.shelfApp") };
         }
+        const l = links.find((x) => x.id === id);
+        let site = "";
+        try { site = new URL(l.url).host.replace(/^www\./, ""); } catch (e) { site = l.url; }
+        return { attr: `data-open-link="${l.id}"`, iconHtml: appIcon({ code: l.name, icon: l.icon, image_url: l.image_url, color: l.color }, "size-7"), name: l.name, title: l.url, sub: site };
+      };
+      const mini = (attr, ic, label, extra) => `<button type="button" data-badge ${attr} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 shrink-0 items-center justify-center rounded-full shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 ${extra}">${icon(ic, "size-3.5")}</button>`;
+      // 编辑中每一条右边的小钮：连结 → 改、删（拥有者和 Editor）；移出文件夹 → 只有拥有者
+      const badges = (k) => {
+        const id = k.slice(2);
+        const link = k[0] === "l";
+        return (
+          (link ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200") : "") +
+          (isOwner ? mini(link ? `data-out-link="${id}"` : `data-out="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700 text-white") : "") +
+          (link ? mini(`data-shelf-del-link="${id}"`, "trash-2", t("home.deleteLink"), "bg-white text-red-600 dark:bg-slate-800 dark:text-red-400") : "")
+        );
+      };
+      // 一条：↳ 编号 图示 名字（下面小字是网站）
+      const row = (k, num) => {
+        const x = info(k);
+        return `<div data-item="${k}" class="flex items-center gap-2 py-1.5 pr-2 pl-3 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}">
+          <span class="flex shrink-0 items-center gap-1 text-slate-300 dark:text-slate-600">${icon("corner-down-right", "size-4")}<span class="w-7 text-[11px] text-slate-400 tabular-nums">${num}</span></span>
+          <button type="button" ${x.attr} title="${esc(x.title)}" class="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-0.5 text-left">${x.iconHtml}<span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-800 group-hover:text-sky-700 group-hover:underline dark:text-slate-100 dark:group-hover:text-sky-300">${esc(x.name)}</span><span class="block truncate text-[11px] text-slate-400">${esc(x.sub)}</span></span></button>
+          ${editMode && canEdit ? `<span class="flex shrink-0 gap-1">${badges(k)}</span>` : ""}
+        </div>`;
+      };
+      const emptyHint = (txt) => `<p data-empty class="px-3 py-3 text-center text-xs text-slate-400">${esc(txt)}</p>`;
+      const card = (sh, i) => {
+        const n = sh.items.length;
+        return `<section data-shelf="${esc(sh.id)}" class="overflow-hidden rounded-2xl border border-white/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-800/70">
+          <header data-shelf-head="${esc(sh.id)}" class="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50/90 px-3 py-2 transition dark:border-white/10 dark:bg-slate-800">
+            ${canEdit ? `<span data-shelf-grip title="${esc(t("home.dragToSort"))}" class="-ml-1 flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/60 hover:text-slate-600 active:cursor-grabbing dark:hover:bg-white/10">${icon("grip-vertical", "size-4")}</span>` : ""}
+            <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-slate-900 text-[11px] font-bold text-white dark:bg-white dark:text-slate-900">${i + 1}</span>
+            ${
+              editMode
+                ? `<input data-shelf-name="${esc(sh.id)}" value="${esc(sh.name)}" maxlength="40" placeholder="${esc(t("home.shelfName"))}" class="h-8 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm font-semibold outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:focus:border-white">`
+                : `<h3 class="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(sh.name || t("home.shelfNew"))}</h3>`
+            }
+            <span class="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200 dark:bg-white/10 dark:text-slate-300 dark:ring-white/10">${n}</span>
+            ${editMode ? `<button type="button" data-shelf-del="${esc(sh.id)}" title="${esc(t("home.shelfDelete"))}" aria-label="${esc(t("home.shelfDelete"))}" class="flex size-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
+          </header>
+          <div data-shelf-items="${esc(sh.id)}" class="min-h-[2.75rem] py-1">${sh.items.map((k, j) => row(k, `${i + 1}.${j + 1}`)).join("")}${n ? "" : emptyHint(canEdit ? t("home.shelfDropHere") : t("home.shelfEmpty"))}</div>
+        </section>`;
+      };
+      function render() {
+        const rest = loose();
+        const tb = (attr, ic, label, primary) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm ${primary ? "bg-slate-900 text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"}">${icon(ic, "size-4")}${esc(label)}</button>`;
+        const showLoose = rest.length || !shelves.length || editMode;
+        const empty = !allKeys().length;
+        const tools = [canEdit ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : "", canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : "", canEdit && (shelves.length || !empty) ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""].join("");
+        host.innerHTML = `
+          ${tools ? `<div class="mb-3 flex flex-wrap items-center justify-end gap-2 ${f.is_shared || f.shared_by ? "pr-10" : ""}">${tools}</div>` : `<div class="h-6"></div>`}
+          <div class="gw-noscroll -mx-1 max-h-[68vh] space-y-3 overflow-y-auto px-1 pb-1">
+            ${!shelves.length && canEdit && !empty ? `<p class="mb-3 flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">${icon("lightbulb", "size-4 shrink-0")}${esc(t("home.shelfHint"))}</p>` : ""}
+            ${shelves.length ? shelvesHtml() : ""}
+            ${
+              showLoose
+                ? `<section class="overflow-hidden rounded-2xl border border-dashed border-slate-300/80 bg-white/50 dark:border-white/15 dark:bg-white/5">
+                    ${shelves.length ? `<header class="px-3 pt-2 text-xs font-semibold text-slate-500">${esc(t("home.shelfUnsorted"))}</header>` : ""}
+                    <div data-shelf-items="_" class="min-h-[2.75rem] py-1">${rest.map((k, j) => row(k, shelves.length ? "" : String(j + 1))).join("")}${rest.length ? "" : emptyHint(empty ? t("home.shelfFolderEmpty") : t("home.shelfDropHere"))}</div>
+                  </section>`
+                : ""
+            }
+          </div>`;
+        refreshIcons();
+        if (!canEdit || !window.Sortable) return;
+        const group = "shelf-" + f.id;
+        $$("[data-shelf-items]", host).forEach((el) =>
+          Sortable.create(el, { group, draggable: "[data-item]", filter: "[data-badge], input", preventOnFilter: false, animation: 150, delay: 180, delayOnTouchOnly: true, ghostClass: "opacity-40", onStart: dragStart, onEnd: dragEnd }),
+        );
+        $$("[data-shelf-col]", host).forEach((col) =>
+          Sortable.create(col, { group: "shelfcol-" + f.id, handle: "[data-shelf-grip]", draggable: "[data-shelf]", animation: 150, ghostClass: "opacity-40", onEnd: () => collect() }),
+        );
+      }
+      // 电脑 / 平板：两栏固定（1 | 2、3 | 4…，拖的时候不会乱跳）；手机：一栏
+      const wide = () => matchMedia("(min-width: 768px)").matches;
+      let wasWide = wide();
+      const onResize = () => {
+        if (!document.body.contains(host)) return removeEventListener("resize", onResize);
+        if (wide() !== wasWide) ((wasWide = wide()), render());
+      };
+      addEventListener("resize", onResize);
+      function shelvesHtml() {
+        const col = (list) => `<div data-shelf-col class="space-y-3">${list.map(([sh, i]) => card(sh, i)).join("")}</div>`;
+        const all = shelves.map((sh, i) => [sh, i]);
+        if (!wide() || shelves.length < 2) return col(all);
+        return `<div class="grid grid-cols-2 items-start gap-3">${col(all.filter((x) => x[1] % 2 === 0))}${col(all.filter((x) => x[1] % 2 === 1))}</div>`;
+      }
+      // 拖着连结经过标题：标题亮起来；放开就放到那个标题下面（最后一条）
+      const HL = ["bg-sky-100", "ring-2", "ring-sky-400", "ring-inset", "dark:bg-sky-900/40"];
+      let overHead = null;
+      const track = (x, y) => {
+        const el = document.elementFromPoint(x, y);
+        const h = el && el.closest("[data-shelf-head]");
+        if (h === overHead) return;
+        if (overHead) overHead.classList.remove(...HL);
+        overHead = h && host.contains(h) ? h : null;
+        if (overHead) overHead.classList.add(...HL);
+      };
+      const onDragOver = (e) => track(e.clientX, e.clientY);
+      const onPtr = (e) => {
+        const p = e.touches ? e.touches[0] : e;
+        if (p) track(p.clientX, p.clientY);
+      };
+      function dragStart() {
+        overHead = null;
+        document.addEventListener("dragover", onDragOver, true);
+        document.addEventListener("pointermove", onPtr, true);
+        document.addEventListener("touchmove", onPtr, { capture: true, passive: true });
+      }
+      function dragEnd(evt) {
+        document.removeEventListener("dragover", onDragOver, true);
+        document.removeEventListener("pointermove", onPtr, true);
+        document.removeEventListener("touchmove", onPtr, { capture: true });
+        // 放开那一下的位置再看一次（有的浏览器最后一下 dragover 来得慢）
+        const oe = evt.originalEvent;
+        const pt = oe && (oe.changedTouches ? oe.changedTouches[0] : oe);
+        if (pt && (pt.clientX || pt.clientY)) track(pt.clientX, pt.clientY);
+        const target = overHead ? overHead.dataset.shelfHead : null;
+        if (overHead) overHead.classList.remove(...HL);
+        overHead = null;
+        collect(target ? { key: evt.item.dataset.item, to: target } : null);
+      }
+      // 照画面上的样子记下来（放在标题上的再搬到那个标题下面）
+      function collect(drop) {
+        const byId = new Map(shelves.map((x) => [x.id, x]));
+        // 两栏：左右交错读回来（左 1、右 1、左 2、右 2…）
+        const cols = $$("[data-shelf-col]", host).map((c) => $$("[data-shelf]", c));
+        const secs = [];
+        for (let i = 0; i < Math.max(0, ...cols.map((c) => c.length)); i++) cols.forEach((c) => c[i] && secs.push(c[i]));
+        shelves = secs.map((sec) => {
+          const sh = byId.get(sec.dataset.shelf);
+          sh.items = $$("[data-item]", $("[data-shelf-items]", sec)).map((x) => x.dataset.item);
+          return sh;
+        });
+        const lz = $('[data-shelf-items="_"]', host);
+        if (lz) looseOrder = $$("[data-item]", lz).map((x) => x.dataset.item);
+        if (drop) {
+          shelves.forEach((x) => (x.items = x.items.filter((k) => k !== drop.key)));
+          const to = shelves.find((x) => x.id === drop.to);
+          if (to) to.items.push(drop.key);
+        }
+        save();
+        render();
+      }
+      async function save() {
+        const canvas = { ...(f.canvas && typeof f.canvas === "object" ? f.canvas : {}), shelves, loose: looseOrder };
+        delete canvas.nodes;
+        delete canvas.edges;
+        delete canvas.map;
+        const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
+        if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
+        f.canvas = canvas;
+      }
+      host.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b || !host.contains(b)) return;
+        const d = b.dataset;
+        // 新连结记在文件夹拥有者名下（Editor 加的也一样），大家都看得到
+        if ("shelfLink" in d) return linkDialog(null, { folderId: f.id, ownerId: f.shared_by || null, onSaved: hooks.reopen });
+        if (d.shelfDelLink) {
+          const l = links.find((x) => x.id === d.shelfDelLink);
+          if (!l) return;
+          return confirmDialog(t("home.deleteLinkTitle", { name: l.name }), t("home.deleteLinkBody"), t("home.delete"), t("home.cancel")).then(async (ok) => {
+            if (!ok) return;
+            const { error } = await sb.from("gw_user_links").delete().eq("id", l.id);
+            if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
+            links = links.filter((x) => x.id !== l.id);
+            draw();
+            save();
+            render();
+          });
+        }
+        if (d.shelfEditLink) return linkDialog(links.find((x) => x.id === d.shelfEditLink), { onSaved: hooks.reopen });
+        if ("shelfEdit" in d) return ((editMode = !editMode), render());
+        if ("shelfAdd" in d) {
+          const nid = uid();
+          shelves.push({ id: nid, name: t("home.shelfNew") + " " + (shelves.length + 1), items: [] });
+          editMode = true;
+          save();
+          render();
+          const inp = $(`[data-shelf-name="${nid}"]`, host);
+          if (inp) (inp.focus(), inp.select(), inp.scrollIntoView({ block: "nearest" }));
+          return;
+        }
+        if (d.shelfDel) {
+          const sh = shelves.find((x) => x.id === d.shelfDel);
+          return confirmDialog(t("home.shelfDeleteTitle", { name: sh.name || t("home.shelfNew") }), t("home.shelfDeleteBody"), t("home.shelfDelete"), t("home.cancel")).then((ok) => {
+            if (!ok) return;
+            shelves = shelves.filter((x) => x.id !== d.shelfDel);
+            if (!shelves.length) editMode = false;
+            save();
+            render();
+          });
+        }
+      });
+      // 改标题名字：离开输入框或按 Enter 就存
+      host.addEventListener("change", (e) => {
+        const inp = e.target.closest("[data-shelf-name]");
+        if (!inp) return;
+        const sh = shelves.find((x) => x.id === inp.dataset.shelfName);
+        if (!sh) return;
+        sh.name = inp.value.trim().slice(0, 40);
+        save();
+      });
+      host.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.closest("[data-shelf-name]")) (e.preventDefault(), e.target.blur());
+      });
+      render();
+    }
+
+    // 图示颜色：全部一起选（柔和 / 多彩 / 单一颜色），也可以一个一个 App 自己选
+    async function saveIcons() {
+      const w = board();
+      if (!w) return;
+      w.config = { ...(w.config || {}), icons: { v: 2, style: ICON.style, apps: ICON.apps } };
+      const { error } = await sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id);
+      if (error) toast(t("home.saveFailed"));
+    }
+    function iconColorsDialog() {
+      const swatch = (key, on, attr, label) =>
+        `<button type="button" ${attr} aria-label="${esc(label)}" title="${esc(label)}" class="size-8 shrink-0 rounded-full border-2 ${on ? "border-slate-900 dark:border-white" : "border-white dark:border-slate-700"} shadow" style="background:${PALETTE[key][1]}"></button>`;
+      const styleBtn = (key, label, on) => `<button type="button" data-ic-style="${key}" class="rounded-full border px-3 py-1.5 text-sm font-medium ${on ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-700/20 dark:text-brand-100" : "border-slate-300 text-slate-600 dark:border-slate-700 dark:text-slate-300"}">${esc(label)}</button>`;
+      const dlg = modal(t("fab.iconColors"), "", { wide: true });
+      const draw2 = () => {
+        dlg.el.innerHTML = `<div class="space-y-5">
+          <div>
+            <p class="mb-2 ${cls.label}">${esc(t("home.iconAll"))}</p>
+            <div class="flex flex-wrap items-center gap-2">
+              ${styleBtn("glass", t("home.iconGlass"), ICON.style === "glass")}${styleBtn("calm", t("home.iconCalm"), ICON.style === "calm")}${styleBtn("colorful", t("home.iconColorful"), ICON.style === "colorful")}
+              <span class="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700"></span>
+              ${Object.keys(PALETTE).map((k) => swatch(k, ICON.style === k, `data-ic-style="${k}"`, t("home.color." + k))).join("")}
+            </div>
+          </div>
+          <div>
+            <p class="mb-2 ${cls.label}">${esc(t("home.iconEach"))}</p>
+            <div class="max-h-[40vh] space-y-2 overflow-y-auto pr-1">
+              ${data.modules
+                .map(
+                  (m) => `<div class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 p-2.5 dark:border-slate-800">
+                    ${appIcon(m, "size-10")}
+                    <span class="min-w-0 flex-1 basis-28 truncate text-sm font-medium">${esc(m.name)}</span>
+                    <span class="flex flex-wrap items-center gap-1.5">
+                      <button type="button" data-ic-app="${m.id}" data-color="" class="rounded-full border px-2 py-1 text-xs ${ICON.apps[m.id] ? "border-slate-300 text-slate-500 dark:border-slate-700" : "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-700/20 dark:text-brand-100"}">${esc(t("home.iconAuto"))}</button>
+                      ${Object.keys(PALETTE).map((k) => swatch(k, ICON.apps[m.id] === k, `data-ic-app="${m.id}" data-color="${k}"`, t("home.color." + k))).join("")}
+                    </span>
+                  </div>`,
+                )
+                .join("")}
+            </div>
+          </div>
+          <div class="flex justify-end"><button type="button" data-done class="${btn("primary")}">${esc(t("home.save"))}</button></div>
+        </div>`;
+        refreshIcons();
+      };
+      draw2();
+      dlg.el.addEventListener("click", async (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if ("done" in b.dataset) return dlg.close();
+        if (b.dataset.icStyle) {
+          ICON.style = b.dataset.icStyle;
+          ICON.apps = {}; // 选了整体风格，个别设定清掉，从头开始
+        } else if (b.dataset.icApp) {
+          if (b.dataset.color) ICON.apps[b.dataset.icApp] = b.dataset.color;
+          else delete ICON.apps[b.dataset.icApp];
+        } else return;
+        draw2();
+        draw();
+        saveIcons();
       });
     }
 
@@ -911,8 +3148,9 @@ window.GWHome = (function () {
     }
 
     function folderDialog(folder) {
+      if (!folder) return newFolderDialog();
       const dlg = modal(
-        folder ? t("home.editFolder") : t("fab.newFolder"),
+        t("home.editFolder"),
         `<form class="space-y-4">
           <input name="name" maxlength="40" required value="${esc(folder ? folder.name : "")}" placeholder="${esc(t("home.folderName"))}" class="${cls.input}">
           <div class="flex justify-end gap-2">
@@ -945,45 +3183,321 @@ window.GWHome = (function () {
       });
     }
 
+    // 新文件夹：先选 Own use（只有自己看）或 Shared（分享给同 Business 的同事），再取名；分享用的建好就选分享给谁
+    function newFolderDialog() {
+      const choice = (v, ic, title, hint, on) => `<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 has-checked:border-slate-900 has-checked:bg-slate-50 dark:border-slate-700 dark:has-checked:border-white dark:has-checked:bg-white/5">
+          <input type="radio" name="kind" value="${v}" ${on ? "checked" : ""} class="mt-1 size-4 accent-slate-900">
+          ${icon(ic, "mt-0.5 size-5 shrink-0 text-slate-500")}
+          <span class="min-w-0"><span class="block text-sm font-medium">${esc(title)}</span><span class="block text-xs text-slate-500">${esc(hint)}</span></span>
+        </label>`;
+      const dlg = modal(
+        t("fab.newFolder"),
+        `<form class="space-y-4">
+          <div data-err></div>
+          <div class="grid gap-2 sm:grid-cols-2">
+            ${choice("own", "folder", t("home.folderOwn"), t("home.folderOwnHint"), true)}
+            ${choice("shared", "users", t("home.folderShared"), t("home.folderSharedHint"), false)}
+          </div>
+          <input name="name" maxlength="40" required placeholder="${esc(t("home.folderName"))}" class="${cls.input}">
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </form>`,
+      );
+      refreshIcons();
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      const form = $("form", dlg.el);
+      $("[name=name]", form).focus();
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = form.name.value.trim();
+        if (!name) return;
+        const shared = form.kind.value === "shared";
+        const submit = $("button[type=submit]", form);
+        submit.disabled = true;
+        const row = { user_id: data.profile.id, name, color: "slate", sort_order: nextSlot(1, 1), ...(shared ? { is_shared: true } : {}) };
+        const { data: created, error } = await sb.from("gw_user_folders").insert(row).select("id, name, color, sort_order, collapsed").single();
+        if (error) {
+          submit.disabled = false;
+          return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(shared && /is_shared/.test(error.message || "") ? t("home.sharedNeedsDb") : t("home.saveFailed")));
+        }
+        if (shared) created.is_shared = true;
+        folders.push(created);
+        dlg.close();
+        draw();
+        if (shared) sharePicker(created);
+      });
+    }
+
+    // 分享给谁（像 Google Drive）：同 Business 的在职同事（gw_folder_share_candidates），勾选 + 每个人 Can view / Can edit → 存 gw_folder_shares
+    // 分享给 Business 的说明（分享名单最上面那一行）
+    function bizShareLabel(f) {
+      const g = f.tag_group_id && S && S.groups.find((x) => x.id === f.tag_group_id);
+      if (!g) return t("home.shareBizNone");
+      const co = f.tag_company_id && S.companies.find((x) => x.id === f.tag_company_id);
+      return g.name + (co ? " · " + co.name : " · " + t("home.folderTagAllCo")) + " · " + t(f.tag_role === "edit" ? "home.shareRoleEdit" : "home.shareRoleView");
+    }
+    async function sharePicker(f, onTag) {
+      const cand = await sb.rpc("gw_folder_share_candidates");
+      let cur = await sb.from("gw_folder_shares").select("user_id, role").eq("folder_id", f.id);
+      const rolesOn = !(cur.error && /role/.test(cur.error.message || ""));
+      if (!rolesOn) cur = await sb.from("gw_folder_shares").select("user_id").eq("folder_id", f.id);
+      if (cand.error || cur.error) return toast(t("home.sharedNeedsDb"));
+      const on = new Map((cur.data || []).map((x) => [x.user_id, x.role || "edit"]));
+      // 已经分享的排前面
+      const list = (cand.data || []).slice().sort((x, y) => (on.has(y.id) ? 1 : 0) - (on.has(x.id) ? 1 : 0) || (x.full_name || "").localeCompare(y.full_name || ""));
+      const roleSel = (id, role, show) => `<select data-role="${id}" aria-label="${esc(t("home.shareRole"))}" class="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900 ${show ? "" : "invisible"}">
+          <option value="view" ${role === "view" ? "selected" : ""}>${esc(t("home.shareRoleView"))}</option>
+          <option value="edit" ${role === "edit" ? "selected" : ""}>${esc(t("home.shareRoleEdit"))}</option>
+          <option value="owner">${esc(t("home.shareRoleOwner"))}</option>
+        </select>`;
+      const dlg = modal(
+        t("home.shareTitle", { name: f.name }),
+        `<div class="space-y-3">
+          ${sectionsOn ? `<div class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-white/5">
+            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300">${icon("briefcase-business", "size-4")}</span>
+            <span class="min-w-0 flex-1"><span class="block font-medium">${esc(t("home.shareBizTitle"))}</span><span data-biz-label class="block truncate text-xs text-slate-500">${esc(bizShareLabel(f))}</span></span>
+            <button type="button" data-biz-share class="${btn("secondary", "sm")}">${esc(t("home.shareBizChange"))}</button>
+          </div>
+          <p class="px-1 text-xs font-semibold text-slate-500">${esc(t("home.sharePeople"))}</p>` : ""}
+          ${list.length ? `<div class="relative"><span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-400">${icon("search")}</span><input data-q type="search" placeholder="${esc(t("home.shareSearch"))}" class="${cls.input} pl-9"></div>` : ""}
+          <div class="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${
+            list.length
+              ? list
+                  .map(
+                    (u) => `<div data-row="${esc(((u.full_name || "") + " " + (u.email || "")).toLowerCase())}" class="flex items-center gap-3 px-3 py-2 text-sm">
+                      <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                        <input type="checkbox" data-pick="${u.id}" ${on.has(u.id) ? "checked" : ""} class="size-4 accent-emerald-600">
+                        <span class="min-w-0 flex-1"><span class="block truncate font-medium">${esc(u.full_name || "")}</span><span class="block truncate text-xs text-slate-500">${esc(u.email || "")}</span></span>
+                      </label>
+                      ${rolesOn ? roleSel(u.id, on.get(u.id) || "view", on.has(u.id)) : ""}
+                    </div>`,
+                  )
+                  .join("")
+              : `<p class="px-3 py-6 text-center text-sm text-slate-400">${esc(t("home.shareNone"))}</p>`
+          }</div>
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="button" data-save class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </div>`,
+        { wide: true },
+      );
+      refreshIcons();
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      // 已经送出、还没被接受的转移
+      const pend = await sb.from("gw_folder_transfers").select("to_user").eq("folder_id", f.id).maybeSingle();
+      if (pend.data) {
+        const who = list.find((u) => u.id === pend.data.to_user);
+        $(".space-y-3", dlg.el).insertAdjacentHTML("afterbegin", `<div data-pending class="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200">${icon("hourglass", "size-4 shrink-0")}<span class="min-w-0 flex-1">${esc(t("home.transferPending", { name: (who && who.full_name) || "" }))}</span><button type="button" data-cancel-transfer class="${btn("secondary", "sm")}">${esc(t("home.cancel"))}</button></div>`);
+        refreshIcons();
+        $("[data-cancel-transfer]", dlg.el).onclick = async () => {
+          const { error } = await sb.rpc("gw_cancel_folder_transfer", { p_folder: f.id });
+          if (error) return toast(t("home.saveFailed"));
+          $("[data-pending]", dlg.el).remove();
+        };
+      }
+      const bz = $("[data-biz-share]", dlg.el);
+      if (bz) bz.onclick = () => folderTagDialog(f, () => (($("[data-biz-label]", dlg.el).textContent = bizShareLabel(f)), onTag && onTag()));
+      const q = $("[data-q]", dlg.el);
+      if (q) q.addEventListener("input", () => { const v = q.value.trim().toLowerCase(); $$("[data-row]", dlg.el).forEach((r) => r.classList.toggle("hidden", !!v && !r.dataset.row.includes(v))); });
+      dlg.el.addEventListener("change", (e) => {
+        // 只能选一个新拥有者：选了另一个人，前一个改回 Editor
+        if (e.target.dataset.role && e.target.value === "owner") $$("[data-role]", dlg.el).forEach((x) => x !== e.target && x.value === "owner" && (x.value = "edit"));
+        if (!e.target.dataset.pick) return;
+        const sel = $(`[data-role="${e.target.dataset.pick}"]`, dlg.el);
+        if (sel) sel.classList.toggle("invisible", !e.target.checked);
+      });
+      $("[data-save]", dlg.el).onclick = async () => {
+        const picked = new Map($$("[data-pick]:checked", dlg.el).map((x) => [x.dataset.pick, rolesOn ? $(`[data-role="${x.dataset.pick}"]`, dlg.el).value : "edit"]));
+        // 转移拥有者：先问清楚；分享名单先照常存（新拥有者暂时当 Editor），最后才转
+        const newOwner = [...picked].find(([, role]) => role === "owner");
+        if (newOwner) {
+          picked.set(newOwner[0], "edit");
+          const who = list.find((u) => u.id === newOwner[0]);
+          const ok = await confirmDialog(t("home.transferTitle", { name: (who && who.full_name) || "" }), t("home.transferBody", { name: (who && who.full_name) || "", folder: f.name }), t("home.transferOk"), t("home.cancel"));
+          if (!ok) return;
+        }
+        const add = [...picked.keys()].filter((id) => !on.has(id));
+        const drop = [...on.keys()].filter((id) => !picked.has(id));
+        const changed = [...picked].filter(([id, role]) => on.has(id) && on.get(id) !== role);
+        const fail = (error) => (($("[data-save]", dlg.el).disabled = false), toast(t("home.saveFailed") + (error && error.message ? " (" + error.message + ")" : "")));
+        $("[data-save]", dlg.el).disabled = true;
+        if (add.length) {
+          const { error } = await sb.from("gw_folder_shares").insert(add.map((user_id) => ({ folder_id: f.id, user_id, ...(rolesOn ? { role: picked.get(user_id) } : {}) })));
+          if (error) return fail(error);
+        }
+        for (const [id, role] of changed) {
+          const { error } = await sb.from("gw_folder_shares").update({ role }).eq("folder_id", f.id).eq("user_id", id);
+          if (error) return fail(error);
+        }
+        if (drop.length) {
+          const { error } = await sb.from("gw_folder_shares").delete().eq("folder_id", f.id).in("user_id", drop);
+          if (error) return fail(error);
+        }
+        if (newOwner) {
+          // 送出请求：对方在首页按「接受」才会真的转过去
+          const { error } = await sb.rpc("gw_request_folder_transfer", { p_folder: f.id, p_to: newOwner[0] });
+          if (error) return fail(/gw_request_folder_transfer/.test(error.message || "") ? { message: t("home.folderTagNeedsDb") } : error);
+          dlg.close();
+          const who = list.find((u) => u.id === newOwner[0]);
+          return toast(t("home.transferAsked", { name: (who && who.full_name) || "" }));
+        }
+        dlg.close();
+        toast(t("home.shareSaved", { count: picked.size }));
+      };
+    }
+
     async function deleteFolder(fid) {
       const f = folders.find((x) => x.id === fid);
+      if (boxOfFolder(f) && homeCopyOf(fid) != null) {
+        // My Home 里的复制：只拿掉这一份，Business 区块里的还在
+        await setHomeCopy(fid, null);
+        return draw();
+      }
+      if (f.shared_by) {
+        // 分享给我的：只是从我的主页拿掉（退出分享），文件夹本身是对方的
+        const ok = await confirmDialog(t("home.leaveSharedTitle"), t("home.leaveSharedBody", { name: f.name }), t("home.leaveShared"), t("home.cancel"));
+        if (!ok) return;
+        folders = folders.filter((x) => x.id !== fid);
+        links = links.filter((l) => l.folder_id !== fid);
+        sharedApps.delete(fid);
+        draw();
+        const { error } = await sb.from("gw_folder_shares").delete().eq("folder_id", fid).eq("user_id", data.profile.id);
+        if (error) toast(t("home.saveFailed"));
+        return;
+      }
       const ok = await confirmDialog(t("home.deleteFolderTitle"), t("home.deleteFolderBody", { name: f.name }), t("home.delete"), t("home.cancel"));
       if (!ok) return;
       // 文件夹里的 App 回到主画面的空格
       const ids = folderApps(fid);
+      const lks = folderLinks(fid);
       folders = folders.filter((x) => x.id !== fid);
+      lks.forEach((l) => {
+        l.folder_id = null;
+        l.sort_order = nextSlot(1, 1);
+      });
       const moved = ids.map((id) => {
         const slot = nextSlot(1, 1);
         layout.set(id, { folder_id: null, sort_order: slot });
         return { module_id: id, folder_id: null, sort_order: slot };
       });
       draw();
+      await Promise.all(lks.map((l) => sb.from("gw_user_links").update({ folder_id: null, sort_order: l.sort_order }).eq("id", l.id)));
       const { error } = await sb.from("gw_user_folders").delete().eq("id", fid);
       if (error) return toast(t("home.saveFailed"));
       await saveApps(moved);
     }
 
-    async function open(id) {
+    // 从 Business 区块点开的模块：带上区块里选的 Company（或这个 Business 唯一的 Company），
+    // 以及这家 Company 在那个系统里的代码（Connector 设定的），让系统开起来就是这家公司
+    function companyContext(gid, moduleId) {
+      if (!sectionsOn) return null;
+      // 不是从区块点开的（Dock、最近用过、搜寻、文件夹）：找这个模块属于哪个 Business，用那个区块选的 Company
+      if (!gid) {
+        const gids = S.groupModules.filter((x) => x.module_id === moduleId).map((x) => x.group_id);
+        gid = gids.find((g) => companyContext(g, moduleId)) || null;
+        if (!gid) return null;
+      }
+      const list = companiesOf(gid);
+      const sel = selectedCompany(gid);
+      const c = sel === "all" ? (list.length === 1 ? list[0] : null) : list.find((x) => x.id === sel);
+      if (!c) return null;
+      // Connector 里设的代码：先找这个模块的；没有就找同一个系统（网址同一个主机）别的模块的
+      const origin = (id) => { try { return new URL(modules.get(id).url).origin; } catch (e) { return ""; } };
+      const maps = (S.companyMappings || []).filter((x) => x.company_id === c.id);
+      const map = maps.find((x) => x.module_id === moduleId) || maps.find((x) => modules.has(x.module_id) && origin(x.module_id) && origin(x.module_id) === origin(moduleId));
+      const est = selectedEstate(gid);
+      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "", opispro: c.opispro_id || "", location: est ? est.name : "", location_id: est ? est.location_id || "" : "" };
+    }
+
+    async function open(id, gid) {
       if (readOnly || editing || Date.now() - lastDragEnd < 300) return;
       const m = modules.get(id);
       data.recent = [id, ...data.recent.filter((x) => x !== id)].slice(0, 5);
-      if (m.is_new) m.is_new = false;
-      const ok = await openModule(m);
+      if (m.is_new) {
+        m.is_new = false;
+        if (sectionsOn) sb.rpc("gw_mark_seen", { p_modules: [id] });
+      }
+      const ok = await openModule(m, companyContext(gid, id));
       if (!ok) toast(t("home.openFailed"));
     }
 
     // ------------------------------------------------------------ 事件（委派）
     let noteTimer;
+    // 面板开着时点到主页区块以外（例如页面底下的空白）也要收起来
+    document.addEventListener("click", (e) => {
+      if (!sheet || root.contains(e.target) || e.target.closest(".gw-modal, [data-fab], [data-fab-toggle]")) return;
+      sheet = null;
+      draw();
+    });
+    // Company / Location 下拉开着时，点它以外任何地方（包括顶栏、空白处）都收起来
+    document.addEventListener("click", (e) => {
+      if (!(companyMenuGid || estateMenuGid) || (e.target.isConnected && e.target.closest("[data-pick-wrap]"))) return;
+      companyMenuGid = null;
+      estateMenuGid = null;
+      draw();
+    }, true);
     root.addEventListener("click", (e) => {
+      if (!e.target.isConnected) return; // 上面刚收起下拉、画面重画过：这一下只算收起
       if (Date.now() - lastDragEnd < 400) return; // 刚拖完，不算点击
+      // 「新增小工具 / App」面板开着时，点面板外面就收起来
+      if (sheet && !e.target.closest(".gw-sheet") && !e.target.closest("[data-fab], [data-fab-toggle]")) return ((sheet = null), draw());
+      // 编辑中点空白处（不是图示、小工具、按钮）：离开编辑
+      if (sectionsOn && editing && downOnEmpty && !e.target.closest(EDIT_KEEP)) return setEditing(false);
       const b = e.target.closest("button");
+      if (b && b.dataset.todoAdd) {
+        const w = widgets.find((x) => x.id === b.dataset.todoAdd);
+        if (w) ((w.config = w.config || {}), addTodo(w));
+        return;
+      }
+      if (b && b.dataset.todoToggle) {
+        const [wid, tid] = b.dataset.todoToggle.split(":");
+        const w = widgets.find((x) => x.id === wid);
+        const td = w && (w.config.todos || []).find((x) => x.id === tid);
+        if (td) ((td.done = !td.done), saveNote(w), draw());
+        return;
+      }
       if (!b || !root.contains(b)) {
+        if (sectionsOn && (companyMenuGid || estateMenuGid)) return ((companyMenuGid = null), (estateMenuGid = null), draw());
         if (fabOpen && !e.target.closest("[data-fab-toggle]")) ((fabOpen = false), draw());
         return;
       }
       const d = b.dataset;
-      if (d.open) return open(d.open);
-      if (d.calDay) return editing ? null : calDay(d.calDay);
+      if (sectionsOn) {
+        if (companyMenuGid && !("companyMenu" in d) && !("companyPick" in d)) companyMenuGid = null;
+        if (estateMenuGid && !("estateMenu" in d) && !("estatePick" in d)) estateMenuGid = null;
+        if ("companyMenu" in d) return ((estateMenuGid = null), (companyMenuGid = companyMenuGid === d.companyMenu ? null : d.companyMenu), draw());
+        if ("estateMenu" in d) return ((companyMenuGid = null), (estateMenuGid = estateMenuGid === d.estateMenu ? null : d.estateMenu), draw());
+        if ("estatePick" in d) {
+          estateMenuGid = null;
+          estateSel.set(d.gid, d.estatePick);
+          draw();
+          const w = board();
+          if (!w) return;
+          w.config = { ...(w.config || {}), locations: Object.fromEntries(estateSel) };
+          return sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+        }
+        if ("companyPick" in d) {
+          companyMenuGid = null;
+          companySel.set(d.gid, d.companyPick);
+          draw();
+          const w = board();
+          if (!w) return;
+          w.config = { ...(w.config || {}), companies: Object.fromEntries(companySel) };
+          return sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
+        }
+        if (d.mode) return stepBox(d.gid || b.closest("[data-sec-key]").dataset.secKey, d.mode);
+        if (d.openFolder) return openBoxFolder(d.openFolder);
+        if (d.openNote) return itemDialog(sItems.find((x) => x.id === d.openNote), null, "note");
+        if (d.removeFw) return removeWidget(d.removeFw);
+        if (d.hideMod) return hideModule(d.gid, d.hideMod, true);
+        if (d.unhide) return hideModule(...d.unhide.split(":"), false);
+        if (d.delItem) return deleteBoxItem(sItems.find((x) => x.id === d.delItem));
+        if ("weatherRetry" in d) return ((weather = null), $$("[data-weather]", root).forEach((el) => (el.innerHTML = weatherInner(el.dataset.weather))), loadWeather(true));
+      }
+      if (d.open) return open(d.open, d.gid);
       if (d.openLink) {
         if (editing || Date.now() - lastDragEnd < 300) return;
         const l = links.find((x) => x.id === d.openLink);
@@ -998,11 +3512,18 @@ window.GWHome = (function () {
       if (d.removeFolder) return deleteFolder(d.removeFolder);
       if (d.resize) return resizeWidget(d.resize);
       if ("post" in d) return postNotice();
+      if (d.aiSuggest) return aiAsk(d.aiSuggest);
+      if (d.aiDl) return aiDownload(d.aiDl);
+      if ("aiClear" in d) return ((aiMsgs = []), aiSave(), draw());
+      if (d.react) return toggleReaction(...d.react.split(":"));
+      if (d.who) return whoReacted(...d.who.split(":"));
       if (d.editNotice) return postNotice(data.announcements.find((a) => a.id === d.editNotice));
       if (d.delNotice) return deleteNotice(d.delNotice);
       if ("fabToggle" in d) return ((fabOpen = !fabOpen), draw());
       if (d.fab) {
         fabOpen = false;
+        if (d.fab === "icons") return draw(), iconColorsDialog();
+        if (d.fab === "tidy") return draw(), tidyWidgets();
         if (d.fab === "add-widget") sheet = "widgets";
         else if (d.fab === "add-apps") sheet = "apps";
         else if (d.fab === "edit") ((editing = true), (sheet = null));
@@ -1023,17 +3544,70 @@ window.GWHome = (function () {
       } else if (el.matches("[data-widget-search]")) {
         const q = el.value.trim().toLowerCase();
         const box = el.parentElement.querySelector("[data-search-results]");
-        const hits = q ? data.modules.filter((m) => [m.name, m.code, m.description].some((v) => v && v.toLowerCase().includes(q))).slice(0, 6) : [];
+        const match = (m) => [m.name, m.code, m.description].some((v) => v && v.toLowerCase().includes(q));
+        // 区块版：同一个模块在好几个 Business 都有，所以每个结果都写上它属于哪个 Business（和 Company），才不会进错
+        let hits;
+        if (sectionsOn && q) {
+          hits = [];
+          S.groups.forEach((g) => modsOfGroup(g.id).forEach((m) => {
+            if (!match(m)) return;
+            const cs = companiesOf(g.id);
+            const tagged = cs.filter((c) => S.moduleCompanies.some((x) => x.module_id === m.id && x.company_id === c.id));
+            const names = (tagged.length ? tagged : cs.length === 1 ? cs : []).map((c) => c.short_name || c.code || c.name);
+            hits.push({ m, label: g.name + (names.length ? " · " + names.join(", ") : "") });
+          }));
+          hits = hits.slice(0, 8);
+        } else hits = q ? data.modules.filter(match).slice(0, 6).map((m) => ({ m, label: "" })) : [];
         box.innerHTML = q && !hits.length
           ? `<p class="text-sm text-slate-400">${esc(t("home.noResults"))}</p>`
-          : hits.map((m) => `<button type="button" data-open="${m.id}" class="no-drag flex shrink-0 flex-col items-center gap-1">${appIcon(m, "size-11")}<span class="w-14 truncate text-center text-[11px]">${esc(m.name)}</span></button>`).join("");
+          : hits.map(({ m, label }) => `<button type="button" data-open="${m.id}" class="no-drag flex w-24 shrink-0 flex-col items-center gap-1">${appIcon(m, "size-11")}<span class="w-full truncate text-center text-[11px] font-medium">${esc(m.name)}</span>${label ? `<span class="w-full truncate text-center text-[10px] text-slate-500" title="${esc(label)}">${esc(label)}</span>` : ""}</button>`).join("");
         refreshIcons();
       } else if (el.matches("[data-note]")) {
         // 便条：停止输入一秒后自动保存
         const w = widgets.find((x) => x.id === el.dataset.note);
         w.config = { ...(w.config || {}), text: el.value.slice(0, 2000) };
-        clearTimeout(noteTimer);
-        noteTimer = setTimeout(() => sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id), 1000);
+        saveNote(w);
+      } else if (el.matches("[data-todo-text]")) {
+        const [wid, tid] = el.dataset.todoText.split(":");
+        const w = widgets.find((x) => x.id === wid);
+        const td = w && (w.config.todos || []).find((x) => x.id === tid);
+        if (td) ((td.text = el.value.slice(0, 200)), saveNote(w));
+      }
+    });
+    function saveNote(w) {
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed"))), 1000);
+    }
+    // 待办：新增一行 / 打勾 / Enter 再加一行 / 空行按 Backspace 删掉
+    const focusTodo = (wid, tid) => {
+      const el = $(`[data-todo-text="${wid}:${tid}"]`, root);
+      if (el) el.focus();
+    };
+    function addTodo(w, afterId) {
+      const todos = (w.config.todos = Array.isArray(w.config.todos) ? w.config.todos : []);
+      const td = { id: Math.random().toString(36).slice(2, 10), text: "", done: false };
+      const i = afterId ? todos.findIndex((x) => x.id === afterId) : -1;
+      todos.splice(i < 0 ? todos.length : i + 1, 0, td);
+      saveNote(w);
+      draw();
+      focusTodo(w.id, td.id);
+    }
+    root.addEventListener("keydown", (e) => {
+      const el = e.target.closest("[data-todo-text]");
+      if (!el) return;
+      const [wid, tid] = el.dataset.todoText.split(":");
+      const w = widgets.find((x) => x.id === wid);
+      if (!w) return;
+      if (e.key === "Enter") return (e.preventDefault(), addTodo(w, tid));
+      if (e.key === "Backspace" && !el.value) {
+        e.preventDefault();
+        const todos = w.config.todos || [];
+        const i = todos.findIndex((x) => x.id === tid);
+        if (i < 0) return;
+        todos.splice(i, 1);
+        saveNote(w);
+        draw();
+        if (todos[i - 1]) focusTodo(wid, todos[i - 1].id);
       }
     });
     document.addEventListener("keydown", (e) => {
@@ -1045,7 +3619,9 @@ window.GWHome = (function () {
       }
     });
 
+    if (sectionsOn) widgets.filter(isFloating).forEach(migratePos); // 旧版 px 位置换成格子（只在记忆中）
     draw();
+    loadShared();
   }
 
   return { render, WIDGETS };

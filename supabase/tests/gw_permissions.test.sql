@@ -1,7 +1,7 @@
 -- Gateway 权限测试（本地执行：npx supabase test db）
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(100);
+select plan(127);
 
 -- ---------------------------------------------------------------------
 -- 测试资料
@@ -459,8 +459,102 @@ update public.gw_group_members set company_id = null where user_id = '00000000-0
 select is((select company_id from public.gw_group_members where user_id = '00000000-0000-0000-0000-0000000000a4'), '00000000-0000-0000-0000-0000000000e3'::uuid, '一般用户不能改自己的 Company');
 select pg_temp.logout();
 
+-- 一个人可以同时在同一个 Business 的好几个 Company（gw_member_companies）
+select pg_temp.login('00000000-0000-0000-0000-0000000000a2');
+select lives_ok(
+  $$ insert into public.gw_member_companies (group_id, user_id, company_id) values
+       ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a4', '00000000-0000-0000-0000-0000000000e1'),
+       ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a4', '00000000-0000-0000-0000-0000000000e3') $$,
+  '负责这个 Business 的角色可以把一个人放进它的好几个 Company'
+);
+select is((select count(*) from public.gw_member_companies where user_id = '00000000-0000-0000-0000-0000000000a4')::int, 2, '同一个人在同一个 Business 里有两个 Company');
+select pg_temp.logout();
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+select throws_ok(
+  $$ insert into public.gw_member_companies (group_id, user_id, company_id) values ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000e1') $$,
+  '42501', null, '一般用户不能给自己加 Company'
+);
+select pg_temp.logout();
+
 delete from public.gw_business_companies where group_id = '00000000-0000-0000-0000-0000000000c1' and company_id = '00000000-0000-0000-0000-0000000000e3';
 select is((select company_id from public.gw_group_members where user_id = '00000000-0000-0000-0000-0000000000a4'), null, 'Company 从 Business 拿掉后，成员还在 Business 里');
+select is((select count(*) from public.gw_member_companies where user_id = '00000000-0000-0000-0000-0000000000a4')::int, 1, 'Company 从 Business 拿掉后，那个 Company 的成员记录也跟着没有');
+
+-- Sector 清单：只有 super_admin 可以改；删除 Sector 后，模块上的 Sector 变回空
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+select throws_ok($$ insert into public.gw_sectors (name) values ('Operation') $$, '42501', null, '一般用户不能新增 Sector');
+select pg_temp.logout();
+select pg_temp.login('00000000-0000-0000-0000-0000000000a1');
+insert into public.gw_sectors (id, name) values ('00000000-0000-0000-0000-0000000000d9', 'Operation');
+select is((select count(*) from public.gw_sectors)::int, 1, 'super_admin 可以新增 Sector');
+update public.gw_group_modules set sector_id = '00000000-0000-0000-0000-0000000000d9', lead_user_id = '00000000-0000-0000-0000-0000000000a3'
+  where group_id = '00000000-0000-0000-0000-0000000000c1' and module_id = '00000000-0000-0000-0000-0000000000b3';
+delete from public.gw_sectors where id = '00000000-0000-0000-0000-0000000000d9';
+select is((select sector_id from public.gw_group_modules where group_id = '00000000-0000-0000-0000-0000000000c1' and module_id = '00000000-0000-0000-0000-0000000000b3'), null::uuid, '删除 Sector 后模块的 Sector 变回空');
+select pg_temp.logout();
+
+-- Notice Board 反应
+select pg_temp.login('00000000-0000-0000-0000-0000000000a1');
+insert into public.gw_announcements (id, message) values ('00000000-0000-0000-0000-0000000000d8', 'Reaction test');
+select pg_temp.logout();
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+select lives_ok(
+  $$ insert into public.gw_notice_reactions (announcement_id, user_id, emoji) values ('00000000-0000-0000-0000-0000000000d8', '00000000-0000-0000-0000-0000000000a3', 'like') $$,
+  '看得到公告的人可以按反应'
+);
+select throws_ok(
+  $$ insert into public.gw_notice_reactions (announcement_id, user_id, emoji) values ('00000000-0000-0000-0000-0000000000d8', '00000000-0000-0000-0000-0000000000a4', 'love') $$,
+  '42501', null, '不能替别人按反应'
+);
+select is((select count(*) from public.gw_get_notice_reactions(array['00000000-0000-0000-0000-0000000000d8']::uuid[]))::int, 1, '读得到这则公告的反应');
+select is(
+  (select full_name from public.gw_get_notice_reactions(array['00000000-0000-0000-0000-0000000000d8']::uuid[]) limit 1),
+  (select full_name from public.gw_profiles where id = '00000000-0000-0000-0000-0000000000a3'),
+  '反应附上按的人的名字'
+);
+select pg_temp.logout();
+
+-- AI 每天次数上限
+select is(public.gw_ai_take('00000000-0000-0000-0000-0000000000a3', 2), 1, 'AI：第一次，还剩 1 次');
+select is(public.gw_ai_take('00000000-0000-0000-0000-0000000000a3', 2), 0, 'AI：第二次，还剩 0 次');
+select is(public.gw_ai_take('00000000-0000-0000-0000-0000000000a3', 2), -1, 'AI：超过上限回传 -1');
+
+-- AI Connector（自己的 AI 连到公司资料）
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+select throws_ok($$ select public.gw_mcp_create('x') $$, 'connector_off', 'AI Connector：开关关闭时不能建立链接');
+select throws_ok($$ insert into public.gw_settings (key, value) values ('ai_connector', '{"enabled":true}') $$, '42501', null, 'AI Connector：一般用户不能改全站开关');
+select pg_temp.logout();
+select pg_temp.login('00000000-0000-0000-0000-0000000000a1');
+insert into public.gw_settings (key, value) values ('ai_connector', '{"enabled":true}');
+select pg_temp.logout();
+select is(public.gw_mcp_enabled(), true, 'AI Connector：super_admin 可以打开开关');
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+create temp table mcp_t as select public.gw_mcp_create('laptop') as r;
+select ok((select r->>'token' from mcp_t) like 'gwm\_%', 'AI Connector：链接以 gwm_ 开头');
+select is((select count(*) from public.gw_mcp_list()), 1::bigint, 'AI Connector：用户看得到自己的链接');
+select pg_temp.logout();
+select is(public.gw_mcp_resolve(encode(sha256(convert_to((select r->>'token' from mcp_t), 'utf8')), 'hex')), '00000000-0000-0000-0000-0000000000a3'::uuid, 'AI Connector：链接对应到建立它的用户');
+select is(public.gw_mcp_resolve('nope'), null, 'AI Connector：乱写的链接没有用户');
+select pg_temp.login('00000000-0000-0000-0000-0000000000a4');
+select is((select count(*) from public.gw_mcp_list()), 0::bigint, 'AI Connector：看不到别人的链接');
+select public.gw_mcp_revoke((select (r->>'id')::uuid from mcp_t));
+select pg_temp.logout();
+select is(public.gw_mcp_resolve(encode(sha256(convert_to((select r->>'token' from mcp_t), 'utf8')), 'hex')), '00000000-0000-0000-0000-0000000000a3'::uuid, 'AI Connector：别人撤销不了你的链接');
+select pg_temp.login('00000000-0000-0000-0000-0000000000a1');
+select cmp_ok((select count(*) from public.gw_mcp_list()), '>=', 1::bigint, 'AI Connector：super_admin 看得到全部链接');
+select pg_temp.logout();
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+select public.gw_mcp_revoke((select (r->>'id')::uuid from mcp_t));
+select pg_temp.logout();
+select is(public.gw_mcp_resolve(encode(sha256(convert_to((select r->>'token' from mcp_t), 'utf8')), 'hex')), null, 'AI Connector：撤销后链接失效');
+select pg_temp.login('00000000-0000-0000-0000-0000000000a3');
+create temp table mcp_t2 as select public.gw_mcp_create('phone') as r;
+select pg_temp.logout();
+update public.gw_settings set value = '{"enabled":false}' where key = 'ai_connector';
+select is(public.gw_mcp_resolve(encode(sha256(convert_to((select r->>'token' from mcp_t2), 'utf8')), 'hex')), null, 'AI Connector：开关关闭后所有链接失效');
+update public.gw_settings set value = '{"enabled":true}' where key = 'ai_connector';
+update public.gw_profiles set status = 'disabled' where id = '00000000-0000-0000-0000-0000000000a3';
+select is(public.gw_mcp_resolve(encode(sha256(convert_to((select r->>'token' from mcp_t2), 'utf8')), 'hex')), null, 'AI Connector：用户被停用后链接失效');
 
 select is((select count(*) from public.gw_profiles where user_code is null), 0::bigint, '每个用户都有代码');
 select is((select count(distinct user_code) from public.gw_profiles), (select count(*) from public.gw_profiles), '用户代码不重复');

@@ -6,7 +6,8 @@ export const TOKEN_ISSUER = "mjm-gateway";
 export const TOKEN_TTL_SECONDS = 60;
 
 export const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("GW_ALLOWED_ORIGIN") ?? "*",
+  // 只有自己的网站可以从浏览器呼叫（可以用 GW_ALLOWED_ORIGIN 改）；系统对系统的呼叫（Portal、AI 连接器）不受影响
+  "Access-Control-Allow-Origin": Deno.env.get("GW_ALLOWED_ORIGIN") ?? "https://mjmelon.github.io",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-gw-api-key",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };

@@ -48,13 +48,10 @@ Deno.serve(async (req) => {
 
   if (!userId) return json({ allowed: false, module_code: module.code });
 
-  const { data: allowed } = await supabase.rpc("gw_user_can_access", { p_user: userId, p_module_code: module.code });
-  if (!allowed) return json({ allowed: false, module_code: module.code });
-
-  const { data: profile } = await supabase
-    .from("gw_profiles")
-    .select("id, email, full_name")
-    .eq("id", userId)
-    .single();
+  const [{ data: allowed }, { data: profile }] = await Promise.all([
+    supabase.rpc("gw_user_can_access", { p_user: userId, p_module_code: module.code }),
+    supabase.from("gw_profiles").select("id, email, full_name").eq("id", userId).maybeSingle(),
+  ]);
+  if (!allowed || !profile) return json({ allowed: false, module_code: module.code });
   return json({ allowed: true, module_code: module.code, user: profile });
 });

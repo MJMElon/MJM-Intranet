@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @source "../*.html";
-@source "../diesel/*.html";
 @source "../shared/*.js";
 @source "../lang/en.js";
 @custom-variant dark (&:where(.dark, .dark *));
@@ -21,8 +20,72 @@
 .sortable-chosen { box-shadow: 0 10px 25px rgba(0,0,0,.15); }
 body.gw-dragging .gw-folder-body { display: block !important; min-height: 3rem; }
 /* 主画面背景 */
-body.gw-wallpaper { background: radial-gradient(1200px 600px at 15% -10%, #e0ecff 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, #eef2f7 0%, transparent 55%), #f6f8fb; background-attachment: fixed; }
-.dark body.gw-wallpaper { background: radial-gradient(1200px 600px at 15% -10%, #12233f 0%, transparent 60%), #020617; }
+/* 背景会慢慢飘动、颜色轻轻变化（像活的）：两层彩色光晕各自缓慢移动、交替淡入淡出。
+   只动「位置 / 透明度」，电脑不吃力；系统设定「减少动态效果」的人就不动。 */
+body.gw-wallpaper { background: #eef3fb; }
+.dark body.gw-wallpaper { background: #020617; }
+body.gw-wallpaper::before,
+body.gw-wallpaper::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+body.gw-wallpaper::before {
+  background:
+    radial-gradient(38% 34% at 18% 12%, #bfd8ff 0%, transparent 70%),
+    radial-gradient(34% 32% at 88% 18%, #d9ccff 0%, transparent 70%),
+    radial-gradient(38% 36% at 66% 92%, #b8f0dc 0%, transparent 70%),
+    radial-gradient(30% 30% at 10% 80%, #ffd6e7 0%, transparent 70%);
+  animation: gw-drift-a 46s ease-in-out infinite alternate;
+}
+body.gw-wallpaper::after {
+  background:
+    radial-gradient(34% 32% at 78% 70%, #c7e3ff 0%, transparent 70%),
+    radial-gradient(32% 30% at 28% 58%, #e6d4ff 0%, transparent 70%),
+    radial-gradient(30% 28% at 50% 10%, #c4f5e6 0%, transparent 70%),
+    radial-gradient(28% 26% at 92% 92%, #ffe0cc 0%, transparent 70%);
+  opacity: 0;
+  animation: gw-drift-b 58s ease-in-out infinite alternate, gw-fade 23s ease-in-out infinite alternate;
+}
+.dark body.gw-wallpaper::before {
+  background:
+    radial-gradient(38% 34% at 18% 12%, #1d3a73 0%, transparent 70%),
+    radial-gradient(34% 32% at 88% 18%, #3b2a73 0%, transparent 70%),
+    radial-gradient(38% 36% at 66% 92%, #0f4a45 0%, transparent 70%);
+}
+.dark body.gw-wallpaper::after {
+  background:
+    radial-gradient(34% 32% at 78% 70%, #173f6b 0%, transparent 70%),
+    radial-gradient(32% 30% at 28% 58%, #352066 0%, transparent 70%),
+    radial-gradient(30% 28% at 50% 10%, #0d4048 0%, transparent 70%);
+}
+@keyframes gw-drift-a {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  50% { transform: translate3d(4%, -3%, 0) rotate(6deg) scale(1.06); }
+  100% { transform: translate3d(-3%, 4%, 0) rotate(-5deg) scale(1.03); }
+}
+@keyframes gw-drift-b {
+  0% { transform: translate3d(3%, 2%, 0) rotate(0deg) scale(1.04); }
+  50% { transform: translate3d(-4%, 3%, 0) rotate(-7deg) scale(1); }
+  100% { transform: translate3d(2%, -4%, 0) rotate(5deg) scale(1.07); }
+}
+@keyframes gw-fade { 0% { opacity: 0; } 100% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) {
+  body.gw-wallpaper::before, body.gw-wallpaper::after { animation: none; }
+  body.gw-wallpaper::after { opacity: .45; }
+}
+/* 像漂浮的图示：柔和的大阴影、顶部高光；滑鼠移上去会轻轻浮起 */
+.gw-icon { position: relative; box-shadow: 0 14px 22px -8px rgba(15, 23, 42, .38), 0 3px 6px rgba(15, 23, 42, .14), inset 0 1px 1px rgba(255, 255, 255, .6); transition: transform .2s ease, box-shadow .2s ease; }
+.gw-icon::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(to bottom, rgba(255, 255, 255, .38), rgba(255, 255, 255, 0) 52%); pointer-events: none; }
+button:hover > .gw-icon, .gw-item:hover .gw-icon { transform: translateY(-4px) scale(1.05); box-shadow: 0 20px 28px -8px rgba(15, 23, 42, .42), 0 4px 8px rgba(15, 23, 42, .16), inset 0 1px 1px rgba(255, 255, 255, .65); }
+@media (prefers-reduced-motion: reduce) { .gw-icon { transition: none; } button:hover > .gw-icon, .gw-item:hover .gw-icon { transform: none; } }
+/* 白色毛玻璃图示（预设）：浅浅的影子、没有亮光，才像 iPhone 锁定画面的按钮 */
+.gw-icon.gw-icon-glass { box-shadow: 0 6px 14px -6px rgba(15, 23, 42, .28), 0 1px 2px rgba(15, 23, 42, .10), inset 0 1px 0 rgba(255, 255, 255, .9); }
+.gw-icon.gw-icon-glass::after { display: none; }
+button:hover > .gw-icon.gw-icon-glass, .gw-item:hover .gw-icon.gw-icon-glass { box-shadow: 0 10px 18px -6px rgba(15, 23, 42, .32), 0 2px 4px rgba(15, 23, 42, .12), inset 0 1px 0 rgba(255, 255, 255, .95); }
 /* 主画面棋盘：格子高度（手机 / 平板以上）；拖拉时不要选取文字、不要跳出长按选单 */
 #gw-grid { --gw-row: 5.25rem; }
 @media (min-width: 640px) { #gw-grid { --gw-row: 5.75rem; } }
@@ -33,3 +96,22 @@ body.gw-dragging { cursor: grabbing; }
 .gw-editing > .gw-item { animation: gw-jiggle .14s ease-in-out infinite alternate; }
 .gw-editing > .gw-item:nth-child(2n) { animation-delay: .07s; }
 @media (prefers-reduced-motion: reduce) { .gw-editing > .gw-item { animation: none; } }
+/* 区块版编辑模式（长按或 Edit Home Screen）：图示和小工具轻轻抖动；减少动态效果时改成静止的虚线框 */
+@keyframes gw-wiggle { 0% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.4deg); } 100% { transform: rotate(-1.4deg); } }
+@keyframes gw-wiggle-sm { 0% { transform: rotate(-.35deg); } 50% { transform: rotate(.35deg); } 100% { transform: rotate(-.35deg); } }
+.gw-jiggle [data-list] > .gw-item { animation: gw-wiggle .3s ease-in-out infinite; }
+.gw-node-edit { animation: gw-wiggle .3s ease-in-out infinite; }
+.gw-noscroll { scrollbar-width: none; }
+.gw-noscroll::-webkit-scrollbar { display: none; }
+.gw-jiggle [data-list] > .gw-item:nth-child(2n) { animation-delay: -.15s; }
+.gw-jiggle .gw-fw-body { animation: gw-wiggle-sm .45s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .gw-jiggle [data-list] > .gw-item, .gw-jiggle .gw-fw-body { animation: none; }
+  .gw-jiggle [data-list] > .gw-item > button > .gw-icon, .gw-jiggle .gw-fw-body > div { outline: 2px dashed rgb(100 116 139 / .55); outline-offset: 3px; }
+}
+
+/* Admin Console › Master Manage › Business & Module board：每个 Business 一个方块由上往下排，里面按 Sector 分直栏 */
+.st-sectors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 768px) { .st-sectors { grid-template-columns: repeat(var(--st-cols, 2), minmax(0, 1fr)); } }
+.st-drop:empty { border: 1px dashed rgb(203 213 225); }
+.dark .st-drop:empty { border-color: rgb(71 85 105); }

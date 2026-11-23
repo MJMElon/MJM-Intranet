@@ -1239,6 +1239,13 @@
           ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
           <h3 class="min-w-0 flex-1 truncate font-semibold">${esc(g.name)}</h3>
           ${g.code ? `<span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs dark:bg-white/10">${esc(g.code)}</span>` : ""}
+          ${
+            isSuper
+              ? `<button data-hq-biz="${g.id}" title="${esc(tb("allCompaniesHint"))}" class="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${g.all_companies ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200" : "border border-dashed border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-700 dark:border-slate-600"}">${icon(g.all_companies ? "check" : "layers", "size-3.5")}${esc(tb(g.all_companies ? "hqOn" : "hqOff"))}</button>`
+              : g.all_companies
+                ? `<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">${esc(tb("hqOn"))}</span>`
+                : ""
+          }
           ${isSuper ? `<button data-edit-biz="${g.id}" aria-label="${esc(tg("edit"))}" title="${esc(tg("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>` : ""}
           ${canDelBiz ? `<button data-del-biz="${g.id}" aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("trash-2")}</button>` : ""}
         </header>
@@ -1394,6 +1401,7 @@
               ? `<div class="space-y-1.5"><span class="${cls.label}">${esc(ts("pickCompany"))}</span>
                   <div class="flex gap-2">${select("pick", free.map((c) => [c.id, (c.code ? c.code + " · " : "") + c.name]), free[0].id)}<button data-pick-add class="${btn("primary")} shrink-0">${esc(ts("add"))}</button></div>
                 </div>
+                ${free.length > 1 ? `<button data-add-all class="${btn("secondary")} w-full">${icon("copy-plus")} ${esc(ts("addAllCompanies", { count: free.length }))}</button>` : ""}
                 <div class="flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span>${esc(ts("or"))}<span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span></div>`
               : `<p class="text-sm text-slate-500">${esc(ts("noneToAdd"))}</p>`
           }
@@ -1401,6 +1409,16 @@
         </div>`,
       );
       refreshIcons();
+      const allBtn = $("[data-add-all]", m.el);
+      if (allBtn)
+        allBtn.onclick = async () => {
+          allBtn.disabled = true;
+          const { error } = await sb.from("gw_business_companies").insert(free.map((c) => ({ group_id: g.id, company_id: c.id })));
+          if (error) return (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), (allBtn.disabled = false));
+          m.close();
+          toast(ts("saved"));
+          structureTab();
+        };
       const pickBtn = $("[data-pick-add]", m.el);
       if (pickBtn)
         pickBtn.onclick = async () => {
@@ -1960,6 +1978,15 @@
         return structureTab();
       }
       if (d.addCo) return addCompanyDialog(groups.find((x) => x.id === d.addCo));
+      // HQ：一按就开 / 关「所有 Company 一起看」
+      if (d.hqBiz) {
+        const g = groups.find((x) => x.id === d.hqBiz);
+        if (!("all_companies" in g)) return toast(tb("allCompaniesNeedsDb"));
+        const { error } = await sb.from("gw_groups").update({ all_companies: !g.all_companies }).eq("id", g.id);
+        if (error) return toast(/all_companies/.test(error.message || "") ? tb("allCompaniesNeedsDb") : tg("saveFailed"));
+        toast(tb(!g.all_companies ? "hqTurnedOn" : "hqTurnedOff", { name: g.name }));
+        return structureTab();
+      }
       if (d.addMod) return addModuleDialog(groups.find((x) => x.id === d.addMod));
       if (d.co) return isSuper ? companyDialog(coById.get(d.co)) : companyInfo(d.co, d.from || null);
       if (d.editMod) return canRename(d.editMod) && moduleDialog(modById.get(d.editMod));

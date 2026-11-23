@@ -480,6 +480,10 @@ window.GW_LANG["zh-CN"] = {
       "audit": "操作记录"
     },
     "business": {
+      "hqOn": "HQ · 所有 Company",
+      "hqOff": "设为 HQ",
+      "hqTurnedOn": "{name} 已设为 HQ：大家会同时看到自己所有的 Company。",
+      "hqTurnedOff": "{name} 不再是 HQ：大家要切换 Company。",
       "allCompanies": "HQ — 所有 Company 一起看",
       "allCompaniesHint": "这个 Business 的人会同时看到他被分到的所有 Company，不用切换 Company。",
       "allCompaniesNeedsDb": "资料库要先执行最新的 SQL，才能存 HQ。",
@@ -495,6 +499,7 @@ window.GW_LANG["zh-CN"] = {
       "name": "Business 名称"
     },
     "structure": {
+      "addAllCompanies": "加入全部 Company（{count}）",
       "added": "已新增",
       "allModulesAdded": "所有模块都已经在这个 Business 里了。",
       "codeAuto": "系统流水号，不能改。",

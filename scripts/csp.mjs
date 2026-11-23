@@ -1,6 +1,6 @@
 // 发布时执行（.github/workflows/pages.yml）：每个网页加上 Content-Security-Policy
 //  - 脚本只能来自自己的网站（shared/…）＋ 网页里那几段写死的脚本（用 sha256 指纹，改了内容就要重新算，所以发布时才算）
-//  - 资料只能送到自己的 Supabase、天气、地名服务：就算被插入坏程式，也送不出去
+//  - 资料只能送到自己的 Supabase、MJMConnect（月历）、天气、地名服务：就算被插入坏程式，也送不出去
 //  - 图片只能来自自己的网站和 Supabase 储存
 // 用法：node scripts/csp.mjs [网站根目录，预设 .]
 import { createHash } from "node:crypto";
@@ -12,6 +12,8 @@ const config = readFileSync(join(root, "shared/config.js"), "utf8");
 const supabase = (config.match(/supabaseUrl:\s*"([^"]+)"/) || [])[1];
 if (!supabase) throw new Error("supabaseUrl not found in shared/config.js");
 const ws = supabase.replace(/^https:/, "wss:");
+// 月历小工具向 MJMConnect 拿请假 / Estate 资料（config.js 的 mjmconnectCalendarUrl）
+const mjmconnect = ((config.match(/mjmconnectCalendarUrl:\s*"(https:\/\/[^/"]+)/) || [])[1]) || "";
 
 const policyFor = (hashes) =>
   [
@@ -20,7 +22,7 @@ const policyFor = (hashes) =>
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${supabase}`,
     "font-src 'self' data:",
-    `connect-src 'self' ${supabase} ${ws} https://api.open-meteo.com https://api.bigdatacloud.net`,
+    `connect-src 'self' ${supabase} ${ws} ${mjmconnect} https://api.open-meteo.com https://api.bigdatacloud.net`.replace(/  +/g, " "),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

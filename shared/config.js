@@ -5,6 +5,8 @@ window.GW_CONFIG = {
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJyaXF6eXhmeHN2dWx5aXp6Yml1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NDc3ODksImV4cCI6MjA4OTUyMzc4OX0.LGs2Jd3jiAQsfgtzBU_yfTIjEEVWsWgd0n_mOyrAl1Q",
   // 公司时区（日期显示）
   timeZone: "Asia/Kuala_Lumpur",
+  // 月历小工具：MJMConnect 的请假 / Estate 资料（MJMConnect Supabase 的 intranet-calendar 函数）
+  mjmconnectCalendarUrl: "https://hbxzbowkucpqlhxdomap.supabase.co/functions/v1/intranet-calendar",
 };
 
 /* 本地开发：网址带 ?local 或在 localhost 时，可用 localStorage 的 gw_local_config 覆盖 */

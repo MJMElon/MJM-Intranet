@@ -398,6 +398,21 @@ window.GW_LANG["zh-CN"] = {
       "medium": "中",
       "large": "大"
     },
+    "calLeave": "请假",
+    "calEstate": "去 Estate",
+    "calNone": "没有人请假，也没有人去 Estate。",
+    "goingTo": "去 {place}",
+    "hourly": "按小时",
+    "leaveTypes": {
+      "ANNUAL": "年假",
+      "SICK": "病假",
+      "HOSPITALIZATION": "住院假",
+      "COMPASSIONATE": "丧假",
+      "MATERNITY": "产假",
+      "PATERNITY": "陪产假",
+      "UNPAID": "无薪假",
+      "EVENT_DAY_OFF": "活动补假"
+    },
     "postAudience": "谁看得到",
     "postEveryone": "全公司",
     "editNotice": "修改公告",

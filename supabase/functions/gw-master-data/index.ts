@@ -1,7 +1,7 @@
 // 给接入的系统（例如 CMMS 2）同步主资料：Business、Company、两者的连结，
 // 以及哪些 Company 标签了这个 Icon。
 // Header：x-gw-api-key（这个 Icon 的 API Key，和 gw-check-access 一样）
-// 请求：POST {}      回应：{ module_code, module_users, businesses, companies, links, module_company_ids, module_business_ids, exported_at }
+// 请求：POST {}      回应：{ module_code, module_users, businesses, companies, links, locations, estates, module_company_ids, module_business_ids, exported_at }
 // module_users = 目前可以用这个 Icon 的人（id、email、full_name、is_admin、company_ids），接入系统用来预先建立帐号 / 显示名单
 // company_ids = 这个人在这个 Icon 可以看的 Company：他有这个 Icon 的 Business 里，HR 分配给他的 Company
 //               （在 Business 里但还没分 Company = 空的 = 看不到任何 Company）；super_admin = 有这个 Icon 的全部 Company
@@ -48,6 +48,8 @@ Deno.serve(async (req) => {
   const companies = companies1.error && /opispro_id|has_locations/.test(companies1.error.message ?? "")
     ? await supabase.from("gw_companies").select("id, code, name, short_name, registration_no, description, is_active, sort_order").order("sort_order").order("name")
     : companies1;
+  // Company 底下的 Estate（20261121110000 还没跑时就是空的）
+  const estates = await supabase.from("gw_company_estates").select("id, company_id, name, short_name, area, area_unit, sort_order, is_active").order("sort_order").order("name");
   const failed = [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles, memberCompanies].find((r) => r.error);
   if (failed?.error) return json({ error: "query_failed", detail: failed.error.message }, 500);
 
@@ -96,6 +98,8 @@ Deno.serve(async (req) => {
     // Opispro ID / has_locations and the billing details (billing_address, phone,
     // fax, email) come with each company; locations is empty until the 20261129 migration has run
     locations: locations.error ? [] : (locations.data ?? []),
+    // Estates under a company (MJM Plantation 1 / 2 / 3); a company with none is itself one estate
+    estates: estates.error ? [] : (estates.data ?? []),
     module_company_ids: (tagged.data ?? []).map((r) => r.company_id),
     module_business_ids: (taggedBiz.data ?? []).map((r) => r.group_id),
     exported_at: new Date().toISOString(),

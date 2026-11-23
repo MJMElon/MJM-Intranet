@@ -124,6 +124,8 @@
         companyMappings: mapRes.data || [],
         locations: (locRes && locRes.data) || [],
         // 在这个 Business 里只属于一个 Company 的人，预设选那个 Company；属于好几个就预设「全部」
+        // 我在每个 Business 被分到的 Company（区块的 Company 下拉只列这些；super_admin 看全部）
+        memberCompanies: myCoRes.data || [],
         myCompany: Object.fromEntries(
           (myCoRes.data || [])
             .filter((m, _i, all) => all.filter((y) => y.group_id === m.group_id).length === 1)

@@ -673,8 +673,11 @@ window.GWHome = (function () {
     const companySel = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companies || {}));
     // 用户自己排的 Company 顺序：记在 Notice Board 小工具的 config.companyOrder（每个 Business 一份）
     const companyOrder = new Map(Object.entries(((opts && opts.widgets) || []).find((w) => w.widget_type === "announcements")?.config?.companyOrder || {}));
+    // 这个 Business 底下我可以选的 Company：super_admin 全部；其他人只有 HR 分给我的
+    const bizHasCompanies = (gid) => S.bizCompanies.some((x) => x.group_id === gid);
     const companiesOf = (gid) => {
-      const ids = new Set(S.bizCompanies.filter((x) => x.group_id === gid).map((x) => x.company_id));
+      const mine = new Set((S.memberCompanies || []).filter((x) => x.group_id === gid).map((x) => x.company_id));
+      const ids = new Set(S.bizCompanies.filter((x) => x.group_id === gid && (isSuper || mine.has(x.company_id))).map((x) => x.company_id));
       const list = S.companies.filter((c) => ids.has(c.id));
       const ord = companyOrder.get(gid) || [];
       const at = (id) => { const i = ord.indexOf(id); return i < 0 ? 1e6 : i; };
@@ -682,7 +685,9 @@ window.GWHome = (function () {
     };
     const selectedCompany = (gid) => {
       const list = companiesOf(gid);
-      if (list.length < 2) return "all"; // 只有一个 Company：不用选，全部显示
+      // Business 有 Company、但还没分给我任何一家：不算任何 Company（标了 Company 的 App / 文件夹不显示）
+      if (!list.length) return bizHasCompanies(gid) && !isSuper ? "none" : "all";
+      if (list.length === 1) return list[0].id; // 只有一家：就是那一家（标给别家 Company 的 App 不显示）
       // 一定选一个 Company：自己选过的 → 自己的 Company → 第一个
       const v = companySel.get(gid) || S.myCompany[gid];
       return list.some((c) => c.id === v) ? v : list[0].id;
@@ -727,6 +732,7 @@ window.GWHome = (function () {
       const sel = selectedCompany(gid);
       if (sel === "all") return true;
       const tags = S.moduleCompanies.filter((x) => x.module_id === moduleId);
+      if (sel === "none") return !tags.length;
       return !tags.length || tags.some((x) => x.company_id === sel);
     };
     const bySort = (a, b) => (a.sort_order || 0) - (b.sort_order || 0);

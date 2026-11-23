@@ -186,6 +186,7 @@ window.GW = (function () {
                 active === "settings" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-slate-200 dark:bg-slate-800"
               }">${esc(profile.full_name.slice(0, 1))}</span>
             </a>
+            <button type="button" id="gw-theme" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"></button>
             <a href="${BASE}${isAdmin ? "admin.html" : "settings.html"}" title="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" aria-label="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" class="rounded-lg p-2 ${
               active === (isAdmin ? "admin" : "settings") ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
             }">${icon("settings", "size-5")}</a>
@@ -197,6 +198,24 @@ window.GW = (function () {
       </header>`;
     document.body.prepend(...header.children);
     $("#gw-logout").addEventListener("click", logout);
+    // 名字旁边的月亮 / 太阳：一按就换深色 / 浅色，记在自己的设定（下次登入、别的电脑也一样）
+    const themeBtn = $("#gw-theme");
+    const paintTheme = () => {
+      const dark = document.documentElement.classList.contains("dark");
+      const label = t(dark ? "nav.lightMode" : "nav.darkMode");
+      themeBtn.title = label;
+      themeBtn.setAttribute("aria-label", label);
+      themeBtn.innerHTML = icon(dark ? "sun" : "moon", "size-5");
+      refreshIcons();
+    };
+    paintTheme();
+    themeBtn.addEventListener("click", () => {
+      const theme = document.documentElement.classList.contains("dark") ? "light" : "dark";
+      applyTheme(theme);
+      profile.theme = theme;
+      paintTheme();
+      sb.from("gw_profiles").update({ theme }).eq("id", profile.id).then(() => {});
+    });
     const main = $("#main");
     main.classList.add("mx-auto", "max-w-7xl", "px-4", "py-5", "sm:py-8");
     refreshIcons();

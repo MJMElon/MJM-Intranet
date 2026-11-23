@@ -29,7 +29,7 @@
         GW.sb.from("gw_user_links").select("*").order("sort_order"),
         GW.sb.from("gw_modules").select("id, image_url"),
         GW.sb.from("gw_user_section_items").select("*").order("sort_order"),
-        GW.sb.from("gw_groups").select("id, name, sort_order").order("sort_order").order("name"),
+        GW.sb.from("gw_groups").select("*").order("sort_order").order("name"), // 含 all_companies（HQ：不用切换 Company）
         GW.sb.from("gw_group_modules").select("group_id, module_id"),
         // 区块里的 Company 选择：这个 Business 有哪些 Company、哪些模块标了哪些 Company
         GW.sb.from("gw_business_companies").select("group_id, company_id"),

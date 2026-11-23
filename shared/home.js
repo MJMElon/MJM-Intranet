@@ -683,8 +683,11 @@ window.GWHome = (function () {
       const at = (id) => { const i = ord.indexOf(id); return i < 0 ? 1e6 : i; };
       return list.map((c, i) => [c, i]).sort((a, b) => at(a[0].id) - at(b[0].id) || a[1] - b[1]).map((x) => x[0]);
     };
+    // HQ 类型的 Business（Master Manage 勾「HQ」）：不用切换 Company，我所有的 Company 一起看
+    const isHq = (gid) => !!(S.groups.find((g) => g.id === gid) || {}).all_companies;
     const selectedCompany = (gid) => {
       const list = companiesOf(gid);
+      if (isHq(gid)) return list.length || isSuper || !bizHasCompanies(gid) ? "hq" : "none";
       // Business 有 Company、但还没分给我任何一家：不算任何 Company（标了 Company 的 App / 文件夹不显示）
       if (!list.length) return bizHasCompanies(gid) && !isSuper ? "none" : "all";
       if (list.length === 1) return list[0].id; // 只有一家：就是那一家（标给别家 Company 的 App 不显示）
@@ -733,6 +736,7 @@ window.GWHome = (function () {
       if (sel === "all") return true;
       const tags = S.moduleCompanies.filter((x) => x.module_id === moduleId);
       if (sel === "none") return !tags.length;
+      if (sel === "hq") return !tags.length || tags.some((x) => companiesOf(gid).some((c) => c.id === x.company_id));
       return !tags.length || tags.some((x) => x.company_id === sel);
     };
     const bySort = (a, b) => (a.sort_order || 0) - (b.sort_order || 0);
@@ -764,7 +768,12 @@ window.GWHome = (function () {
       return f.tag_group_id;
     }
     // 这个区块现在要显示的文件夹（标了 Company 的，只在区块选那家 Company 时出现）
-    const boxFolders = (gid) => folders.filter((f) => boxOfFolder(f) === gid && (!f.tag_company_id || ["all", f.tag_company_id].includes(selectedCompany(gid))));
+    const boxFolders = (gid) =>
+      folders.filter((f) => {
+        if (boxOfFolder(f) !== gid) return false;
+        const sel = selectedCompany(gid);
+        return !f.tag_company_id || ["all", f.tag_company_id].includes(sel) || (sel === "hq" && companiesOf(gid).some((c) => c.id === f.tag_company_id));
+      });
     // 区块最上层的东西：有记录的按记录排；还没记录的 App 按默认顺序补在后面
     function boxItems(gid) {
       const mods = new Map(modsOfGroup(gid).map((m) => [m.id, m]));
@@ -984,6 +993,8 @@ window.GWHome = (function () {
     const companyPicker = (gid) => {
       const list = companiesOf(gid);
       if (!list.length) return "";
+      // HQ：不用选，显示「All companies」（滑过去看是哪几家）
+      if (isHq(gid)) return `<span title="${esc(list.map((c) => c.name).join(", "))}" class="inline-flex max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(list.length === 1 ? list[0].name : t("home.hqAllCompanies", { count: list.length }))}</span></span>`;
       // 只有一个 Company：只显示它的名字，不用下拉选单
       if (list.length === 1) return `<span class="inline-flex max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(list[0].name)}</span></span>`;
       const sel = selectedCompany(gid);

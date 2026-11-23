@@ -1357,6 +1357,10 @@
             ${field(tb("name"), `<input name="name" required value="${esc(g ? g.name : "")}" class="${cls.input}">`)}
           </div>
           ${field(tg("descriptionLabel"), `<input name="description" value="${esc(g ? g.description || "" : "")}" class="${cls.input}">`)}
+          <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+            <input type="checkbox" name="all_companies" ${g && g.all_companies ? "checked" : ""} class="mt-0.5 size-4 accent-emerald-600">
+            <span><span class="block text-sm font-medium">${esc(tb("allCompanies"))}</span><span class="block text-xs text-slate-500">${esc(tb("allCompaniesHint"))}</span></span>
+          </label>
           <div class="flex justify-end gap-2">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button>
             <button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button>
@@ -1369,7 +1373,10 @@
         e.preventDefault();
         const f = e.target;
         const row = { code: f.code.value.trim().toUpperCase(), name: f.name.value.trim(), description: f.description.value.trim() || null };
+        // HQ（所有 Company 一起看）：资料库还没加这一栏时就先不存它
+        if (f.all_companies.checked || (g && "all_companies" in g)) row.all_companies = f.all_companies.checked;
         const { error } = g ? await sb.from("gw_groups").update(row).eq("id", g.id) : await sb.from("gw_groups").insert({ ...row, sort_order: groups.length });
+        if (error && /all_companies/.test(error.message || "")) return ($("[data-err]", m.el).innerHTML = alertBox(tb("allCompaniesNeedsDb")));
         if (error) return ($("[data-err]", m.el).innerHTML = alertBox(error.code === "23505" ? tb("duplicate") : error.code === "23514" ? tb("badCode") : tg("saveFailed")));
         m.close();
         structureTab();

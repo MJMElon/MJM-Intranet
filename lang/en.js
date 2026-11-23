@@ -6,6 +6,8 @@ window.GW_LANG["en"] = {
     "tagline": "One sign-in for every company system"
   },
   "nav": {
+    "darkMode": "Dark mode",
+    "lightMode": "Light mode",
     "home": "Home",
     "library": "Library",
     "admin": "Admin Console",
@@ -67,6 +69,7 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "hqAllCompanies": "All companies ({count})",
     "transferLater": "Later",
     "transferDecline": "Decline",
     "transferAccept": "Accept",
@@ -462,6 +465,9 @@ window.GW_LANG["en"] = {
       "audit": "Audit Log"
     },
     "business": {
+      "allCompanies": "HQ — show all companies together",
+      "allCompaniesHint": "People in this business see everything for all the companies they were given at once, without switching company.",
+      "allCompaniesNeedsDb": "The database needs the latest SQL update before HQ can be saved.",
       "add": "Add business",
       "addTitle": "Add New Business Name",
       "editTitle": "Edit Business",

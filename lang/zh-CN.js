@@ -6,6 +6,8 @@ window.GW_LANG["zh-CN"] = {
     "tagline": "公司系统统一入口"
   },
   "nav": {
+    "darkMode": "深色模式",
+    "lightMode": "浅色模式",
     "home": "首页",
     "library": "模块库",
     "admin": "管理控制台",
@@ -67,6 +69,7 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "hqAllCompanies": "所有 Company（{count}）",
     "transferLater": "之后再说",
     "transferDecline": "拒绝",
     "transferAccept": "接受",
@@ -462,6 +465,9 @@ window.GW_LANG["zh-CN"] = {
       "audit": "操作记录"
     },
     "business": {
+      "allCompanies": "HQ — 所有 Company 一起看",
+      "allCompaniesHint": "这个 Business 的人会同时看到他被分到的所有 Company，不用切换 Company。",
+      "allCompaniesNeedsDb": "资料库要先执行最新的 SQL，才能存 HQ。",
       "add": "新增 Business",
       "addTitle": "新增 Business",
       "editTitle": "修改 Business",

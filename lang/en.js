@@ -465,6 +465,10 @@ window.GW_LANG["en"] = {
       "audit": "Audit Log"
     },
     "business": {
+      "hqOn": "HQ · all companies",
+      "hqOff": "Set as HQ",
+      "hqTurnedOn": "{name} is now HQ: people see all their companies together.",
+      "hqTurnedOff": "{name} is no longer HQ: people switch company again.",
       "allCompanies": "HQ — show all companies together",
       "allCompaniesHint": "People in this business see everything for all the companies they were given at once, without switching company.",
       "allCompaniesNeedsDb": "The database needs the latest SQL update before HQ can be saved.",
@@ -480,6 +484,7 @@ window.GW_LANG["en"] = {
       "name": "Business Name"
     },
     "structure": {
+      "addAllCompanies": "Add all companies ({count})",
       "added": "Added",
       "allModulesAdded": "Every module is already in this business.",
       "codeAuto": "System running number. Cannot be edited.",

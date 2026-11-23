@@ -1391,49 +1391,119 @@
     }
 
     // ---------------------------------------------------------- 「+」加 Company 到这个 Business：选现有的，或新增一家
+    /* 最上面有「Set as HQ」开关：
+       - 关：一次加一家（或全部）
+       - 开：这个 Business 变成 HQ（人员不用切换 Company，一起看自己被分到的所有 Company），
+         下面列出所有 Company 打勾，勾哪几家就是这个 HQ 的 Company。可以有好几个 HQ，各有不同的 Company。 */
     function addCompanyDialog(g) {
-      const free = companies.filter((c) => !links.some((l) => l.group_id === g.id && l.company_id === c.id));
-      const m = modal(
-        ts("addCompanyTitle", { name: g.name }),
-        `<div class="space-y-4"><div data-err></div>
-          ${
-            free.length
-              ? `<div class="space-y-1.5"><span class="${cls.label}">${esc(ts("pickCompany"))}</span>
-                  <div class="flex gap-2">${select("pick", free.map((c) => [c.id, (c.code ? c.code + " · " : "") + c.name]), free[0].id)}<button data-pick-add class="${btn("primary")} shrink-0">${esc(ts("add"))}</button></div>
-                </div>
-                ${free.length > 1 ? `<button data-add-all class="${btn("secondary")} w-full">${icon("copy-plus")} ${esc(ts("addAllCompanies", { count: free.length }))}</button>` : ""}
-                <div class="flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span>${esc(ts("or"))}<span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span></div>`
-              : `<p class="text-sm text-slate-500">${esc(ts("noneToAdd"))}</p>`
-          }
+      const hqReady = "all_companies" in g;
+      const m = modal(ts("addCompanyTitle", { name: g.name }), `<div data-body></div>`, { wide: true });
+      const mineNow = () => new Set(links.filter((l) => l.group_id === g.id).map((l) => l.company_id));
+      const label = (c) => (c.code ? c.code + " · " : "") + c.name;
+      const done = () => (m.close(), toast(ts("saved")), structureTab());
+      const fail = (b) => (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), b && (b.disabled = false));
+
+      function paint() {
+        const free = companies.filter((c) => !mineNow().has(c.id));
+        const hqSwitch = hqReady
+          ? `<label class="flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${g.all_companies ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20" : "border-slate-200 dark:border-slate-700"}">
+              <input type="checkbox" data-hq ${g.all_companies ? "checked" : ""} class="mt-0.5 size-4 accent-emerald-600">
+              <span><span class="block text-sm font-medium">${esc(tb("hqOff"))}</span><span class="block text-xs text-slate-500">${esc(ts("hqPickHint"))}</span></span>
+            </label>`
+          : "";
+        const hqBody = () => {
+          const on = mineNow();
+          return `<div class="space-y-2">
+              <div class="flex items-center justify-between gap-2"><span class="${cls.label}">${esc(ts("hqCompanies"))}</span>
+                <button type="button" data-hq-all class="text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-300">${esc(ts("selectAll"))}</button></div>
+              ${
+                companies.length
+                  ? `<div class="grid max-h-[45vh] gap-1 overflow-y-auto rounded-xl border border-slate-200 p-2 sm:grid-cols-2 dark:border-slate-700">${companies
+                      .map((c) => `<label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-white/5"><input type="checkbox" name="hqco" value="${c.id}" ${on.has(c.id) ? "checked" : ""} class="size-4 accent-emerald-600"><span class="truncate">${esc(label(c))}</span></label>`)
+                      .join("")}</div>`
+                  : `<p class="text-sm text-slate-500">${esc(ts("noneToAdd"))}</p>`
+              }
+              <div class="flex justify-end gap-2 pt-1"><button type="button" data-cancel class="${btn("secondary")}">${esc(t("admin.users.cancel"))}</button><button type="button" data-hq-save class="${btn("primary")}">${esc(ts("save"))}</button></div>
+            </div>`;
+        };
+        const normalBody = () =>
+          free.length
+            ? `<div class="space-y-1.5"><span class="${cls.label}">${esc(ts("pickCompany"))}</span>
+                <div class="flex gap-2">${select("pick", free.map((c) => [c.id, label(c)]), free[0].id)}<button data-pick-add class="${btn("primary")} shrink-0">${esc(ts("add"))}</button></div>
+              </div>
+              ${free.length > 1 ? `<button data-add-all class="${btn("secondary")} w-full">${icon("copy-plus")} ${esc(ts("addAllCompanies", { count: free.length }))}</button>` : ""}`
+            : `<p class="text-sm text-slate-500">${esc(ts("noneToAdd"))}</p>`;
+        $("[data-body]", m.el).innerHTML = `<div class="space-y-4"><div data-err></div>
+          ${hqSwitch}
+          ${g.all_companies ? hqBody() : normalBody()}
+          <div class="flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span>${esc(ts("or"))}<span class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></span></div>
           <button data-new-co class="${btn("secondary")} w-full">${icon("plus")} ${esc(ts("newCompany"))}</button>
-        </div>`,
-      );
-      refreshIcons();
-      const allBtn = $("[data-add-all]", m.el);
-      if (allBtn)
-        allBtn.onclick = async () => {
-          allBtn.disabled = true;
-          const { error } = await sb.from("gw_business_companies").insert(free.map((c) => ({ group_id: g.id, company_id: c.id })));
-          if (error) return (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), (allBtn.disabled = false));
+        </div>`;
+        refreshIcons();
+        wire(free);
+      }
+
+      function wire(free) {
+        const hq = $("[data-hq]", m.el);
+        if (hq)
+          hq.onchange = async () => {
+            hq.disabled = true;
+            const { error } = await sb.from("gw_groups").update({ all_companies: hq.checked }).eq("id", g.id);
+            if (error) return (hq.checked = !hq.checked), (hq.disabled = false), toast(/all_companies/.test(error.message || "") ? tb("allCompaniesNeedsDb") : tg("saveFailed"));
+            g.all_companies = hq.checked;
+            toast(tb(g.all_companies ? "hqTurnedOn" : "hqTurnedOff", { name: g.name }));
+            paint();
+            structureTab(); // 后面的 Business 方块也马上换成「HQ」
+          };
+        const all = $("[data-hq-all]", m.el);
+        if (all) all.onclick = () => $$("[name=hqco]", m.el).forEach((x) => (x.checked = true));
+        const cancel = $("[data-cancel]", m.el);
+        if (cancel) cancel.onclick = () => (m.close(), structureTab());
+        const save = $("[data-hq-save]", m.el);
+        if (save)
+          save.onclick = async () => {
+            const before = mineNow();
+            const after = new Set($$("[name=hqco]:checked", m.el).map((x) => x.value));
+            const add = [...after].filter((x) => !before.has(x));
+            const drop = [...before].filter((x) => !after.has(x));
+            // 拿掉的 Company：这个 HQ 里分到这家的人会失去它，先问
+            if (drop.length) {
+              const names = drop.map((id) => (companies.find((c) => c.id === id) || {}).name || "—").join(", ");
+              if (!(await confirmDialog(ts("hqRemoveTitle"), ts("hqRemoveBody", { names, name: g.name }), ts("hqRemoveOk"), t("admin.users.cancel")))) return;
+            }
+            save.disabled = true;
+            if (add.length) {
+              const { error } = await sb.from("gw_business_companies").insert(add.map((id) => ({ group_id: g.id, company_id: id })));
+              if (error) return fail(save);
+            }
+            if (drop.length) {
+              const { error } = await sb.from("gw_business_companies").delete().eq("group_id", g.id).in("company_id", drop);
+              if (error) return fail(save);
+            }
+            done();
+          };
+        const allBtn = $("[data-add-all]", m.el);
+        if (allBtn)
+          allBtn.onclick = async () => {
+            allBtn.disabled = true;
+            const { error } = await sb.from("gw_business_companies").insert(free.map((c) => ({ group_id: g.id, company_id: c.id })));
+            if (error) return fail(allBtn);
+            done();
+          };
+        const pickBtn = $("[data-pick-add]", m.el);
+        if (pickBtn)
+          pickBtn.onclick = async () => {
+            pickBtn.disabled = true;
+            const { error } = await sb.from("gw_business_companies").insert({ group_id: g.id, company_id: $("[name=pick]", m.el).value });
+            if (error) return fail(pickBtn);
+            done();
+          };
+        $("[data-new-co]", m.el).onclick = () => {
           m.close();
-          toast(ts("saved"));
-          structureTab();
+          companyDialog(null, g.id);
         };
-      const pickBtn = $("[data-pick-add]", m.el);
-      if (pickBtn)
-        pickBtn.onclick = async () => {
-          pickBtn.disabled = true;
-          const cid = $("[name=pick]", m.el).value;
-          const { error } = await sb.from("gw_business_companies").insert({ group_id: g.id, company_id: cid });
-          if (error) return (($("[data-err]", m.el).innerHTML = alertBox(tg("saveFailed"))), (pickBtn.disabled = false));
-          m.close();
-          toast(ts("saved"));
-          structureTab();
-        };
-      $("[data-new-co]", m.el).onclick = () => {
-        m.close();
-        companyDialog(null, g.id);
-      };
+      }
+      paint();
     }
 
     // ---------------------------------------------------------- Company 新增 / 修改

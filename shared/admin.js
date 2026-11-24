@@ -1508,11 +1508,13 @@
     /* 第 1 段：公司名（标题，旁边铅笔才能改）＋ 注册号码；短名、备注；公司代码、Opispro 公司编号；属于哪些 Business（含面积）
        第 2 段：Billing details（地址、电话、传真）
        第 3 段：这家公司有多个 Location → 一行一个（Opispro Location ID、名称），「+ Add row」再加；按 Save 一起存 */
-    /* Company 窗口（标题 = 公司名，旁边铅笔可以改名）：
+    /* Company 窗口（标题 = 公司名，旁边铅笔：标题本身变成输入框改名）：
          Company code | Opispro Company ID；Registration No. | Short name；Remark（整行）
          Billing details
          Business：已加的 Business 标签 +「+」；每个 Business 一行面积（Ha）
-           勾「This company has multiple locations」：每个 Business 下面 Opispro Location ID / Location name / 面积（Ha），可以加列
+           勾「This company has multiple locations」：每个 Business 下面 Opispro Location ID / Location name / 面积（Ha），可以加列；
+           这时 Business 的面积 = 它底下 Location 面积的总和（自动算，不能手改）
+         每一段（Company details / Billing details / Businesses）有自己的标题条
        全部先记在画面上，按 Save 一次写入 */
     function companyDialog(c, presetGroupId) {
       const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false, billing_address: "", phone: "", fax: "" };
@@ -1535,7 +1537,7 @@
       const locBlock = (g) => {
         const rows = locsOf(g.id);
         return `<div data-loc-biz="${g.id}" class="${bizSel.has(g.id) ? "" : "hidden"} rounded-lg bg-slate-50 p-2.5 dark:bg-white/5">
-          <p class="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">${esc(g.name)}</p>
+          <p class="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">${icon("map-pin", "size-3.5 text-slate-500")}${esc(g.name)} <span class="text-xs font-normal text-slate-500">· ${esc(tc("locationsOf"))}</span></p>
           <div data-loc-head class="${rows.length ? "grid" : "hidden"} mb-1 grid-cols-[7.5rem_1fr_7.5rem_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span>${esc(tc("area"))}</span><span class="w-8"></span></div>
           <div data-loc-rows class="space-y-2">${rows.map(locRow).join("")}</div>
           <button type="button" data-loc-row-add="${g.id}" class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">${icon("plus", "size-3.5")} ${esc(tc("addRow"))}</button>
@@ -1546,6 +1548,7 @@
         return `<div data-area-box="${g.id}" class="${bizSel.has(g.id) ? "flex" : "hidden"} items-center gap-3 rounded-lg bg-slate-50 px-3 py-1.5 dark:bg-white/5">
           <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(g.name)}</span>
           <span class="text-xs text-slate-500">${esc(tc("area"))}</span>
+          <span data-area-sum="${g.id}" class="hidden text-[11px] font-medium text-emerald-700 dark:text-emerald-300">${esc(tc("sumOfLocations"))}</span>
           <span class="w-32 shrink-0"><input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l ? numVal(l.area) : ""}" class="${cls.input} h-8"></span>${ha}
           <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
         </div>`;
@@ -1555,10 +1558,15 @@
           .filter((g) => bizSel.has(g.id))
           .map((g) => `<span class="inline-flex items-center gap-1 rounded-full bg-sky-50 py-1 pr-1 pl-2.5 text-xs font-medium text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">${esc(g.name)}<button type="button" data-biz-rm="${g.id}" aria-label="${esc(tg("delete"))}" class="flex size-4 items-center justify-center rounded-full hover:bg-sky-200/70 dark:hover:bg-sky-800">${icon("x", "size-3")}</button></span>`)
           .join("");
+      // 每一段的标题条：图示 + 粗体标题，跟内容分开（一眼看得出哪个是标题）
+      const secHead = (ic, text, extra = "") =>
+        `<div class="-mx-3 -mt-3 mb-3 flex flex-wrap items-center gap-2 rounded-t-xl border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-white/5">${icon(ic, "size-4 shrink-0 text-brand-600")}<p class="mr-1 text-sm font-bold tracking-tight text-slate-900 dark:text-white">${esc(text)}</p>${extra}</div>`;
       const m = modal(
         c ? c.name : tc("addTitle"),
         `<form class="space-y-5"><div data-err></div>
           <div data-name-box class="${c ? "hidden" : ""}">${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}</div>
+          <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          ${secHead("building-2", tc("details"))}
           <div class="grid gap-3 sm:grid-cols-2">
             ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
             ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`)}
@@ -1566,8 +1574,9 @@
             ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
             <div class="sm:col-span-2">${field(tc("remark"), `<textarea name="description" rows="2" maxlength="300" class="${cls.input} h-auto py-2">${esc(v.description || "")}</textarea>`)}</div>
           </div>
+          </div>
           <div class="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-            <p class="text-sm font-semibold">${esc(tc("billing"))}</p>
+            ${secHead("receipt-text", tc("billing"))}
             ${field(tc("billingAddress"), `<textarea name="billing_address" rows="2" maxlength="400" class="${cls.input} h-auto py-2">${esc(v.billing_address || "")}</textarea>`)}
             <div class="grid gap-3 sm:grid-cols-2">
               ${field(tc("phone"), `<input name="phone" maxlength="60" value="${esc(v.phone || "")}" class="${cls.input}">`)}
@@ -1575,11 +1584,12 @@
             </div>
           </div>
           <div class="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <p class="mr-1 text-sm font-semibold">${esc(tc("businesses"))}</p>
-              <span data-biz-chips class="contents">${chips()}</span>
-              <button type="button" data-biz-add aria-label="${esc(tc("addToBusiness"))}" title="${esc(tc("addToBusiness"))}" class="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:text-white">${icon("plus", "size-4")}</button>
-            </div>
+            ${secHead(
+              "briefcase-business",
+              tc("businesses"),
+              `<span data-biz-chips class="contents">${chips()}</span>
+              <button type="button" data-biz-add aria-label="${esc(tc("addToBusiness"))}" title="${esc(tc("addToBusiness"))}" class="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:bg-transparent dark:hover:border-white dark:hover:text-white">${icon("plus", "size-4")}</button>`,
+            )}
             <div class="space-y-1.5">${groups.map(areaRow).join("")}</div>
             <label class="flex cursor-pointer items-center gap-2 pt-1 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
             <div data-locations class="${v.has_locations ? "" : "hidden"} space-y-2.5">
@@ -1594,19 +1604,46 @@
         </form>`,
         { wide: true },
       );
-      // 标题旁边的铅笔：点了才出现公司名字的输入框
+      // 标题旁边的铅笔：点了标题本身变成输入框（直接在标题改名，不另外开一行）
       if (c && m.head) {
         m.head.innerHTML = `<button type="button" data-name-edit aria-label="${esc(tc("editName"))}" title="${esc(tc("editName"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>`;
         m.head.onclick = (e) => {
           if (!e.target.closest("[data-name-edit]")) return;
-          $("[data-name-box]", m.el).classList.remove("hidden");
-          $("[name=name]", m.el).focus();
+          const h2 = m.el.parentElement.querySelector("h2");
+          const hidden = $("[name=name]", m.el);
+          h2.classList.remove("truncate");
+          h2.classList.add("flex-1");
+          h2.innerHTML = `<input data-title-name maxlength="100" value="${esc(hidden.value)}" aria-label="${esc(tc("name"))}" class="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-lg font-semibold outline-none focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:focus:border-white">`;
+          const inp = h2.querySelector("input");
+          inp.addEventListener("input", () => (hidden.value = inp.value.trim() ? inp.value : c.name)); // 清空 = 保留原名
+          inp.addEventListener("keydown", (ev) => ev.key === "Enter" && ev.preventDefault());
+          inp.focus();
+          inp.select();
           m.head.innerHTML = "";
         };
       }
       refreshIcons();
+      syncAreas();
       $("[data-cancel]", m.el).onclick = m.close;
       if (!c) $("[name=name]", m.el).focus();
+      // 有多个 Location：Business 的面积 = 底下 Location 面积加起来（自动算、不能手改）；没有 Location 列就照旧手填
+      const syncAreas = () => {
+        const hasLoc = $("[name=has_locations]", m.el).checked;
+        groups.forEach((g) => {
+          const inp = $(`[data-area="${g.id}"]`, m.el);
+          const rows = $$(`[data-loc-biz="${g.id}"] [data-loc-row]`, m.el);
+          const auto = hasLoc && rows.length > 0;
+          if (auto) {
+            const sum = rows.reduce((t, r) => t + (Number($("[data-loc-area]", r).value) || 0), 0);
+            inp.value = sum ? String(Math.round(sum * 100) / 100) : "";
+          }
+          inp.readOnly = auto;
+          inp.classList.toggle("bg-slate-100", auto);
+          inp.classList.toggle("dark:bg-slate-800", auto);
+          $(`[data-area-sum="${g.id}"]`, m.el).classList.toggle("hidden", !auto);
+        });
+      };
+      m.el.addEventListener("input", (e) => e.target.matches("[data-loc-area]") && syncAreas());
       // Business 加入 / 拿掉：标签、面积列、Location 区一起出现 / 收起
       const syncBiz = () => {
         $("[data-biz-chips]", m.el).innerHTML = chips();
@@ -1618,6 +1655,7 @@
           $(`[data-loc-biz="${g.id}"]`, m.el).classList.toggle("hidden", !on);
         });
         $("[data-loc-nobiz]", m.el).classList.toggle("hidden", bizSel.size > 0);
+        syncAreas();
         refreshIcons();
         m.touch();
       };
@@ -1652,18 +1690,23 @@
           $("[data-loc-head]", blk).classList.replace("hidden", "grid");
           refreshIcons();
           const rows = $$("[data-loc-row]", host);
+          syncAreas();
           return $("[data-loc-id]", rows[rows.length - 1]).focus();
         }
         if ("locRowDel" in b.dataset) {
           const blk = b.closest("[data-loc-biz]");
           b.closest("[data-loc-row]").remove();
           if (!$("[data-loc-row]", blk)) $("[data-loc-head]", blk).classList.replace("grid", "hidden"); // 没有 Location 就空白
+          syncAreas();
           m.touch();
         }
       });
       // 勾了「有多个 Location」才出现 Location 区
       m.el.addEventListener("change", (e) => {
-        if (e.target.name === "has_locations") $("[data-locations]", m.el).classList.toggle("hidden", !e.target.checked);
+        if (e.target.name === "has_locations") {
+          $("[data-locations]", m.el).classList.toggle("hidden", !e.target.checked);
+          syncAreas();
+        }
       });
 
       if (c && $("[data-del]", m.el))

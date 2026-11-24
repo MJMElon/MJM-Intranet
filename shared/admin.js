@@ -29,7 +29,7 @@
       ]
     : [
         ["userGroup", "users-round", canGroupsPage || canUsersPage || canAccessPage ? ["users"] : []],
-        ...(C.can_edit_module_name || C.can_delete_business || C.can_delete_company || C.can_delete_module ? [["master", "database", ["structure"]]] : []),
+        ...(C.can_edit_module_name || C.can_delete_business || C.can_delete_company || C.can_delete_module || C.can_add_business || C.can_add_company || C.can_add_module ? [["master", "database", ["structure"]]] : []),
         ...(C.can_view_audit ? [["audit", "scroll-text", ["audit"]]] : []),
       ].filter(([, , tabs]) => tabs.length);
   const TABS = SECTIONS.flatMap(([, , tabs]) => tabs);
@@ -995,7 +995,7 @@
         </div>
         <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <p class="mb-2 text-xs font-bold tracking-wider text-slate-500 uppercase">${esc(tr("masterData"))}</p>
-          <div class="flex flex-wrap gap-x-5 gap-y-1.5">${["can_delete_business", "can_delete_company", "can_delete_module"]
+          <div class="grid gap-x-5 gap-y-1.5 sm:grid-cols-3">${["can_add_business", "can_add_company", "can_add_module", "can_delete_business", "can_delete_company", "can_delete_module"]
             .map((k) => `<label class="flex items-center gap-2 text-sm ${readOnly ? "" : "cursor-pointer"}"><input type="checkbox" name="${k}" ${r && r[k] ? "checked" : ""} ${dis} class="size-4 shrink-0 accent-emerald-600">${esc(tr("funcs." + k))}</label>`)
             .join("")}</div>
         </div>
@@ -1080,9 +1080,18 @@
           can_delete_business: f.can_delete_business.checked,
           can_delete_company: f.can_delete_company.checked,
           can_delete_module: f.can_delete_module.checked,
+          can_add_business: f.can_add_business.checked,
+          can_add_company: f.can_add_company.checked,
+          can_add_module: f.can_add_module.checked,
         };
         const put = (x) => (r ? sb.from("gw_roles").update(x).eq("id", r.id).select().single() : sb.from("gw_roles").insert(x).select().single());
         let saved = await put(row);
+        // 资料库还没加「新增」这几栏（20261203）：先存其他的，提醒跑 SQL
+        if (saved.error && /can_add_(business|company|module)/.test(saved.error.message || "")) {
+          ["can_add_business", "can_add_company", "can_add_module"].forEach((k) => delete row[k]);
+          saved = await put(row);
+          if (!saved.error) toast(tr("addNeedsDb"));
+        }
         // 资料库还没加「删除」这几栏：先存其他的，提醒跑 SQL
         if (saved.error && /can_delete/.test(saved.error.message || "")) {
           ["can_delete_business", "can_delete_company", "can_delete_module"].forEach((k) => delete row[k]);
@@ -1236,6 +1245,10 @@
     const canDelBiz = isSuper || !!C.can_delete_business;
     const canDelCo = isSuper || !!C.can_delete_company;
     const canDelMod = isSuper || !!C.can_delete_module;
+    // 新增 Business / Company / 模块（加进 Business）：Super Admin，或角色有勾（20261203）
+    const canAddBiz = isSuper || !!C.can_add_business;
+    const canAddCo = isSuper || !!C.can_add_company;
+    const canAddMod = isSuper || !!C.can_add_module;
     // 流水号：现有代码里最大的数字 + 1，至少两位（01、02 … 10、11）
     const nextCode = (list) => String(Math.max(0, ...list.map((x) => (/^\d+$/.test(x.code || "") ? Number(x.code) : 0))) + 1).padStart(2, "0");
     const logo = (m, size) =>
@@ -1263,7 +1276,7 @@
         const tag = tagOf(g.id, m.id);
         return !!tag && (sectorsReady ? (tag.sector_id || null) === (sid || null) : true);
       });
-      const canAddMore = !sid && isSuper && modules.some((m) => !tagOf(g.id, m.id));
+      const canAddMore = !sid && canAddMod && modules.some((m) => !tagOf(g.id, m.id));
       return `<div class="flex min-w-0 flex-col rounded-xl bg-slate-50 p-1.5 dark:bg-white/5">
         <div class="flex items-center gap-1 px-1 pb-1.5">
           <p class="min-w-0 flex-1 truncate text-[11px] font-bold tracking-wider text-slate-500 uppercase" title="${esc(label)}">${esc(label)}</p>
@@ -1301,7 +1314,7 @@
             )
             .join("")}
           ${cos.length ? "" : `<span class="text-xs text-slate-400">${esc(ts("noCompany"))}</span>`}
-          ${isSuper ? `<button data-add-co="${g.id}" aria-label="${esc(ts("addCompany"))}" title="${esc(ts("addCompany"))}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>` : ""}
+          ${canAddCo ? `<button data-add-co="${g.id}" aria-label="${esc(ts("addCompany"))}" title="${esc(ts("addCompany"))}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>` : ""}
           ${g.all_companies ? `<p class="flex basis-full items-center gap-1 pt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">${icon("layers", "size-3.5 shrink-0")}${esc(ts("sharedAcross"))}</p>` : ""}
         </div>
         <div class="st-sectors grid flex-1 gap-2 p-3">${cols.map(([sid, label]) => column(g, sid, label)).join("")}</div>
@@ -1311,7 +1324,7 @@
     function draw() {
       sorters.splice(0).forEach((s) => s.destroy());
       view.innerHTML = `<div class="space-y-4">
-        ${isSuper ? `<div class="flex justify-end"><button id="st-add-biz" class="${btn("primary")}">${icon("plus")} ${esc(ts("addBusiness"))}</button></div>` : ""}
+        ${canAddBiz ? `<div class="flex justify-end"><button id="st-add-biz" class="${btn("primary")}">${icon("plus")} ${esc(ts("addBusiness"))}</button></div>` : ""}
         ${groups.length ? `<div id="st-board" class="flex flex-col gap-4">${groups.map(bizBox).join("")}</div>` : empty(tb("empty"))}
         ${!sectorsReady ? `<p class="text-xs text-amber-600">${esc(tsec("notReady"))}</p>` : ""}
       </div>`;
@@ -1767,7 +1780,7 @@
         }
         const [r1, r2] = await Promise.all([
           drop.length ? sb.from("gw_business_companies").delete().eq("company_id", id).in("group_id", drop) : Promise.resolve({}),
-          rows.length ? sb.from("gw_business_companies").upsert(rows, { onConflict: "group_id,company_id" }) : Promise.resolve({}),
+          rows.length ? (c ? sb.from("gw_business_companies").upsert(rows, { onConflict: "group_id,company_id" }) : sb.from("gw_business_companies").insert(rows)) : Promise.resolve({}),
         ]);
         if (r1.error || r2.error) return fail(r1.error || r2.error);
         // Location：画面上有的新增 / 更新，画面上没有的（或整段没勾）删掉
@@ -2131,7 +2144,8 @@
         if (error) setMsg(tg("saveFailed"));
         return structureTab();
       }
-      if (d.addCo) return addCompanyDialog(groups.find((x) => x.id === d.addCo));
+      // Super Admin：勾这个 Business 有哪些 Company；只有「新增 Company」权：直接开新 Company 窗（放进这个 Business）
+      if (d.addCo) return isSuper ? addCompanyDialog(groups.find((x) => x.id === d.addCo)) : companyDialog(null, d.addCo);
       if (d.addMod) return addModuleDialog(groups.find((x) => x.id === d.addMod));
       if (d.co) return isSuper ? companyDialog(coById.get(d.co)) : companyInfo(d.co, d.from || null);
       if (d.editMod) return canRename(d.editMod) && moduleDialog(modById.get(d.editMod));

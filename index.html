@@ -143,7 +143,9 @@
         state: secRes.data || [],
       }
     : null;
-  GWHome.render(document.getElementById("board"), data, { widgets, profile, pending, memberOf, links, sections, reactions });
+  // Notice Board：每则公告前面写是哪个 Business 的（"HQ : …"）
+  const groupNames = Object.fromEntries(((groupRes && groupRes.data) || []).map((g) => [g.id, g.name]));
+  GWHome.render(document.getElementById("board"), data, { widgets, profile, pending, memberOf, links, sections, reactions, groupNames });
 })();
 </script>
 </body>

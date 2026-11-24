@@ -419,6 +419,7 @@ window.GW_LANG["en"] = {
       "EVENT_DAY_OFF": "Event Day Off"
     },
     "postAudience": "Who sees it",
+    "business": "Business",
     "postEveryone": "Everyone",
     "editNotice": "Edit notice",
     "deleteNotice": "Delete notice",
@@ -945,6 +946,7 @@ window.GW_LANG["en"] = {
     },
     "roles": {
       "masterData": "Master data",
+      "addNeedsDb": "Saved, but the add rights need the latest SQL update (20261203) first.",
       "deleteNeedsDb": "Saved, but the delete rights need the latest SQL update first.",
       "superName": "Super Admin",
       "superBiz": "All businesses",
@@ -965,6 +967,9 @@ window.GW_LANG["en"] = {
       "deleteBody": "Delete “{name}”? People with this role become normal users.",
       "duplicate": "A role with this name already exists.",
       "funcs": {
+        "can_add_business": "Add new business",
+        "can_add_company": "Add new company",
+        "can_add_module": "Add module to a business",
         "can_delete_business": "Delete business",
         "can_delete_company": "Delete company",
         "can_delete_module": "Delete module",

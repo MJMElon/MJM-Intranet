@@ -85,7 +85,7 @@ window.GW = (function () {
       profile.adminPairs = []; // 我在哪个 Business 是哪个模块的管理员 [{ group_id, module_id }]
       profile.adminModules = 0;
       // 角色功能：全域的（gw_roles）＋ 按 Business 的（gw_role_businesses）；super_admin 全部都有
-      const GLOBAL = ["can_view_user_group", "can_view_audit", "can_edit_module_name", "can_manage_module_access"];
+      const GLOBAL = ["can_view_user_group", "can_view_audit", "can_edit_module_name", "can_manage_module_access", "can_delete_business", "can_delete_company", "can_delete_module"];
       const PER_BIZ = ["can_post_notice", "can_delete_notice", "can_grant_module", "can_revoke_module", "can_set_module_admin", "can_add_business_user", "can_remove_business_user", "can_view_users"];
       profile.can = Object.fromEntries([...GLOBAL, ...PER_BIZ].map((f) => [f, profile.isSuper]));
       profile.perms = {}; // group_id → { can_post_notice, ... }

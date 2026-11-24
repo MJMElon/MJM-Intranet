@@ -535,6 +535,10 @@ window.GW_LANG["en"] = {
       "notReady": "The database has not been updated for sectors yet."
     },
     "company": {
+      "unitHa": "Ha",
+      "addToBusiness": "Add to a business",
+      "allBizAdded": "This company is already in every business.",
+      "locationAreaNeedsDb": "Saved, but location areas need the latest SQL update first.",
       "locationsTickBusiness": "Tick a business above first; each business has its own locations.",
       "remark": "Remark",
       "opisproLocationId": "Opispro Location ID",
@@ -930,6 +934,8 @@ window.GW_LANG["en"] = {
       "outsiderAdded": "{name} now has access to {module}."
     },
     "roles": {
+      "masterData": "Master data",
+      "deleteNeedsDb": "Saved, but the delete rights need the latest SQL update first.",
       "superName": "Super Admin",
       "superBiz": "All businesses",
       "superDesc": "Built in: full access to everything in the Intranet and every module. Can't be edited or deleted.",
@@ -949,6 +955,9 @@ window.GW_LANG["en"] = {
       "deleteBody": "Delete “{name}”? People with this role become normal users.",
       "duplicate": "A role with this name already exists.",
       "funcs": {
+        "can_delete_business": "Delete business",
+        "can_delete_company": "Delete company",
+        "can_delete_module": "Delete module",
         "can_post_notice": "Update news",
         "can_delete_notice": "Delete news",
         "can_grant_module": "Add user to module",

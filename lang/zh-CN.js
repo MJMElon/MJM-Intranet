@@ -535,6 +535,10 @@ window.GW_LANG["zh-CN"] = {
       "notReady": "数据库还没更新到支持 Sector。"
     },
     "company": {
+      "unitHa": "Ha",
+      "addToBusiness": "加到 Business",
+      "allBizAdded": "这家公司已经在每个 Business 里。",
+      "locationAreaNeedsDb": "已存，但 Location 面积要先执行最新的 SQL。",
       "locationsTickBusiness": "先在上面勾 Business；每个 Business 有自己的 Location。",
       "remark": "备注",
       "opisproLocationId": "Opispro Location ID",
@@ -930,6 +934,8 @@ window.GW_LANG["zh-CN"] = {
       "outsiderAdded": "{name} 现在可以用 {module}。"
     },
     "roles": {
+      "masterData": "主资料",
+      "deleteNeedsDb": "已存，但删除权限要先执行最新的 SQL。",
       "superName": "Super Admin",
       "superBiz": "所有 Business",
       "superDesc": "内建：Intranet 和每个模块的全部权限。不能修改或删除。",
@@ -949,6 +955,9 @@ window.GW_LANG["zh-CN"] = {
       "deleteBody": "确定删除「{name}」？有这个角色的人会变回一般用户。",
       "duplicate": "已经有同名的角色。",
       "funcs": {
+        "can_delete_business": "删除 Business",
+        "can_delete_company": "删除 Company",
+        "can_delete_module": "删除模块",
         "can_post_notice": "更新公告",
         "can_delete_notice": "删除公告",
         "can_grant_module": "把人加进模块",

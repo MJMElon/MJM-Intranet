@@ -701,7 +701,7 @@ window.GWHome = (function () {
         .filter(([, d]) => !d.hidden)
         .sort(([, a], [, b]) => (a.soon ? 1 : 0) - (b.soon ? 1 : 0));
       // 不是小工具、但一样从这里加：My Home 方块、连结、文件夹
-      const extra = (attr, ic, label, done) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+      const extra = (attr, ic, label, done) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 transition duration-150 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md dark:border-slate-800 dark:hover:border-slate-600 dark:hover:bg-slate-800/60">
           <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${icon(ic, "size-5")}</span>
           <span class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(label)}</span>
           ${done ? `<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">${esc(t("home.added"))}</span>` : `<button type="button" ${attr} class="${btn("secondary", "sm")} px-2.5">${icon("plus", "size-4")} ${esc(t("home.addThis"))}</button>`}
@@ -712,7 +712,7 @@ window.GWHome = (function () {
       return `<div class="mb-3 flex items-center justify-between"><h3 class="font-semibold">${esc(t("fab.addWidget"))}</h3>${iconBtn("data-close-sheet", t("home.close"), "x")}</div>
         <div class="space-y-2">${extras}${types
           .map(
-            ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800 ${d.soon ? "opacity-50" : ""}">
+            ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 transition duration-150 dark:border-slate-800 ${d.soon ? "opacity-50" : "hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md dark:hover:border-slate-600 dark:hover:bg-slate-800/60"}">
               <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${icon(d.icon, "size-5")}</span>
               <span class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(t("widgets.types." + type))}</span>
               ${

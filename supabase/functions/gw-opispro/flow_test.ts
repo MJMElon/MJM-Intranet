@@ -81,6 +81,21 @@ Deno.test("start: redirects to OPIS PRO with S256 PKCE and a signed httpOnly coo
   assert((await begin()).saved.state !== saved.state); // 每次都是新的
 });
 
+Deno.test("pop-up: id goes through the sign-in and back (success and errors); bad ids dropped", async () => {
+  const res = await start(cfg, new Request("https://x/functions/v1/gw-opispro/start?next=index.html&popup=abcdef0123456789"));
+  const cookie = res.headers.get("set-cookie")!.split(";")[0];
+  const saved = (await openCookie(cfg, cookie.split("=").slice(1).join("="), Date.now()))!;
+  assertEquals(saved.popup, "abcdef0123456789");
+  const users = fakeUsers([{ id: "u1", email: "a@b", status: "active", opispro_user_id: "1234" }]);
+  const ok = await callback(cfg, back(cookie, `code=c&state=${saved.state}`), deps({ fetch: tokenFetch({ id_token: await idToken({ nonce: saved.nonce }) }), signIn: users.signIn }));
+  assert(ok.headers.get("location")!.startsWith(cfg.siteUrl + "login.html?mode=sso&popup=abcdef0123456789#th="));
+  const no = await callback(cfg, back(cookie, `error=access_denied&state=${saved.state}`), deps({}));
+  assertEquals(new URL(no.headers.get("location")!).searchParams.get("popup"), "abcdef0123456789");
+  const bad = await start(cfg, new Request("https://x/functions/v1/gw-opispro/start?popup=%22%3E%3Cscript%3E"));
+  const c2 = bad.headers.get("set-cookie")!.split(";")[0];
+  assertEquals((await openCookie(cfg, c2.split("=").slice(1).join("="), Date.now()))!.popup, "");
+});
+
 Deno.test("next only accepts Intranet pages", () => {
   assertEquals(safeNext("https://evil.com"), "index.html");
   assertEquals(safeNext("//evil.com/a.html"), "index.html");

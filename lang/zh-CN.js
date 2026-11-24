@@ -28,6 +28,8 @@ window.GW_LANG["zh-CN"] = {
     "backHome": "回到首页"
   },
   "login": {
+    "ssoWaiting": "请在 OPIS PRO 小视窗里继续…",
+    "ssoPopupDone": "已登录，可以关掉这个视窗。",
     "sso": "用 OPIS PRO 登录",
     "or": "或",
     "title": "登录",

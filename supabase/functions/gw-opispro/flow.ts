@@ -66,7 +66,10 @@ async function cookieKey(cfg: Config) {
   const raw = await crypto.subtle.sign("HMAC", base, enc.encode("gw-opispro-cookie-v1"));
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
-type Saved = { state: string; nonce: string; verifier: string; next: string; exp: number };
+// popup：电脑上用小视窗登入时，登录页给的一个随机代号（回来时带回去，让原本的页面认得是自己的视窗）
+type Saved = { state: string; nonce: string; verifier: string; next: string; exp: number; popup?: string };
+export const safePopup = (v: string | null | undefined) => (/^[A-Za-z0-9_-]{8,64}$/.test(String(v ?? "")) ? String(v) : "");
+const popupQ = (p?: string) => (p ? `&popup=${p}` : "");
 export async function sealCookie(cfg: Config, data: Saved): Promise<string> {
   const body = b64url(enc.encode(JSON.stringify(data)));
   const sig = b64url(new Uint8Array(await crypto.subtle.sign("HMAC", await cookieKey(cfg), enc.encode(body))));
@@ -103,11 +106,12 @@ function redirect(to: string, cookie?: string): Response {
   return new Response(null, { status: 302, headers: h });
 }
 // 失败一律回登录页并带原因（登录页显示对应讯息 + 可以再试）
-export const toLogin = (cfg: Config, error: string, cookie?: string) => redirect(`${cfg.siteUrl}login.html?error=${encodeURIComponent(error)}`, cookie);
+export const toLogin = (cfg: Config, error: string, cookie?: string, popup?: string) =>
+  redirect(`${cfg.siteUrl}login.html?error=${encodeURIComponent(error)}${popupQ(popup)}`, cookie);
 
 export async function start(cfg: Config, req: Request, now = Date.now()): Promise<Response> {
   const url = new URL(req.url);
-  const saved: Saved = { state: randomValue(), nonce: randomValue(), verifier: randomValue(), next: safeNext(url.searchParams.get("next")), exp: now + TTL_MS };
+  const saved: Saved = { state: randomValue(), nonce: randomValue(), verifier: randomValue(), next: safeNext(url.searchParams.get("next")), exp: now + TTL_MS, popup: safePopup(url.searchParams.get("popup")) };
   const q = new URLSearchParams({
     response_type: "code",
     client_id: cfg.clientId,
@@ -124,9 +128,10 @@ export async function start(cfg: Config, req: Request, now = Date.now()): Promis
 export async function callback(cfg: Config, req: Request, deps: Deps): Promise<Response> {
   const url = new URL(req.url);
   const clear = clearCookie(); // 不论结果都删掉这次的登入资料
-  const fail = (code: string) => toLogin(cfg, code, clear);
   // 1) 取出这次登入存的资料
   const saved = await openCookie(cfg, readCookie(req), (deps.now ?? Date.now)());
+  const popup = saved ? safePopup(saved.popup) : "";
+  const fail = (code: string) => toLogin(cfg, code, clear, popup);
   // 2) OPIS PRO 回传错误（按了 Cancel 等）
   const err = url.searchParams.get("error");
   if (err) {
@@ -193,5 +198,5 @@ export async function callback(cfg: Config, req: Request, deps: Deps): Promise<R
   // 6) 找 Intranet 用户 → 一次性登录码（放在 # 后面，不会送到任何伺服器的记录）
   const r = await deps.signIn({ ...claims, sub: String(claims.sub) });
   if ("error" in r) return fail(r.error);
-  return redirect(`${cfg.siteUrl}login.html?mode=sso#th=${encodeURIComponent(r.tokenHash)}&next=${encodeURIComponent(saved.next)}`, clear);
+  return redirect(`${cfg.siteUrl}login.html?mode=sso${popupQ(popup)}#th=${encodeURIComponent(r.tokenHash)}&next=${encodeURIComponent(saved.next)}`, clear);
 }

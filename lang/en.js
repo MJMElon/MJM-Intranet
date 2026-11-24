@@ -28,6 +28,8 @@ window.GW_LANG["en"] = {
     "backHome": "Back to home"
   },
   "login": {
+    "ssoWaiting": "Continue in the OPIS PRO window…",
+    "ssoPopupDone": "Signed in. You can close this window.",
     "sso": "Sign in with OPIS PRO",
     "or": "or",
     "title": "Sign in",

@@ -69,6 +69,7 @@
   }
   .glass .sso:hover { border-color: #64707c; box-shadow: 0 6px 14px rgba(15, 23, 42, .12); transform: translateY(-1px); }
   .glass .sso:active { transform: none; }
+  .glass .sso.waiting { color: #64707c; border-style: dashed; pointer-events: none; }
   .glass .or { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #94a3b8; }
   .glass .or::before, .glass .or::after { content: ""; flex: 1; height: 1px; background: rgba(15, 23, 42, .12); }
 
@@ -126,14 +127,85 @@ async function finishSso() {
   const th = h.get("th");
   const next = h.get("next");
   history.replaceState(null, "", location.pathname);
-  if (!th) return showLogin(t("login.errors.ssoExpired"));
+  const failed = () => {
+    if (POPUP_ID) {
+      notifyOpener({ error: "sso_expired" });
+      return closePopup(t("login.errors.ssoExpired"));
+    }
+    showLogin(t("login.errors.ssoExpired"));
+  };
+  if (!th) return failed();
   card.innerHTML = `<p class="py-6 text-center text-sm text-slate-500">${esc(t("login.submitting"))}</p>`;
   let r = await sb.auth.verifyOtp({ token_hash: th, type: "magiclink" });
   if (r.error) r = await sb.auth.verifyOtp({ token_hash: th, type: "email" });
-  if (r.error || !r.data || !r.data.session) return showLogin(t("login.errors.ssoExpired"));
+  if (r.error || !r.data || !r.data.session) return failed();
   try { localStorage.setItem("gw-sso", r.data.session.user.id); } catch (e) {}
   if (next) params.set("next", next);
+  if (POPUP_ID) {
+    notifyOpener({ ok: true, next: nextPage() });
+    return closePopup(t("login.ssoPopupDone"));
+  }
   go(nextPage());
+}
+// ---------------- 电脑：OPIS PRO 在小视窗登入（手机或视窗被挡住：照常整页跳转）
+// 小视窗登入完成后用 BroadcastChannel（同一个网站才收得到）+ window.opener 通知原本的页面，
+// 只传「成功 + 要去的页面」或「错误代号」，原本的页面再前往（session 已经存在这个网站）
+const POPUP_ID = /^[A-Za-z0-9_-]{8,64}$/.test(params.get("popup") || "") ? params.get("popup") : "";
+function notifyOpener(msg) {
+  const m = { type: "gw-sso", popup: POPUP_ID, ...msg };
+  try { const ch = new BroadcastChannel("gw-sso"); ch.postMessage(m); ch.close(); } catch (e) {}
+  try { if (window.opener && window.opener !== window) window.opener.postMessage(m, location.origin); } catch (e) {}
+}
+function closePopup(text) {
+  card.innerHTML = `<p class="py-6 text-center text-sm text-slate-500">${esc(text)}</p>`;
+  setTimeout(() => window.close(), 150);
+}
+function ssoPopup(e) {
+  const desktop = matchMedia("(pointer: fine)").matches && window.innerWidth >= 640;
+  if (!desktop || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const W = 480, H = 640;
+  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - W) / 2));
+  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - H) / 2));
+  // 不可以先 await：浏览器只让「点击当下」开视窗
+  const w = window.open(e.currentTarget.href + "&popup=" + id, "gw-opispro", `popup=yes,width=${W},height=${H},left=${left},top=${top}`);
+  if (!w) return; // 被挡住：照常整页跳转
+  e.preventDefault();
+  let done = false;
+  const btn = $("#sso");
+  btn.classList.add("waiting");
+  btn.textContent = t("login.ssoWaiting");
+  const finish = (m) => {
+    if (done || !m || m.type !== "gw-sso" || m.popup !== id) return;
+    done = true;
+    try { ch && ch.close(); } catch (x) {}
+    window.removeEventListener("message", onMsg);
+    try { w.close(); } catch (x) {}
+    if (m.ok) {
+      if (m.next) params.set("next", m.next);
+      return go(nextPage());
+    }
+    showLogin(SSO_ERRORS[m.error] ? t("login.errors." + SSO_ERRORS[m.error]) : t("login.errors.ssoFailed"));
+  };
+  const onMsg = (ev) => {
+    if (ev.origin !== location.origin || ev.source !== w) return;
+    finish(ev.data);
+  };
+  window.addEventListener("message", onMsg);
+  let ch = null;
+  try { ch = new BroadcastChannel("gw-sso"); ch.onmessage = (ev) => finish(ev.data); } catch (x) {}
+  // 自己把小视窗关掉：按钮回复原样（讯息晚到也照样处理）
+  const timer = setInterval(() => {
+    if (done) return clearInterval(timer);
+    if (w.closed) {
+      clearInterval(timer);
+      setTimeout(() => {
+        if (done || !$("#sso")) return;
+        $("#sso").classList.remove("waiting");
+        $("#sso").textContent = t("login.sso");
+      }, 1500);
+    }
+  }, 500);
 }
 const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", no_access: "noAccess", link_expired: "linkExpired" };
 const message = (text, ok) =>
@@ -151,6 +223,7 @@ function showLogin(errorText) {
       <div class="text-center"><button type="button" class="link" id="forgot">${esc(t("login.forgot"))}</button></div>
     </form>`;
   $("#forgot").onclick = showForgot;
+  $("#sso").addEventListener("click", ssoPopup);
   $("#f").addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
@@ -240,6 +313,11 @@ async function showChange(reset) {
   }
   if (mode === "forgot") return showForgot();
   if (mode === "sso") return finishSso();
+  // 小视窗里收到错误：告诉原本的页面，然后关掉
+  if (POPUP_ID && error) {
+    notifyOpener({ error });
+    return closePopup(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : t("login.errors.ssoFailed"));
+  }
   // 已登录就直接进首页
   const { session, profile } = await GW.loadProfile();
   if (session && profile && profile.status === "active" && !error) {

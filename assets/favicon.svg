@@ -15,7 +15,6 @@
   <use href="#drop" transform="translate(64 64)" fill="url(#green)"/>
   <!-- right: CPO orange -->
   <use href="#drop" transform="translate(64 64) scale(-1 1)" fill="url(#orange)"/>
-  <!-- shine on both -->
-  <path d="M22 51 C14 55 11 63 13 71" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+  <!-- shine on the oil drop -->
   <path d="M106 51 C114 55 117 63 115 71" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="4" stroke-linecap="round"/>
 </svg>

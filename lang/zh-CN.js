@@ -43,7 +43,7 @@ window.GW_LANG["zh-CN"] = {
       "ssoFailed": "OPIS PRO 登录失败，请再试一次。",
       "ssoExpired": "登录已逾时，请再试一次。",
       "ssoUnreachable": "暂时连不上 OPIS PRO，请稍后再试。",
-      "ssoNotReady": "OPIS PRO 登录还没设定好，请先用 Email 和密码登录。",
+      "ssoNotReady": "OPIS PRO 登录还没设定好，请联系管理员。",
       "invalid": "Email 或密码错误。",
       "disabled": "此帐号已停用，请联系管理员。",
       "noAccess": "此帐号尚未开通 MJM Intranet，请联系管理员。",

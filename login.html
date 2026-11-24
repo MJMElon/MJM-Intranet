@@ -211,11 +211,19 @@ const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso
 const message = (text, ok) =>
   text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
 
+// 登录页只有「用 OPIS PRO 登录」。Email + 密码只在 login.html?mode=password（备用：OPIS PRO 连不上时给管理员用）
+const PASSWORD_MODE = params.get("mode") === "password";
 function showLogin(errorText) {
+  const sso = `<a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()))}">${esc(t("login.sso"))}</a>`;
+  if (!PASSWORD_MODE) {
+    card.innerHTML = `<div class="space-y-4"><div id="msg">${message(errorText)}</div>${sso}</div>`;
+    $("#sso").addEventListener("click", ssoPopup);
+    return;
+  }
   card.innerHTML = `
     <form id="f" class="space-y-4">
       <div id="msg">${message(errorText)}</div>
-      <a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()))}">${esc(t("login.sso"))}</a>
+      ${sso}
       <div class="or">${esc(t("login.or"))}</div>
       ${field(t("login.email"), `<input name="email" type="email" autocomplete="username" required inputmode="email">`)}
       ${field(t("login.password"), `<input name="password" type="password" autocomplete="current-password" required>`)}

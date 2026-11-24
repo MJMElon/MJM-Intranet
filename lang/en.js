@@ -43,7 +43,7 @@ window.GW_LANG["en"] = {
       "ssoFailed": "Sign-in with OPIS PRO failed. Please try again.",
       "ssoExpired": "Sign-in expired, please try again.",
       "ssoUnreachable": "Can't reach OPIS PRO right now. Please try again later.",
-      "ssoNotReady": "Sign in with OPIS PRO is not set up yet. Please use your email and password.",
+      "ssoNotReady": "Sign in with OPIS PRO is not set up yet. Please contact your administrator.",
       "invalid": "Incorrect email or password.",
       "disabled": "This account has been disabled. Please contact your administrator.",
       "noAccess": "This account does not have access to MJM Intranet yet. Please contact your administrator.",

@@ -28,6 +28,8 @@ window.GW_LANG["en"] = {
     "backHome": "Back to home"
   },
   "login": {
+    "sso": "Sign in with OPIS PRO",
+    "or": "or",
     "title": "Sign in",
     "email": "Email",
     "password": "Password",
@@ -35,6 +37,11 @@ window.GW_LANG["en"] = {
     "submitting": "Signing in…",
     "forgot": "Forgot password?",
     "errors": {
+      "ssoCancelled": "Sign-in cancelled.",
+      "ssoFailed": "Sign-in with OPIS PRO failed. Please try again.",
+      "ssoExpired": "Sign-in expired, please try again.",
+      "ssoUnreachable": "Can't reach OPIS PRO right now. Please try again later.",
+      "ssoNotReady": "Sign in with OPIS PRO is not set up yet. Please use your email and password.",
       "invalid": "Incorrect email or password.",
       "disabled": "This account has been disabled. Please contact your administrator.",
       "noAccess": "This account does not have access to MJM Intranet yet. Please contact your administrator.",
@@ -1033,6 +1040,12 @@ window.GW_LANG["en"] = {
       "selfNote": "This is your own account: you can see your modules but cannot change your own access.",
       "superNote": "Super Admin automatically has full access to every module, including new ones, so nothing needs to be ticked here.",
       "viewOnlyNote": "You can see this person's modules but your role cannot change their access.",
+      "opisproId": "OPIS PRO ID",
+      "opisproNotLinked": "Not linked yet (links on first OPIS PRO sign-in)",
+      "opisproAuto": "Blank = link on first sign-in",
+      "opisproBad": "OPIS PRO ID must be numbers only.",
+      "opisproTaken": "This OPIS PRO ID is already linked to another user.",
+      "opisproNeedsDb": "Run the latest SQL update first to save the OPIS PRO ID.",
       "loginEmail": "Login email",
       "userId": "User ID",
       "noModulesHere": "No modules for this business / company yet.",

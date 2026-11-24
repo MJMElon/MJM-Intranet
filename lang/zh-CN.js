@@ -28,6 +28,8 @@ window.GW_LANG["zh-CN"] = {
     "backHome": "回到首页"
   },
   "login": {
+    "sso": "用 OPIS PRO 登录",
+    "or": "或",
     "title": "登录",
     "email": "Email",
     "password": "密码",
@@ -35,6 +37,11 @@ window.GW_LANG["zh-CN"] = {
     "submitting": "登录中…",
     "forgot": "忘记密码？",
     "errors": {
+      "ssoCancelled": "已取消登录。",
+      "ssoFailed": "OPIS PRO 登录失败，请再试一次。",
+      "ssoExpired": "登录已逾时，请再试一次。",
+      "ssoUnreachable": "暂时连不上 OPIS PRO，请稍后再试。",
+      "ssoNotReady": "OPIS PRO 登录还没设定好，请先用 Email 和密码登录。",
       "invalid": "Email 或密码错误。",
       "disabled": "此帐号已停用，请联系管理员。",
       "noAccess": "此帐号尚未开通 MJM Intranet，请联系管理员。",
@@ -1033,6 +1040,12 @@ window.GW_LANG["zh-CN"] = {
       "selfNote": "这是你自己的帐号：可以看你的模块，但不能改自己的权限。",
       "superNote": "超级管理员自动拥有所有模块（包括以后新增的）的完整权限，这里不需要勾选。",
       "viewOnlyNote": "你可以看这个人的模块，但你的角色不能改他的权限。",
+      "opisproId": "OPIS PRO ID",
+      "opisproNotLinked": "还没连结（第一次用 OPIS PRO 登录时自动连结）",
+      "opisproAuto": "空白 = 第一次登录时自动连结",
+      "opisproBad": "OPIS PRO ID 只能是数字。",
+      "opisproTaken": "这个 OPIS PRO ID 已连结到别的用户。",
+      "opisproNeedsDb": "要先执行最新的 SQL 才能存 OPIS PRO ID。",
       "loginEmail": "登录 Email",
       "userId": "用户编号",
       "noModulesHere": "这个 Business / Company 还没有模块。",

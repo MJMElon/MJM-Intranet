@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <!-- a droplet lying on its side: tip at (0,0) pointing right, round end to the left -->
-    <path id="drop" d="M0 0 C-6 -6 -14 -28 -34 -28 A28 28 0 1 0 -34 28 C-14 28 -6 6 0 0 Z"/>
+    <!-- a long droplet lying on its side: tip at (0,0) pointing right, round end to the left -->
+    <path id="drop" d="M0 0 C-9 -3 -21 -23 -40 -23 A23 23 0 1 0 -40 23 C-21 23 -9 3 0 0 Z"/>
     <linearGradient id="green" x1="0" y1="0" x2="0.3" y2="1">
       <stop offset="0" stop-color="#3a9a62"/>
       <stop offset="1" stop-color="#0b4a2b"/>
@@ -11,19 +11,11 @@
       <stop offset="1" stop-color="#e2590a"/>
     </linearGradient>
   </defs>
-  <!-- left: oil palm leaf (MJM green), tip touching the oil drop in the middle -->
-  <g transform="translate(64 64)">
-    <use href="#drop" fill="url(#green)"/>
-    <!-- midrib, and veins running up toward the tip -->
-    <path d="M-58 0 L-4 0" fill="none" stroke="#e3f5e9" stroke-opacity="0.9" stroke-width="2.8" stroke-linecap="round"/>
-    <path d="M-50 0 Q-44 -10 -36 -18 M-36 0 Q-30 -9 -22 -15 M-22 0 Q-17 -6 -11 -9
-             M-50 0 Q-44 10 -36 18 M-36 0 Q-30 9 -22 15 M-22 0 Q-17 6 -11 9"
-          fill="none" stroke="#e3f5e9" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round"/>
-  </g>
-  <!-- right: CPO oil droplet (orange), tip touching the leaf -->
-  <g transform="translate(64 64) scale(-1 1)">
-    <use href="#drop" fill="url(#orange)"/>
-  </g>
-  <!-- shine on the oil droplet -->
-  <path d="M106 48 C115 53 118 62 116 71" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- left: oil palm green -->
+  <use href="#drop" transform="translate(64 64)" fill="url(#green)"/>
+  <!-- right: CPO orange -->
+  <use href="#drop" transform="translate(64 64) scale(-1 1)" fill="url(#orange)"/>
+  <!-- shine on both -->
+  <path d="M22 51 C14 55 11 63 13 71" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="4" stroke-linecap="round"/>
+  <path d="M106 51 C114 55 117 63 115 71" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="4" stroke-linecap="round"/>
 </svg>

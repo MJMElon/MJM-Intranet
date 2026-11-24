@@ -732,13 +732,11 @@ window.GWHome = (function () {
     function fabHtml() {
       if (readOnly) return "";
       if (editing) {
-        return `<button type="button" data-done class="fixed right-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-40 flex h-12 items-center gap-2 rounded-full bg-slate-900 px-5 font-semibold text-white shadow-xl sm:bottom-8 dark:bg-white dark:text-slate-900">${icon("check")} ${esc(t("fab.done"))}</button>`;
+        return `<button type="button" data-done class="fixed right-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-40 flex h-12 cursor-pointer items-center gap-2 rounded-full bg-slate-900 px-5 font-semibold text-white shadow-xl transition duration-150 hover:scale-105 hover:bg-slate-700 hover:shadow-2xl active:scale-95 sm:bottom-8 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">${icon("check")} ${esc(t("fab.done"))}</button>`;
       }
-      // 只放四样；图示颜色在编辑模式（长按图示）的「…」选单里
+      // 只放两样：连结、文件夹、My Home 都在「Add Widget」里；图示颜色在编辑模式（长按图示）的「…」选单里
       const items = [
         ["add-widget", "layout-dashboard", t("fab.addWidget")],
-        ["add-link", "link", t("fab.addLink")],
-        ["new-folder", "folder-plus", t("fab.newFolder")],
         ["edit", "move", t("fab.edit")],
       ];
       return `<div class="fixed right-5 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-40 flex flex-col items-end gap-2 sm:bottom-8">
@@ -746,12 +744,12 @@ window.GWHome = (function () {
           fabOpen
             ? items
                 .map(
-                  ([k, ic, label]) => `<button type="button" data-fab="${k}" class="flex items-center gap-2 rounded-full border border-white/70 bg-white/90 py-2 pr-4 pl-3 text-sm font-medium shadow-lg backdrop-blur dark:border-white/10 dark:bg-slate-800/90">${icon(ic)} ${esc(label)}</button>`,
+                  ([k, ic, label]) => `<button type="button" data-fab="${k}" class="flex cursor-pointer items-center gap-2 rounded-full border border-white/70 bg-white/90 py-2 pr-4 pl-3 text-sm font-medium shadow-lg backdrop-blur transition duration-150 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-xl active:translate-y-0 active:scale-95 dark:border-white/10 dark:bg-slate-800/90 dark:hover:border-white/30 dark:hover:bg-slate-700">${icon(ic)} ${esc(label)}</button>`,
                 )
                 .join("")
             : ""
         }
-        <button type="button" data-fab-toggle aria-label="${esc(t("fab.menu"))}" aria-expanded="${fabOpen}" class="flex size-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-xl transition-transform dark:bg-white dark:text-slate-900 ${fabOpen ? "rotate-45" : ""}">${icon("plus", "size-6")}</button>
+        <button type="button" data-fab-toggle aria-label="${esc(t("fab.menu"))}" aria-expanded="${fabOpen}" class="flex size-14 cursor-pointer items-center justify-center rounded-full bg-slate-900 text-white shadow-xl ring-slate-900/20 transition duration-150 hover:scale-110 hover:bg-slate-700 hover:shadow-2xl hover:ring-4 active:scale-95 dark:bg-white dark:text-slate-900 dark:ring-white/30 dark:hover:bg-slate-200 ${fabOpen ? "rotate-45" : ""}">${icon("plus", "size-6")}</button>
       </div>`;
     }
 

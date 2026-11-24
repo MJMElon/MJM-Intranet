@@ -1620,7 +1620,6 @@
         };
       }
       refreshIcons();
-      syncAreas();
       $("[data-cancel]", m.el).onclick = m.close;
       if (!c) $("[name=name]", m.el).focus();
       // 有多个 Location：Business 的面积 = 底下 Location 面积加起来（自动算、不能手改）；没有 Location 列就照旧手填
@@ -1640,6 +1639,7 @@
           $(`[data-area-sum="${g.id}"]`, m.el).classList.toggle("hidden", !auto);
         });
       };
+      syncAreas(); // only after it is defined (called earlier it threw, and Cancel / Save never got wired)
       m.el.addEventListener("input", (e) => e.target.matches("[data-loc-area]") && syncAreas());
       // Business 加入 / 拿掉：标签、面积列、Location 区一起出现 / 收起
       const syncBiz = () => {

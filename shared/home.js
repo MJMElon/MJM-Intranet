@@ -700,8 +700,17 @@ window.GWHome = (function () {
       const types = Object.entries(WIDGETS)
         .filter(([, d]) => !d.hidden)
         .sort(([, a], [, b]) => (a.soon ? 1 : 0) - (b.soon ? 1 : 0));
+      // 不是小工具、但一样从这里加：My Home 方块、连结、文件夹
+      const extra = (attr, ic, label, done) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800">
+          <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${icon(ic, "size-5")}</span>
+          <span class="min-w-0 flex-1 truncate text-sm font-semibold">${esc(label)}</span>
+          ${done ? `<span class="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">${esc(t("home.added"))}</span>` : `<button type="button" ${attr} class="${btn("secondary", "sm")} px-2.5">${icon("plus", "size-4")} ${esc(t("home.addThis"))}</button>`}
+        </div>`;
+      const extras = sectionsOn
+        ? extra("data-sheet-home", "house", t("home.myHome"), homeOn()) + extra("data-sheet-link", "link", t("fab.addLink")) + extra("data-sheet-folder", "folder-plus", t("fab.newFolder"))
+        : "";
       return `<div class="mb-3 flex items-center justify-between"><h3 class="font-semibold">${esc(t("fab.addWidget"))}</h3>${iconBtn("data-close-sheet", t("home.close"), "x")}</div>
-        <div class="space-y-2">${types
+        <div class="space-y-2">${extras}${types
           .map(
             ([type, d]) => `<div class="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-slate-800 ${d.soon ? "opacity-50" : ""}">
               <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${icon(d.icon, "size-5")}</span>
@@ -851,6 +860,15 @@ window.GWHome = (function () {
     // Business 区块里的 App 一律显示（以前拿掉过的也回来）：区块的内容由 Business 决定，只有 My Home 可以自己加减
     const hiddenIn = () => new Set();
     // My Home 里从 Business 区块复制来的文件夹
+    // My Home 方块：从「Add widget」加进来（config.homeBox.on），空的也一直在；名字可以自己改（config.homeBox.name）
+    const homeOn = () => !!(boardCfg().homeBox && boardCfg().homeBox.on);
+    const homeName = () => ((boardCfg().homeBox && boardCfg().homeBox.name) || "").trim() || t("home.myHome");
+    function setHomeBox(patch) {
+      const bw = board();
+      if (!bw) return Promise.resolve();
+      bw.config = { ...(bw.config || {}), homeBox: { ...((bw.config || {}).homeBox || {}), ...patch } };
+      return saveBoardConfig();
+    }
     const homeCopyOf = (fid) => {
       const v = (boardCfg().homeFolders || {})[fid];
       return v == null ? null : v;
@@ -1065,7 +1083,13 @@ window.GWHome = (function () {
       const step = (dir, ic, label, off) => `<button type="button" data-mode="${dir}" aria-label="${esc(label)}" title="${esc(label)}" ${off ? "disabled" : ""} class="flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 disabled:pointer-events-none disabled:opacity-25 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
       const steps = key === "home" ? "" : step("less", "chevron-up", t("home.collapse"), mode === "title") + step("more", "chevron-down", t("home.expand"), mode === "full");
       return `<div class="flex min-w-0 items-center gap-2" style="height:${g.th}px;${mode === "title" ? "" : `margin-bottom:${g.tg}px;`}padding:0 ${Math.max(0, side - 6)}px 0 ${side}px">
-        <h2 class="min-w-0 truncate text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${key === "home" ? "" : companyPicker(key) + estatePicker(key)}
+        <h2 class="min-w-0 truncate text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${
+          key === "home"
+            ? editing && sectionsOn
+              ? `<button type="button" data-home-rename class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 dark:hover:bg-white/10" title="${esc(t("home.renameHome"))}" aria-label="${esc(t("home.renameHome"))}">${icon("pencil", "size-4")}</button>${homeOn() ? `<button type="button" data-home-remove class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" title="${esc(t("home.removeHome"))}" aria-label="${esc(t("home.removeHome"))}">${icon("minus-circle", "size-4")}</button>` : ""}`
+              : ""
+            : companyPicker(key) + estatePicker(key)
+        }
         <div class="ml-auto flex shrink-0 items-center">${sectionsOn ? secGrip() : ""}${steps}</div></div>`;
     }
     // 一个区块（My Home 也一样）：外框宽 = 整数格 + 半格，高 = 整数格
@@ -1075,7 +1099,7 @@ window.GWHome = (function () {
       const shownRows = mode === "full" ? B.rows : 1;
       const pad = mode === "title" ? `${g.pt + g.tg / 2}px ${g.px}px ${g.pb + g.tg / 2}px` : `${g.pt}px ${g.px}px ${g.pb}px`;
       const emptyBiz = key !== "home" && !modsOfGroup(key).length && !sItems.some((x) => x.group_id === key);
-      const body = tiles || `<p class="col-span-full row-start-1 self-center px-3 text-sm text-slate-500">${esc(t(emptyBiz ? "home.noModulesInBusiness" : "home.noAppsForCompany"))}</p>`;
+      const body = tiles || `<p class="col-span-full row-start-1 self-center px-3 text-sm text-slate-500">${esc(t(key === "home" ? "home.homeEmpty" : emptyBiz ? "home.noModulesInBusiness" : "home.noAppsForCompany"))}</p>`;
       const grid =
         mode === "title"
           ? ""
@@ -2305,7 +2329,7 @@ window.GWHome = (function () {
       });
       if (showHome) {
         const B = boxGeo("home");
-        parts.push(["home", boxShell("home", t("home.myHome"), B, boxTiles("home", B))]);
+        parts.push(["home", boxShell("home", homeName(), B, boxTiles("home", B))]);
       }
       const order = sectionOrder();
       const rank = (k) => (order.indexOf(k) === -1 ? 999 : order.indexOf(k));
@@ -2353,7 +2377,7 @@ window.GWHome = (function () {
           <div data-drop-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div>
         </div>`
         : "";
-      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || editing || !!sheet) : "";
+      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || editing || !!sheet || homeOn()) : "";
       root.innerHTML = `
         ${uninitialized ? `<div class="mb-4 rounded-2xl bg-white/70 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">${esc(t("home.previewUninitialized"))}</div>` : ""}
         ${sectionsOn ? stackHtml : boardHtml()}
@@ -3667,7 +3691,39 @@ window.GWHome = (function () {
       if ("closeSheet" in d) return ((sheet = null), draw());
       if (d.add) return addApp(d.add);
       if (d.addWidget) return addWidget(d.addWidget, d.size);
+      if ("sheetHome" in d) return ((sheet = null), setHomeBox({ on: true }), draw());
+      if ("sheetLink" in d) return ((sheet = null), draw(), linkDialog(null));
+      if ("sheetFolder" in d) return ((sheet = null), draw(), folderDialog(null));
+      if ("homeRename" in d) return renameHome();
+      if ("homeRemove" in d) {
+        if (rootItems().length) return toast(t("home.removeHomeNotEmpty"));
+        setHomeBox({ on: false });
+        return draw();
+      }
     });
+    // 改 My Home 的名字（空白 = 回到「My Home」）
+    function renameHome() {
+      const dlg = modal(
+        t("home.renameHome"),
+        `<form class="space-y-4">
+          <input name="n" maxlength="40" value="${esc(homeName())}" class="${cls.input}">
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </form>`,
+      );
+      const f = $("form", dlg.el);
+      f.n.focus();
+      f.n.select();
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      f.addEventListener("submit", (e) => {
+        e.preventDefault();
+        setHomeBox({ name: f.n.value.trim().slice(0, 40), on: true });
+        dlg.close();
+        draw();
+      });
+    }
     root.addEventListener("input", (e) => {
       const el = e.target;
       if (el.matches("[data-sheet-search]")) {

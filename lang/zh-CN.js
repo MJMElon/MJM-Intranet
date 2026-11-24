@@ -69,6 +69,11 @@ window.GW_LANG["zh-CN"] = {
     }
   },
   "home": {
+    "homeEmpty": "目前是空的。长按 Business 方块里的图示拖进来，或用 + 加连结和文件夹。",
+    "renameHome": "改名字",
+    "removeHome": "拿掉这个方块",
+    "removeHomeNotEmpty": "先把这个方块里的图示移走或删掉。",
+    "addThis": "加入",
     "hqAllCompanies": "所有 Company（{count}）",
     "transferLater": "之后再说",
     "transferDecline": "拒绝",

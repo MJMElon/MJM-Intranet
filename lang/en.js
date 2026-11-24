@@ -69,6 +69,11 @@ window.GW_LANG["en"] = {
     }
   },
   "home": {
+    "homeEmpty": "Empty for now. Press and hold an icon in a business box and drag it here, or use + to add links and folders.",
+    "renameHome": "Rename",
+    "removeHome": "Remove this box",
+    "removeHomeNotEmpty": "Move or remove the icons in this box first.",
+    "addThis": "Add",
     "hqAllCompanies": "All companies ({count})",
     "transferLater": "Later",
     "transferDecline": "Decline",

@@ -182,9 +182,13 @@ window.GW = (function () {
                 <div class="text-sm font-medium">${esc(profile.full_name)}</div>
                 <div class="text-xs text-slate-500">${esc(profile.email)}</div>
               </div>
-              <span class="flex size-8 items-center justify-center rounded-full text-sm font-semibold ${
-                active === "settings" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-slate-200 dark:bg-slate-800"
-              }">${esc(profile.full_name.slice(0, 1))}</span>
+              ${
+                profile.avatar_url && String(profile.avatar_url).startsWith(GW_CONFIG.supabaseUrl + "/storage/v1/object/public/")
+                  ? `<img src="${esc(profile.avatar_url)}" alt="" class="size-8 rounded-full object-cover">`
+                  : `<span class="flex size-8 items-center justify-center rounded-full text-sm font-semibold ${
+                      active === "settings" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-slate-200 dark:bg-slate-800"
+                    }">${esc(profile.full_name.slice(0, 1))}</span>`
+              }
             </a>
             <button type="button" id="gw-theme" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"></button>
             <a href="${BASE}${isAdmin ? "admin.html" : "settings.html"}" title="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" aria-label="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" class="rounded-lg p-2 ${

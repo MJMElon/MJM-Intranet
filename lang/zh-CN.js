@@ -924,6 +924,10 @@ window.GW_LANG["zh-CN"] = {
       "outsiderAdded": "{name} 现在可以用 {module}。"
     },
     "roles": {
+      "superName": "Super Admin",
+      "superBiz": "所有 Business",
+      "superDesc": "内建：Intranet 和每个模块的全部权限。不能修改或删除。",
+      "builtIn": "内建",
       "manageAccess": "管理 Business 的用户",
       "description": "角色 = 一组功能，只在你勾选的 Business 和模块内有效。在用户名单把角色给人。",
       "add": "新增角色",
@@ -968,7 +972,13 @@ window.GW_LANG["zh-CN"] = {
       "clear": "清除全部"
     },
     "userWindow": {
-      "pickCompanyToSee": "点左边的公司，就会出现那家公司的模块。",
+      "role": "角色",
+      "photo": "上传照片",
+      "removePhoto": "移除照片",
+      "photoType": "请选择图片档。",
+      "photoTooBig": "照片要小于 2 MB。",
+      "photoNeedsDb": "资料库要先执行最新的 SQL，才能存照片。",
+      "pickCompanyToSee": "选择一家公司来查看模块",
       "colAccess": "可用",
       "colAdmin": "管理员",
       "modulesInShort": "模块 — {company}",

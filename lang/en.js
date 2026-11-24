@@ -924,6 +924,10 @@ window.GW_LANG["en"] = {
       "outsiderAdded": "{name} now has access to {module}."
     },
     "roles": {
+      "superName": "Super Admin",
+      "superBiz": "All businesses",
+      "superDesc": "Built in: full access to everything in the Intranet and every module. Can't be edited or deleted.",
+      "builtIn": "Built in",
       "manageAccess": "Manage users in business",
       "description": "A role is a set of functions, limited to the businesses and modules you tick for it. Give the role to people in the user list.",
       "add": "Add role",
@@ -968,7 +972,13 @@ window.GW_LANG["en"] = {
       "clear": "Clear all"
     },
     "userWindow": {
-      "pickCompanyToSee": "Click a company on the left to see and tick its modules.",
+      "role": "Role",
+      "photo": "Upload photo",
+      "removePhoto": "Remove photo",
+      "photoType": "Please choose an image file.",
+      "photoTooBig": "The photo must be under 2 MB.",
+      "photoNeedsDb": "The database needs the latest SQL update before photos can be saved.",
+      "pickCompanyToSee": "Select a company to view its modules",
       "colAccess": "Access",
       "colAdmin": "Admin",
       "modulesInShort": "Modules — {company}",

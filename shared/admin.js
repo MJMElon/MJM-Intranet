@@ -198,13 +198,21 @@
        编辑模式最底下「+ Add business」把人加进别的 Business
        谁能改：名字 / Super Admin = super_admin；Business / Company / 角色 = super_admin 或在那个 Business 能加人的角色；
          模块权限 = super_admin、角色有加 / 移除 / 设定 Admin 的 Business、或是模块 Admin；自己和 Super Admin 只能看。 */
-  const PROFILE_COLS = "id, full_name, email, status, role, role_id, user_code";
+  const PROFILE_COLS = "*"; // 含 avatar_url（资料库还没加这一栏时也不会出错）
+  // 大头照：只显示传到 Intranet 自己储存的图片；没有照片就显示名字第一个字
+  const ownPhoto = (url) => !!url && String(url).startsWith(GW_CONFIG.supabaseUrl + "/storage/v1/object/public/");
+  const avatar = (u, size, text) =>
+    ownPhoto(u.avatar_url)
+      ? `<img src="${esc(u.avatar_url)}" alt="" class="${size} shrink-0 rounded-full object-cover">`
+      : `<span class="flex ${size} shrink-0 items-center justify-center rounded-full bg-slate-200 ${text || "text-sm"} font-semibold dark:bg-slate-700">${esc((u.full_name || "?").slice(0, 1))}</span>`;
   // opts.edit：一开就是编辑模式（名单上的铅笔）
+  // 一个人在 Intranet 的角色：super = Super Admin；"" = 一般用户；其他 = 角色 id（跟 Business / Company 无关）
+  const roleKey = (u) => (u.role === "super_admin" ? "super" : u.role_id || "");
   async function userWindow(uid, onClose, opts) {
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) });
+    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.role !== roleKey(u))) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -258,7 +266,7 @@
     let editing = false;
     let draft = null; // { full_name, super }
     let saving = false;
-    const mkDraft = () => ({ full_name: u.full_name, super: u.role === "super_admin" });
+    const mkDraft = () => ({ full_name: u.full_name, role: roleKey(u) });
     if (opts && opts.edit && (canEditProfile || canRolesAny())) ((editing = true), (draft = mkDraft()));
 
     // 这个 Business 里、这个人能用的模块：标到 Business、启用中；模块有标 Company 的话，这个人要在其中一个 Company
@@ -313,27 +321,12 @@
       const cid = currentCo(g);
       const needCompany = ctx && ctx.companyMode && hasCos && !tabs.length; // Business 有 Company，但这个人还没被分到任何一家
       const list = ctx && !needCompany && cid !== null ? modsForCo(g.id, cid) : [];
-      // 左边一家公司：简称（滑过去看全名）＋ 他在这家的角色 ＋「>」（点了右边才出现这家的模块）
-      //   编辑模式（而且能管这个 Business 的人）：角色变成下拉，马上存
+      // 左边一家公司：简称（滑过去看全名）＋「>」（点了右边才出现这家的模块）
       const coItem = (x) => {
         const on = x.id === cid;
-        const hasRole = !!(x.role && x.role.role_id);
-        const roleTxt = x.id ? roleOf(g.id, x.id) : "";
-        const editRole = place && !!x.id;
-        const badgeHtml = roleTxt
-          ? `<span class="max-w-[6rem] shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium ${on ? "bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900" : hasRole ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"}">${esc(roleTxt)}</span>`
-          : "";
-        const roleSel = `<select data-co-role="${g.id}|${x.id}" aria-label="${esc(t("admin.users.role"))}" class="h-7 max-w-[7rem] shrink-0 rounded-md border border-slate-200 bg-white px-1 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
-            <option value="user" ${!hasRole ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
-            ${(roles || []).map((r) => `<option value="${r.id}" ${x.role && x.role.role_id === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
-          </select>`;
-        return `<div class="flex items-center gap-1 rounded-lg pr-1 ${on ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"}">
-          <button type="button" data-pick-co="${g.id}|${x.id}" title="${esc(x.title)}" aria-pressed="${on}" class="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-2.5 text-left text-sm ${on ? "font-semibold" : ""}">
-            <span class="min-w-0 flex-1 truncate">${esc(x.label)}</span>${editRole ? "" : badgeHtml}
-          </button>
-          ${editRole ? roleSel : ""}
-          <button type="button" data-pick-co="${g.id}|${x.id}" aria-label="${esc(x.title)}" class="shrink-0 rounded p-0.5 ${on ? "" : "text-slate-400"}">${icon("chevron-right", "size-4")}</button>
-        </div>`;
+        return `<button type="button" data-pick-co="${g.id}|${x.id}" title="${esc(x.title)}" aria-pressed="${on}" class="flex w-full items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-2.5 text-left text-sm ${
+          on ? "bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
+        }"><span class="min-w-0 flex-1 truncate">${esc(x.label)}</span><span class="shrink-0 ${on ? "" : "text-slate-400"}">${icon("chevron-right", "size-4")}</span></button>`;
       };
       const row = (mod) => {
         const r = rowOf(g.id, mod.id, cid);
@@ -353,7 +346,7 @@
         : needCompany
           ? `<p class="p-3 text-xs text-amber-700 dark:text-amber-300">${esc(tu("pickCompanyFirst"))}</p>`
           : cid === null
-            ? `<p class="flex items-center gap-2 p-4 text-sm text-slate-400">${icon("arrow-left", "size-4 shrink-0")}${esc(tu("pickCompanyToSee"))}</p>`
+            ? `<div class="p-3"><div class="flex min-h-[9rem] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 px-4 text-center text-sm text-slate-400 dark:border-slate-700">${esc(tu("pickCompanyToSee"))}</div></div>`
             : `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:border-slate-800">
               <span class="min-w-0 flex-1 truncate" title="${esc(coName)}">${esc(coName ? tu("modulesInShort", { company: coName }) : tu("withAccess"))}</span>
               <span class="w-14 shrink-0 text-center">${esc(tu("colAccess"))}</span>
@@ -390,26 +383,35 @@
     function draw() {
       const note = superU() ? tu("superNote") : locked() ? tu("selfNote") : !canEditAccess() ? tu("viewOnlyNote") : "";
       const bl = bizList();
-      const superPart = editing
-        ? isSuper
-          ? `<label class="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium dark:border-slate-700 ${u.id === me.id ? "opacity-60" : "cursor-pointer"}">
-              <input type="checkbox" data-draft-super ${draft.super ? "checked" : ""} ${u.id === me.id ? "disabled" : ""} class="size-4 accent-red-600">${esc(t("admin.users.roles.super_admin"))}
-            </label>`
-          : ""
-        : superU()
-          ? `<span class="shrink-0">${badge(t("admin.users.roles.super_admin"), "red")}</span>`
-          : "";
-      const head = `<div class="flex items-start gap-3">
-          <span class="flex size-14 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xl font-semibold dark:bg-slate-700">${esc(((editing && draft.full_name) || u.full_name).slice(0, 1))}</span>
-          <div class="min-w-0 flex-1 space-y-2">
-            ${editing && canEditProfile ? `<div class="flex items-end gap-2"><div class="min-w-0 flex-1">${field(t("admin.users.name"), `<input data-draft-name value="${esc(draft.full_name)}" required class="${cls.input}">`)}</div>${superPart}</div>` : ""}
-            <div class="flex items-start gap-3">
-              <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
-                <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
-                <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
-              </dl>
-              ${editing ? "" : superPart}
-            </div>
+      // 角色：编辑模式（Super Admin、不是自己）是下拉；其他时候是徽章
+      const roleName = (k) => (k === "super" ? t("admin.users.roles.super_admin") : k ? (roles || []).find((x) => x.id === k)?.name || t("admin.users.roles.user") : t("admin.users.roles.user"));
+      const curRole = editing && draft ? draft.role : roleKey(u);
+      const rolePart =
+        editing && isSuper && u.id !== me.id
+          ? `<select data-draft-role aria-label="${esc(tu("role"))}" class="h-9 w-52 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+              <option value="" ${curRole === "" ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
+              <option value="super" ${curRole === "super" ? "selected" : ""}>${esc(t("admin.users.roles.super_admin"))}</option>
+              ${(roles || []).map((r) => `<option value="${r.id}" ${curRole === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+            </select>`
+          : badge(roleName(curRole), curRole === "super" ? "red" : curRole ? "amber" : "slate");
+      const canPhoto = editing && isSuper;
+      const head = `<div class="flex items-center gap-5">
+          <div class="relative shrink-0">
+            ${avatar(u, "size-24", "text-3xl")}
+            ${
+              canPhoto
+                ? `<label title="${esc(tu("photo"))}" class="absolute right-0 bottom-0 flex size-8 cursor-pointer items-center justify-center rounded-full bg-slate-900 text-white shadow ring-2 ring-white dark:bg-white dark:text-slate-900 dark:ring-slate-900">${icon("camera", "size-4")}<input type="file" data-avatar accept="image/*" class="hidden"></label>`
+                : ""
+            }
+          </div>
+          <div class="min-w-0 flex-1 space-y-2.5">
+            ${editing && canEditProfile ? `<div class="max-w-sm">${field(t("admin.users.name"), `<input data-draft-name value="${esc(draft.full_name)}" required class="${cls.input}">`)}</div>` : ""}
+            <dl class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-sm">
+              <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
+              <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
+              <dt class="text-slate-500">${esc(tu("role"))}</dt><dd>${rolePart}</dd>
+            </dl>
+            ${canPhoto && ownPhoto(u.avatar_url) ? `<button type="button" data-no-photo class="text-xs text-red-600 hover:underline dark:text-red-400">${esc(tu("removePhoto"))}</button>` : ""}
           </div>
         </div>`;
       const statusBtn =
@@ -437,13 +439,20 @@
       refreshIcons();
     }
 
-    // 在某家公司换角色（下拉一选就存）
-    async function changeRole(gid, cid, roleId) {
-      const cur = mcRow(gid, cid);
-      if (!cur || (cur.role_id || null) === roleId) return;
-      const { error } = await sb.from("gw_member_companies").update({ role_id: roleId }).eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
-      if (error) return (fail(error), draw());
-      cur.role_id = roleId;
+    // 大头照：传到 Intranet 的图片储存，再记在这个人的资料（马上存）
+    async function uploadAvatar(file) {
+      if (!/^image\//.test(file.type)) return toast(tu("photoType"));
+      if (file.size > 2 * 1024 * 1024) return toast(tu("photoTooBig"));
+      const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
+      const path = `${me.id}/avatar-${crypto.randomUUID()}.${ext}`;
+      const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type });
+      if (up.error) return toast(t("admin.users.errors.forbidden") + " (" + (up.error.message || "") + ")");
+      await setAvatar(sb.storage.from("link-icons").getPublicUrl(path).data.publicUrl);
+    }
+    async function setAvatar(url) {
+      const { error } = await sb.from("gw_profiles").update({ avatar_url: url }).eq("id", uid);
+      if (error) return toast(/avatar_url/.test(error.message || "") ? tu("photoNeedsDb") : t("admin.users.errors.forbidden"));
+      u.avatar_url = url;
       toast(t("admin.users.savedOk"));
       draw();
     }
@@ -465,9 +474,9 @@
       if (!name) return;
       const patch = {};
       if (name !== u.full_name) patch.full_name = name;
-      if (u.id !== me.id && isSuper) {
-        if (draft.super && u.role !== "super_admin") ((patch.role = "super_admin"), (patch.role_id = null));
-        if (!draft.super && u.role === "super_admin") ((patch.role = "user"), (patch.role_id = null));
+      if (u.id !== me.id && isSuper && draft.role !== roleKey(u)) {
+        if (draft.role === "super") ((patch.role = "super_admin"), (patch.role_id = null));
+        else ((patch.role = "user"), (patch.role_id = draft.role || null));
       }
       saving = true;
       draw();
@@ -562,14 +571,6 @@
                         <input type="checkbox" data-co-in="${c.id}" ${v.in ? "checked" : ""} class="size-4 accent-emerald-600">
                         <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(c.name)}</span>
                       </label>
-                      ${
-                        v.in
-                          ? `<select data-role-sel="${c.id}" aria-label="${esc(t("admin.users.role"))}" class="h-9 w-36 shrink-0 rounded-xl border border-slate-200 bg-white px-2 text-sm sm:w-44 dark:border-slate-700 dark:bg-slate-900">
-                              <option value="user" ${!v.role_id ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
-                              ${(roles || []).map((x) => `<option value="${x.id}" ${v.role_id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}
-                            </select>`
-                          : `<span aria-hidden="true" class="w-36 shrink-0 sm:w-44"></span>`
-                      }
                     </div>`;
                   })
                   .join("")}</div>`
@@ -651,6 +652,7 @@
       const d = b.dataset;
       if ("done" in d) return m.close();
       if ("setStatus" in d) return setStatus();
+      if ("noPhoto" in d) return setAvatar(null);
       if ("edit" in d) {
         editing = true;
         draft = mkDraft();
@@ -688,11 +690,8 @@
     });
     m.el.addEventListener("change", (e) => {
       const box = e.target;
-      if (box.matches("[data-draft-super]") && draft) return ((draft.super = box.checked), draw());
-      if (box.dataset.coRole) {
-        const [gid, cid] = box.dataset.coRole.split("|");
-        return changeRole(gid, cid, box.value === "user" ? null : box.value);
-      }
+      if (box.matches("[data-draft-role]") && draft) return ((draft.role = box.value), draw());
+      if (box.matches("[data-avatar]") && box.files[0]) return uploadAvatar(box.files[0]);
       if (box.dataset.acc) {
         const [gid, cid, mid] = box.dataset.acc.split("|");
         const r = rowOf(gid, mid, cid);
@@ -819,7 +818,7 @@
       const active = list.filter((u) => u.status !== "disabled");
       const off = list.filter((u) => u.status === "disabled");
       const row = (u) => `<div data-user="${u.id}" class="flex items-center gap-3 p-3 sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
-          <span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold dark:bg-slate-700">${esc(u.full_name.slice(0, 1))}</span>
+          ${avatar(u, "size-10")}
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
             ${superMark(u)}
             <button data-window="${u.id}" class="truncate font-medium hover:underline">${esc(u.full_name)}</button>
@@ -918,13 +917,19 @@
         <button id="role-add" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tr("add"))}</button>
       </div>
       ${
-        roles.length
+        true
           ? `<div class="${cls.card} overflow-x-auto">
               <table class="w-full min-w-[640px] text-sm">
                 <thead class="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-white/5"><tr>
                   ${th(tr("colRole"))}${th(tr("colBusiness"))}${th(tr("colDescription"))}<th class="w-32"></th>
                 </tr></thead>
-                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">${roles
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tr class="align-top bg-red-50/40 dark:bg-red-900/10">
+                    <td class="px-4 py-3 font-semibold"><span class="inline-flex items-center gap-1.5">${icon("shield", "size-4 text-red-600")}${esc(tr("superName"))}</span></td>
+                    <td class="px-4 py-3">${badge(tr("superBiz"), "red")}</td>
+                    <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${esc(tr("superDesc"))}</td>
+                    <td class="px-4 py-3 text-right"><span class="inline-flex items-center gap-1 text-xs text-slate-400">${icon("lock", "size-3.5")}${esc(tr("builtIn"))}</span></td>
+                  </tr>${roles
                   .map((r) => {
                     const biz = bizRows(r.id).filter((x) => hasAny(x, [...NOTICE, ...UG]));
                     return `<tr class="align-top">

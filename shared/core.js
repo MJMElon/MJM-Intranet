@@ -273,8 +273,11 @@ window.GW = (function () {
         opts && opts.wide === "xl" ? "sm:max-w-4xl" : opts && opts.wide ? "sm:max-w-2xl" : "sm:max-w-md"
       }">
         <div class="mb-4 flex items-center justify-between gap-4">
-          <h2 class="text-lg font-semibold">${esc(title)}</h2>
-          <button data-close class="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="close">${icon("x", "size-5")}</button>
+          <h2 class="min-w-0 truncate text-lg font-semibold">${esc(title)}</h2>
+          <div class="flex shrink-0 items-center gap-2">
+            <div data-head-actions class="flex items-center gap-2"></div>
+            <button data-close class="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="close">${icon("x", "size-5")}</button>
+          </div>
         </div>
         <div data-body>${bodyHtml}</div>
       </div>`;
@@ -301,7 +304,8 @@ window.GW = (function () {
     wrap.querySelector("[data-close]").addEventListener("click", tryClose);
     document.body.appendChild(wrap);
     refreshIcons();
-    return { el: wrap.querySelector("[data-body]"), close, touch: () => (touched = true) };
+    // head：标题列右边放按钮的地方（例如编辑时的 Cancel / Save）
+    return { el: wrap.querySelector("[data-body]"), head: wrap.querySelector("[data-head-actions]"), close, touch: () => (touched = true) };
   }
 
   function confirmDialog(title, text, confirmLabel, cancelLabel) {

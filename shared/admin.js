@@ -346,7 +346,7 @@
         : needCompany
           ? `<p class="p-3 text-xs text-amber-700 dark:text-amber-300">${esc(tu("pickCompanyFirst"))}</p>`
           : cid === null
-            ? `<div class="p-3"><div class="flex min-h-[9rem] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 px-4 text-center text-sm text-slate-400 dark:border-slate-700">${esc(tu("pickCompanyToSee"))}</div></div>`
+            ? `<div class="h-full p-1.5"><div class="flex h-full min-h-[4.5rem] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 px-4 text-center text-sm text-slate-400 dark:border-slate-700">${esc(tu("pickCompanyToSee"))}</div></div>`
             : `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:border-slate-800">
               <span class="min-w-0 flex-1 truncate" title="${esc(coName)}">${esc(coName ? tu("modulesInShort", { company: coName }) : tu("withAccess"))}</span>
               <span class="w-14 shrink-0 text-center">${esc(tu("colAccess"))}</span>
@@ -372,7 +372,7 @@
                     ${!tabs.length ? `<p class="px-2 py-1.5 text-xs text-slate-400">${esc(tu("noCompany"))}</p>` : ""}
                     ${addCo ? `<button type="button" data-co-dlg="${g.id}" title="${esc(tu("editCompanies"))}" aria-label="${esc(tu("editCompanies"))}" class="mt-1 flex h-8 w-full items-center justify-center rounded-lg border border-dashed border-slate-400 text-slate-500 opacity-50 transition hover:opacity-100 dark:border-slate-500">${icon("plus", "size-4")}</button>` : ""}
                   </div>
-                  <div class="min-w-0">${modulesPart}</div>
+                  <div class="flex min-w-0 flex-col [&>*:last-child]:flex-1">${modulesPart}</div>
                 </div>`
               : `<div class="border-t border-slate-100 dark:border-slate-800">${modulesPart}</div>`
             : ""
@@ -395,7 +395,7 @@
             </select>`
           : badge(roleName(curRole), curRole === "super" ? "red" : curRole ? "amber" : "slate");
       const canPhoto = editing && isSuper;
-      const head = `<div class="flex items-center gap-5">
+      const head = `<div class="flex items-center gap-8">
           <div class="relative shrink-0">
             ${avatar(u, "size-24", "text-3xl")}
             ${
@@ -405,8 +405,8 @@
             }
           </div>
           <div class="min-w-0 flex-1 space-y-2.5">
-            ${editing && canEditProfile ? `<div class="max-w-sm">${field(t("admin.users.name"), `<input data-draft-name value="${esc(draft.full_name)}" required class="${cls.input}">`)}</div>` : ""}
             <dl class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-sm">
+              ${editing && canEditProfile ? `<dt class="text-slate-500">${esc(t("admin.users.name"))}</dt><dd><input data-draft-name value="${esc(draft.full_name)}" required aria-label="${esc(t("admin.users.name"))}" class="${cls.input} h-9 max-w-xs"></dd>` : ""}
               <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
               <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
               <dt class="text-slate-500">${esc(tu("role"))}</dt><dd>${rolePart}</dd>
@@ -418,12 +418,15 @@
         isSuper && u.id !== me.id
           ? `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
           : "";
+      if (m.head)
+        m.head.innerHTML = editing
+          ? `<button data-cancel class="${btn("secondary", "sm")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
+             <button data-save class="${btn("primary", "sm")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>`
+          : "";
       const buttons = editing
-        ? `<div class="flex flex-wrap items-center justify-end gap-2">
-            ${statusBtn}
-            <button data-cancel class="${btn("secondary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
-            <button data-save class="${btn("primary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>
-          </div>`
+        ? statusBtn
+          ? `<div class="flex items-center">${statusBtn}</div>`
+          : ""
         : `<div class="flex flex-wrap items-center justify-end gap-2">
             ${statusBtn}
             ${canEditProfile || canRolesAny() ? `<button data-edit class="${btn("secondary")}">${icon("pencil", "size-4")} ${esc(t("admin.users.edit"))}</button>` : ""}
@@ -646,6 +649,14 @@
       draw();
     }
 
+    // 标题列的 Cancel / Save（编辑模式）
+    if (m.head)
+      m.head.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b || b.disabled) return;
+        if ("cancel" in b.dataset) return ((editing = false), (draft = null), draw());
+        if ("save" in b.dataset) return save();
+      });
     m.el.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b || b.disabled) return;
@@ -1274,6 +1285,7 @@
             .join("")}
           ${cos.length ? "" : `<span class="text-xs text-slate-400">${esc(ts("noCompany"))}</span>`}
           ${isSuper ? `<button data-add-co="${g.id}" aria-label="${esc(ts("addCompany"))}" title="${esc(ts("addCompany"))}" class="flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-brand-500 hover:text-brand-600 dark:border-slate-600">${icon("plus", "size-3.5")}</button>` : ""}
+          ${g.all_companies ? `<p class="flex basis-full items-center gap-1 pt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">${icon("layers", "size-3.5 shrink-0")}${esc(ts("sharedAcross"))}</p>` : ""}
         </div>
         <div class="st-sectors grid flex-1 gap-2 p-3">${cols.map(([sid, label]) => column(g, sid, label)).join("")}</div>
       </section>`;

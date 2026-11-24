@@ -495,6 +495,7 @@ window.GW_LANG["zh-CN"] = {
       "name": "Business 名称"
     },
     "structure": {
+      "sharedAcross": "所有模块在这些公司之间共用",
       "companiesTitle": "{name} 的 Company",
       "removeCoTitle": "移除 Company",
       "removeCoBody": "把 {names} 从 {name} 移除？在 {name} 里被分到这些 Company 的人会失去它们。",

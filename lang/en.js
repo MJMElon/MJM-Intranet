@@ -495,6 +495,7 @@ window.GW_LANG["en"] = {
       "name": "Business Name"
     },
     "structure": {
+      "sharedAcross": "All modules are shared across these companies",
       "companiesTitle": "Companies in {name}",
       "removeCoTitle": "Remove companies",
       "removeCoBody": "Remove {names} from {name}? People given these companies in {name} lose them there.",

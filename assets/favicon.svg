@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <!-- one water droplet: point on top, round bottom (width 64, height 98) -->
+    <path id="drop" d="M32 0 C40 16 64 40 64 66 A32 32 0 1 1 0 66 C0 40 24 16 32 0 Z"/>
+    <linearGradient id="green" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#2f8a57"/>
+      <stop offset="1" stop-color="#0b4a2b"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0.1" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="1" stop-color="#e8620c"/>
+    </linearGradient>
+    <linearGradient id="overlap" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#c9741d"/>
+      <stop offset="1" stop-color="#8f3f0a"/>
+    </linearGradient>
+    <clipPath id="greenClip"><use href="#drop" transform="translate(16 15)"/></clipPath>
+  </defs>
+  <!-- MJM dark green, left and behind -->
+  <use href="#drop" transform="translate(16 15)" fill="url(#green)"/>
+  <!-- CPO orange, right and in front -->
+  <use href="#drop" transform="translate(48 15)" fill="url(#orange)"/>
+  <!-- where they overlap: deeper tone -->
+  <g clip-path="url(#greenClip)">
+    <use href="#drop" transform="translate(48 15)" fill="url(#overlap)"/>
+  </g>
+  <!-- shine on the orange droplet -->
+  <path d="M95 64 C97 74 94 84 86 90" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="5" stroke-linecap="round"/>
+  <path d="M67 40 C70 35 73 31 76 27" fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

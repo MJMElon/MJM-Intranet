@@ -426,6 +426,7 @@ window.GW_LANG["zh-CN"] = {
       "EVENT_DAY_OFF": "活动补假"
     },
     "postAudience": "谁看得到",
+    "business": "Business",
     "postEveryone": "全公司",
     "editNotice": "修改公告",
     "deleteNotice": "删除公告",
@@ -952,6 +953,7 @@ window.GW_LANG["zh-CN"] = {
     },
     "roles": {
       "masterData": "主资料",
+      "addNeedsDb": "已存，但「新增」权限要先跑最新的 SQL（20261203）。",
       "deleteNeedsDb": "已存，但删除权限要先执行最新的 SQL。",
       "superName": "Super Admin",
       "superBiz": "所有 Business",
@@ -972,6 +974,9 @@ window.GW_LANG["zh-CN"] = {
       "deleteBody": "确定删除「{name}」？有这个角色的人会变回一般用户。",
       "duplicate": "已经有同名的角色。",
       "funcs": {
+        "can_add_business": "新增 Business",
+        "can_add_company": "新增 Company",
+        "can_add_module": "把模块加进 Business",
         "can_delete_business": "删除 Business",
         "can_delete_company": "删除 Company",
         "can_delete_module": "删除模块",

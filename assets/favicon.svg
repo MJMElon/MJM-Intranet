@@ -1,30 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <!-- one water droplet: point on top, round bottom (width 64, height 98) -->
-    <path id="drop" d="M32 0 C40 16 64 40 64 66 A32 32 0 1 1 0 66 C0 40 24 16 32 0 Z"/>
-    <linearGradient id="green" x1="0" y1="0" x2="0.9" y2="1">
-      <stop offset="0" stop-color="#2f8a57"/>
+    <!-- a droplet lying on its side: tip at (0,0) pointing right, round end to the left -->
+    <path id="drop" d="M0 0 C-6 -6 -14 -28 -34 -28 A28 28 0 1 0 -34 28 C-14 28 -6 6 0 0 Z"/>
+    <linearGradient id="green" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#3a9a62"/>
       <stop offset="1" stop-color="#0b4a2b"/>
     </linearGradient>
-    <linearGradient id="orange" x1="0.1" y1="0" x2="0.8" y2="1">
+    <linearGradient id="orange" x1="0" y1="0" x2="0.3" y2="1">
       <stop offset="0" stop-color="#ffb347"/>
-      <stop offset="1" stop-color="#e8620c"/>
+      <stop offset="1" stop-color="#e2590a"/>
     </linearGradient>
-    <linearGradient id="overlap" x1="0" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#c9741d"/>
-      <stop offset="1" stop-color="#8f3f0a"/>
-    </linearGradient>
-    <clipPath id="greenClip"><use href="#drop" transform="translate(16 15)"/></clipPath>
   </defs>
-  <!-- MJM dark green, left and behind -->
-  <use href="#drop" transform="translate(16 15)" fill="url(#green)"/>
-  <!-- CPO orange, right and in front -->
-  <use href="#drop" transform="translate(48 15)" fill="url(#orange)"/>
-  <!-- where they overlap: deeper tone -->
-  <g clip-path="url(#greenClip)">
-    <use href="#drop" transform="translate(48 15)" fill="url(#overlap)"/>
+  <!-- left: oil palm leaf (MJM green), tip touching the oil drop in the middle -->
+  <g transform="translate(64 64)">
+    <use href="#drop" fill="url(#green)"/>
+    <!-- midrib, and veins running up toward the tip -->
+    <path d="M-58 0 L-4 0" fill="none" stroke="#e3f5e9" stroke-opacity="0.9" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M-50 0 Q-44 -10 -36 -18 M-36 0 Q-30 -9 -22 -15 M-22 0 Q-17 -6 -11 -9
+             M-50 0 Q-44 10 -36 18 M-36 0 Q-30 9 -22 15 M-22 0 Q-17 6 -11 9"
+          fill="none" stroke="#e3f5e9" stroke-opacity="0.7" stroke-width="2" stroke-linecap="round"/>
   </g>
-  <!-- shine on the orange droplet -->
-  <path d="M95 64 C97 74 94 84 86 90" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="5" stroke-linecap="round"/>
-  <path d="M67 40 C70 35 73 31 76 27" fill="none" stroke="#fff" stroke-opacity="0.45" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- right: CPO oil droplet (orange), tip touching the leaf -->
+  <g transform="translate(64 64) scale(-1 1)">
+    <use href="#drop" fill="url(#orange)"/>
+  </g>
+  <!-- shine on the oil droplet -->
+  <path d="M106 48 C115 53 118 62 116 71" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="4.5" stroke-linecap="round"/>
 </svg>

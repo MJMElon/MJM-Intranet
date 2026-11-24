@@ -50,8 +50,9 @@ Deno.serve(async (req) => {
 
   const [{ data: allowed }, { data: profile }] = await Promise.all([
     supabase.rpc("gw_user_can_access", { p_user: userId, p_module_code: module.code }),
-    supabase.from("gw_profiles").select("id, email, full_name").eq("id", userId).maybeSingle(),
+    supabase.from("gw_profiles").select("id, email, full_name, role").eq("id", userId).maybeSingle(),
   ]);
   if (!allowed || !profile) return json({ allowed: false, module_code: module.code });
-  return json({ allowed: true, module_code: module.code, user: profile });
+  // is_super_admin：Intranet 的 Super Admin 在每个接进来的模块也是 Super Admin（模块自己照这个设定）
+  return json({ allowed: true, module_code: module.code, user: { id: profile.id, email: profile.email, full_name: profile.full_name, is_super_admin: profile.role === "super_admin" } });
 });

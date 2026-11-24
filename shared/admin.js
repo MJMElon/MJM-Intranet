@@ -324,17 +324,13 @@
       const row = (mod) => {
         const r = rowOf(g.id, mod.id, cid);
         const k = g.id + "|" + cid + "|" + mod.id;
-        const admRight = !superU() && ctx.canAdmin(u, g.id, mod.id);
-        const canAcc = !superU() && (r ? ctx.canRevoke(u, g.id, mod.id) && (!r.is_admin || admRight) : ctx.canGrant(u, g.id, mod.id));
-        // Admin：要有设定 Admin 的权限；还没有 Access 时，勾 Admin 会连 Access 一起开（所以也要能开 Access）
-        const canAdm = admRight && (r ? true : ctx.canGrant(u, g.id, mod.id));
+        const canAcc = !superU() && (r ? ctx.canRevoke(u, g.id, mod.id) : ctx.canGrant(u, g.id, mod.id));
         const busy = busyKey === k;
         const box = (attr, on, ok, color, tip) => `<span class="flex w-14 shrink-0 justify-center"><input type="checkbox" ${attr} ${on ? "checked" : ""} ${ok && !busy ? "" : "disabled"} ${tip ? `title="${esc(tip)}"` : ""} class="size-4 ${ok && !busy ? "cursor-pointer" : "cursor-not-allowed opacity-40"} ${color}"></span>`;
         return `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-slate-800 ${r ? "bg-emerald-50/60 dark:bg-emerald-900/15" : ""}">
-          <span class="relative shrink-0">${modLogo(mod, "size-7")}${r && r.is_admin ? adminMark() : ""}</span>
+          <span class="shrink-0">${modLogo(mod, "size-7")}</span>
           <span class="min-w-0 flex-1 truncate text-sm font-medium" title="${esc(mod.name)}">${esc(mod.name)}</span>
           ${box(`data-acc="${k}"`, !!r, canAcc, "accent-emerald-600", canAcc ? "" : tu("noRightAccess"))}
-          ${box(`data-adm="${k}"`, !!(r && r.is_admin), canAdm, "accent-sky-600", canAdm ? "" : tu("noRightAdmin"))}
         </div>`;
       };
       const coName = cid ? (coById.get(cid) || {}).name || "" : "";
@@ -345,7 +341,6 @@
           : `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:border-slate-800">
               <span class="min-w-0 flex-1 truncate" title="${esc(coName)}">${esc(coName ? tu("modulesInShort", { company: coName }) : tu("withAccess"))}</span>
               <span class="w-14 shrink-0 text-center">${esc(tu("colAccess"))}</span>
-              <span class="w-14 shrink-0 text-center">${esc(tu("colAdmin"))}</span>
             </div>
             ${list.length ? `<div class="max-h-80 overflow-y-auto">${list.map(row).join("")}</div>` : `<p class="p-3 text-xs text-slate-400">${esc(tu("noModulesHere"))}</p>`}`;
       const showCos = hasCos && ctx && ctx.companyMode;
@@ -669,9 +664,8 @@
       if (box.dataset.acc) {
         const [gid, cid, mid] = box.dataset.acc.split("|");
         const r = rowOf(gid, mid, cid);
-        return tickAccess(box.dataset.acc, box.checked, box.checked ? !!(r && r.is_admin) : false);
+        return tickAccess(box.dataset.acc, box.checked, false);
       }
-      if (box.dataset.adm) return tickAccess(box.dataset.adm, true, box.checked); // 勾 Admin = 连 Access 一起开；取消 Admin 只拿掉 Admin
     });
     draw();
     ctx = await loadAccess();

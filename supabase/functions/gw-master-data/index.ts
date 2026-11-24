@@ -93,6 +93,8 @@ Deno.serve(async (req) => {
       email: p.email,
       full_name: p.full_name,
       is_admin: p.role === "super_admin" || memberOf.get(p.id) === true,
+      // Intranet Super Admin = Super Admin in every module plugged into the Intranet
+      is_super_admin: p.role === "super_admin",
       company_ids: p.role === "super_admin" ? [...iconCompanies] : companiesOf(p.id),
     }));
 

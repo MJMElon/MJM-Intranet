@@ -230,8 +230,12 @@
     const mems = (mems0 || []).map((x) => x.group_id); // 所在的 Business
     const mcs = mcs0 || []; // 这个人的 Company（含角色）
     const bizList = () => (groups || []).filter((g) => mems.includes(g.id));
-    const cosOfBiz = (gid) => (bizCos || []).filter((x) => x.group_id === gid).map((x) => coById.get(x.company_id)).filter(Boolean); // Business 底下全部的 Company
-    const cosIn = (gid) => mcs.filter((x) => x.group_id === gid).map((x) => coById.get(x.company_id)).filter(Boolean); // 这个人在的 Company
+    // Business 底下全部的 Company：一律照 Company 清单的顺序（Master Manage 的顺序），资料窗和「+」小窗才会一样
+    const cosOfBiz = (gid) => {
+      const ids = new Set((bizCos || []).filter((x) => x.group_id === gid).map((x) => x.company_id));
+      return (companies || []).filter((c) => ids.has(c.id));
+    };
+    const cosIn = (gid) => cosOfBiz(gid).filter((c) => mcRow(gid, c.id)); // 这个人在的 Company（同样的顺序）
     const mcRow = (gid, cid) => mcs.find((x) => x.group_id === gid && x.company_id === cid);
     const superU = () => isSuperUser(u);
     const locked = () => u.id === me.id || superU();
@@ -283,11 +287,12 @@
       if (legacy) tabs.push({ id: "", label: tu("noCompanyTab"), title: tu("noCompanyTab"), role: null });
       return tabs;
     }
+    // 现在选的 Company：没有 Company 的 Business = ""；有 Company 但还没点 = null（先不显示模块）
     function currentCo(g) {
       const tabs = coTabs(g);
       if (!tabs.length) return "";
       const v = selCo.get(g.id);
-      return tabs.some((x) => x.id === v) ? v : tabs[0].id;
+      return tabs.some((x) => x.id === v) ? v : null;
     }
     // 这个 Company 用得到的模块：模块在这个 Business 没标 Company → 都可以；有标 → 要标到这个 Company
     const modsForCo = (gid, cid) =>
@@ -307,19 +312,28 @@
       const tabs = coTabs(g);
       const cid = currentCo(g);
       const needCompany = ctx && ctx.companyMode && hasCos && !tabs.length; // Business 有 Company，但这个人还没被分到任何一家
-      const list = ctx && !needCompany ? modsForCo(g.id, cid) : [];
-      // 左边一家公司：简称（滑过去看全名）＋ 他在这家的角色（一般用户 = User，绿色；有角色 = 角色名，琥珀色）
+      const list = ctx && !needCompany && cid !== null ? modsForCo(g.id, cid) : [];
+      // 左边一家公司：简称（滑过去看全名）＋ 他在这家的角色 ＋「>」（点了右边才出现这家的模块）
+      //   编辑模式（而且能管这个 Business 的人）：角色变成下拉，马上存
       const coItem = (x) => {
         const on = x.id === cid;
         const hasRole = !!(x.role && x.role.role_id);
         const roleTxt = x.id ? roleOf(g.id, x.id) : "";
-        return `<button type="button" data-pick-co="${g.id}|${x.id}" title="${esc(x.title)}" aria-pressed="${on}" class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${
-          on ? "bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
-        }"><span class="min-w-0 flex-1 truncate">${esc(x.label)}</span>${
-          roleTxt
-            ? `<span class="max-w-[6rem] shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium ${on ? "bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900" : hasRole ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"}">${esc(roleTxt)}</span>`
-            : ""
-        }</button>`;
+        const editRole = place && !!x.id;
+        const badgeHtml = roleTxt
+          ? `<span class="max-w-[6rem] shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium ${on ? "bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900" : hasRole ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"}">${esc(roleTxt)}</span>`
+          : "";
+        const roleSel = `<select data-co-role="${g.id}|${x.id}" aria-label="${esc(t("admin.users.role"))}" class="h-7 max-w-[7rem] shrink-0 rounded-md border border-slate-200 bg-white px-1 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+            <option value="user" ${!hasRole ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
+            ${(roles || []).map((r) => `<option value="${r.id}" ${x.role && x.role.role_id === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+          </select>`;
+        return `<div class="flex items-center gap-1 rounded-lg pr-1 ${on ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"}">
+          <button type="button" data-pick-co="${g.id}|${x.id}" title="${esc(x.title)}" aria-pressed="${on}" class="flex min-w-0 flex-1 items-center gap-2 py-1.5 pl-2.5 text-left text-sm ${on ? "font-semibold" : ""}">
+            <span class="min-w-0 flex-1 truncate">${esc(x.label)}</span>${editRole ? "" : badgeHtml}
+          </button>
+          ${editRole ? roleSel : ""}
+          <button type="button" data-pick-co="${g.id}|${x.id}" aria-label="${esc(x.title)}" class="shrink-0 rounded p-0.5 ${on ? "" : "text-slate-400"}">${icon("chevron-right", "size-4")}</button>
+        </div>`;
       };
       const row = (mod) => {
         const r = rowOf(g.id, mod.id, cid);
@@ -338,7 +352,9 @@
         ? GW.spinner()
         : needCompany
           ? `<p class="p-3 text-xs text-amber-700 dark:text-amber-300">${esc(tu("pickCompanyFirst"))}</p>`
-          : `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:border-slate-800">
+          : cid === null
+            ? `<p class="flex items-center gap-2 p-4 text-sm text-slate-400">${icon("arrow-left", "size-4 shrink-0")}${esc(tu("pickCompanyToSee"))}</p>`
+            : `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 text-[11px] font-bold tracking-wider text-slate-500 uppercase dark:border-slate-800">
               <span class="min-w-0 flex-1 truncate" title="${esc(coName)}">${esc(coName ? tu("modulesInShort", { company: coName }) : tu("withAccess"))}</span>
               <span class="w-14 shrink-0 text-center">${esc(tu("colAccess"))}</span>
             </div>
@@ -396,17 +412,18 @@
             </div>
           </div>
         </div>`;
+      const statusBtn =
+        isSuper && u.id !== me.id
+          ? `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
+          : "";
       const buttons = editing
-        ? `<div class="flex justify-end gap-2">
+        ? `<div class="flex flex-wrap items-center justify-end gap-2">
+            ${statusBtn}
             <button data-cancel class="${btn("secondary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
             <button data-save class="${btn("primary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>
           </div>`
         : `<div class="flex flex-wrap items-center justify-end gap-2">
-            ${
-              isSuper && u.id !== me.id
-                ? `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
-                : ""
-            }
+            ${statusBtn}
             ${canEditProfile || canRolesAny() ? `<button data-edit class="${btn("secondary")}">${icon("pencil", "size-4")} ${esc(t("admin.users.edit"))}</button>` : ""}
             <button data-done class="${btn("primary")}">${esc(t("admin.users.done"))}</button>
           </div>`;
@@ -418,6 +435,17 @@
         ${buttons}
       </div>`;
       refreshIcons();
+    }
+
+    // 在某家公司换角色（下拉一选就存）
+    async function changeRole(gid, cid, roleId) {
+      const cur = mcRow(gid, cid);
+      if (!cur || (cur.role_id || null) === roleId) return;
+      const { error } = await sb.from("gw_member_companies").update({ role_id: roleId }).eq("group_id", gid).eq("user_id", uid).eq("company_id", cid);
+      if (error) return (fail(error), draw());
+      cur.role_id = roleId;
+      toast(t("admin.users.savedOk"));
+      draw();
     }
 
     // 停用 / 启用帐号（只有 Super Admin；不能停用自己）。停用前先问
@@ -661,6 +689,10 @@
     m.el.addEventListener("change", (e) => {
       const box = e.target;
       if (box.matches("[data-draft-super]") && draft) return ((draft.super = box.checked), draw());
+      if (box.dataset.coRole) {
+        const [gid, cid] = box.dataset.coRole.split("|");
+        return changeRole(gid, cid, box.value === "user" ? null : box.value);
+      }
       if (box.dataset.acc) {
         const [gid, cid, mid] = box.dataset.acc.split("|");
         const r = rowOf(gid, mid, cid);

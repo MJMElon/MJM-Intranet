@@ -968,6 +968,7 @@ window.GW_LANG["en"] = {
       "clear": "Clear all"
     },
     "userWindow": {
+      "pickCompanyToSee": "Click a company on the left to see and tick its modules.",
       "colAccess": "Access",
       "colAdmin": "Admin",
       "modulesInShort": "Modules — {company}",

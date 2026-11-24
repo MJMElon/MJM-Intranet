@@ -968,6 +968,7 @@ window.GW_LANG["zh-CN"] = {
       "clear": "清除全部"
     },
     "userWindow": {
+      "pickCompanyToSee": "点左边的公司，就会出现那家公司的模块。",
       "colAccess": "可用",
       "colAdmin": "管理员",
       "modulesInShort": "模块 — {company}",

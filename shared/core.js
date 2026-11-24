@@ -266,7 +266,7 @@ window.GW = (function () {
     wrap.className = "gw-modal fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 sm:items-center sm:p-4";
     wrap.innerHTML = `
       <div role="dialog" aria-modal="true" aria-label="${esc(title)}" class="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl dark:bg-slate-900 ${
-        opts && opts.wide ? "sm:max-w-2xl" : "sm:max-w-md"
+        opts && opts.wide === "xl" ? "sm:max-w-4xl" : opts && opts.wide ? "sm:max-w-2xl" : "sm:max-w-md"
       }">
         <div class="mb-4 flex items-center justify-between gap-4">
           <h2 class="text-lg font-semibold">${esc(title)}</h2>

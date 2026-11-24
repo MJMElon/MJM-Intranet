@@ -204,7 +204,7 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: true, onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) });
+    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.super !== (u.role === "super_admin"))) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -308,12 +308,18 @@
       const cid = currentCo(g);
       const needCompany = ctx && ctx.companyMode && hasCos && !tabs.length; // Business 有 Company，但这个人还没被分到任何一家
       const list = ctx && !needCompany ? modsForCo(g.id, cid) : [];
+      // 左边一家公司：简称（滑过去看全名）＋ 他在这家的角色（一般用户 = User，绿色；有角色 = 角色名，琥珀色）
       const coItem = (x) => {
         const on = x.id === cid;
-        const n = ctx ? countIn(g.id, x.id) : 0;
+        const hasRole = !!(x.role && x.role.role_id);
+        const roleTxt = x.id ? roleOf(g.id, x.id) : "";
         return `<button type="button" data-pick-co="${g.id}|${x.id}" title="${esc(x.title)}" aria-pressed="${on}" class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${
           on ? "bg-slate-900 font-semibold text-white dark:bg-white dark:text-slate-900" : "text-slate-700 hover:bg-white dark:text-slate-200 dark:hover:bg-slate-800"
-        }"><span class="min-w-0 flex-1 truncate">${esc(x.label)}</span>${n ? `<span class="size-1.5 shrink-0 rounded-full ${on ? "bg-emerald-300" : "bg-emerald-500"}" aria-hidden="true"></span>` : ""}</button>`;
+        }"><span class="min-w-0 flex-1 truncate">${esc(x.label)}</span>${
+          roleTxt
+            ? `<span class="max-w-[6rem] shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium ${on ? "bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900" : hasRole ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"}">${esc(roleTxt)}</span>`
+            : ""
+        }</button>`;
       };
       const row = (mod) => {
         const r = rowOf(g.id, mod.id, cid);
@@ -356,11 +362,11 @@
         ${
           open
             ? showCos
-              ? `<div class="grid grid-cols-[7.5rem_1fr] border-t border-slate-100 sm:grid-cols-[9.5rem_1fr] dark:border-slate-800">
-                  <div class="max-h-96 space-y-0.5 overflow-y-auto border-r border-slate-100 bg-slate-50 p-1.5 dark:border-slate-800 dark:bg-slate-800/40">
+              ? `<div class="grid grid-cols-[9rem_1fr] border-t border-slate-100 sm:grid-cols-[14rem_1fr] dark:border-slate-800">
+                  <div class="max-h-80 space-y-0.5 overflow-y-auto border-r border-slate-100 bg-slate-50 p-1.5 dark:border-slate-800 dark:bg-slate-800/40">
                     ${tabs.map(coItem).join("")}
                     ${!tabs.length ? `<p class="px-2 py-1.5 text-xs text-slate-400">${esc(tu("noCompany"))}</p>` : ""}
-                    ${addCo ? `<button type="button" data-co-dlg="${g.id}" class="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-white hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white">${icon("plus", "size-3.5")}${esc(tu("editCompanies"))}</button>` : ""}
+                    ${addCo ? `<button type="button" data-co-dlg="${g.id}" title="${esc(tu("editCompanies"))}" aria-label="${esc(tu("editCompanies"))}" class="mt-1 flex h-8 w-full items-center justify-center rounded-lg border border-dashed border-slate-400 text-slate-500 opacity-50 transition hover:opacity-100 dark:border-slate-500">${icon("plus", "size-4")}</button>` : ""}
                   </div>
                   <div class="min-w-0">${modulesPart}</div>
                 </div>`
@@ -400,7 +406,12 @@
             <button data-cancel class="${btn("secondary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
             <button data-save class="${btn("primary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>
           </div>`
-        : `<div class="flex justify-end gap-2">
+        : `<div class="flex flex-wrap items-center justify-end gap-2">
+            ${
+              isSuper && u.id !== me.id
+                ? `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
+                : ""
+            }
             ${canEditProfile || canRolesAny() ? `<button data-edit class="${btn("secondary")}">${icon("pencil", "size-4")} ${esc(t("admin.users.edit"))}</button>` : ""}
             <button data-done class="${btn("primary")}">${esc(t("admin.users.done"))}</button>
           </div>`;
@@ -412,6 +423,17 @@
         ${buttons}
       </div>`;
       refreshIcons();
+    }
+
+    // 停用 / 启用帐号（只有 Super Admin；不能停用自己）。停用前先问
+    async function setStatus() {
+      const status = u.status === "disabled" ? "active" : "disabled";
+      if (status === "disabled" && !(await confirmDialog(t("admin.users.disableAccount"), t("admin.users.disableBody", { name: u.full_name }), t("admin.users.disableAccount"), t("admin.users.cancel")))) return;
+      const r = await invoke("gw-admin", { action: "set_status", id: u.id, status });
+      if (!(r && r.ok)) return toast(t("admin.users.errors." + ((r && r.error) || "forbidden")));
+      u.status = status;
+      toast(t(status === "disabled" ? "admin.users.disabledOk" : "admin.users.enabledOk"));
+      draw();
     }
 
     // 存：名字 + Super Admin（Super Admin 自动可以删 Business / Company / 模块，不用另外存）
@@ -605,6 +627,7 @@
       if (!b || b.disabled) return;
       const d = b.dataset;
       if ("done" in d) return m.close();
+      if ("setStatus" in d) return setStatus();
       if ("edit" in d) {
         editing = true;
         draft = mkDraft();
@@ -706,7 +729,6 @@
     // Super Admin 排最上面（名字 A→Z），其他人接着 A→Z
     const byRank = (a, b) => (isSuperUser(b) ? 1 : 0) - (isSuperUser(a) ? 1 : 0) || (a.full_name || "").localeCompare(b.full_name || "");
     const canEdit = isSuper || C.can_add_business_user; // 编辑钮：开资料窗的编辑模式
-    const statusW = "w-24 shrink-0"; // 停用 / 启用钮固定宽度，每一行的动作才会对齐
     // 进阶搜寻：开没开、选了哪个 Business / Company / 模块（记住上次）
     const adv = { open: ugRecall("gw_adv_open") === "1", gid: ugRecall("gw_ug_business") || "", cid: ugRecall("gw_ug_company") || "", mid: ugRecall("gw_adv_module") || "" };
     if (!groups.some((g) => g.id === adv.gid)) Object.assign(adv, { gid: "", cid: "", mid: "" });
@@ -782,13 +804,6 @@
           <div class="flex shrink-0 items-center justify-end gap-1">
             <button data-window="${u.id}" aria-label="${esc(tu("details"))}" title="${esc(tu("details"))}" class="${btn("ghost", "sm")}">${icon("search")}</button>
             ${canEdit ? `<button data-edit-user="${u.id}" aria-label="${esc(tu("edit"))}" title="${esc(tu("edit"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>` : ""}
-            ${
-              isSuper
-                ? u.id !== me.id
-                  ? `<button data-status="${u.id}" class="${btn(u.status === "active" ? "ghost" : "secondary", "sm")} ${statusW} justify-center ${u.status === "active" ? "text-red-600 dark:text-red-400" : ""}">${esc(u.status === "active" ? tu("disable") : tu("enable"))}</button>`
-                  : `<span aria-hidden="true" class="${statusW}"></span>`
-                : ""
-            }
           </div>
         </div>`;
       const card = (arr) => `<div class="${cls.card} divide-y divide-slate-200 dark:divide-slate-800">${arr.map(row).join("")}</div>`;
@@ -840,14 +855,6 @@
       const back = () => !stale(seq) && reload();
       if (b.dataset.window) return userWindow(b.dataset.window, back);
       if (b.dataset.editUser) return userWindow(b.dataset.editUser, back, { edit: true });
-      const user = users.find((u) => u.id === b.dataset.status);
-      if (!user) return;
-      b.disabled = true;
-      const status = user.status === "active" ? "disabled" : "active";
-      const r = await invoke("gw-admin", { action: "set_status", id: user.id, status });
-      if (r && r.ok) setMsg(status === "disabled" ? tu("disabledOk") : tu("enabledOk"), "green");
-      else setMsg(tu("errors." + ((r && r.error) || "forbidden")));
-      reload();
     });
     drawAdv();
     drawList();

@@ -635,6 +635,9 @@ window.GW_LANG["zh-CN"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "disableAccount": "停用帐号",
+      "enableAccount": "启用帐号",
+      "disableBody": "停用 {name}？在重新启用之前，他不能登入、也打不开任何模块。",
       "advancedSearch": "进阶搜寻",
       "noCompanies": "这个 Business 还没有 Company。",
       "search": "搜索姓名或 Email…",

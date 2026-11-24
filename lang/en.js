@@ -635,6 +635,9 @@ window.GW_LANG["en"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "disableAccount": "Disable account",
+      "enableAccount": "Enable account",
+      "disableBody": "Disable {name}? They can't log in or open any module until the account is enabled again.",
       "advancedSearch": "Advanced search",
       "noCompanies": "This business has no companies yet.",
       "search": "Search name or email…",

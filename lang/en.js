@@ -89,7 +89,7 @@ window.GW_LANG["en"] = {
     "folderTagCompany": "Company",
     "folderTagBusiness": "Business",
     "folderTagHint": "Everyone in this business (or only the company you pick) can open the folder, and it shows in that business box on their home page.",
-    "folderTagTitle": "Share with a business",
+    "folderTagTitle": "Share with businesses",
     "folderTagAdd": "Share with a business",
     "transferDone": "Ownership transferred",
     "transferOk": "Send request",

@@ -181,7 +181,7 @@ window.GWHome = (function () {
       const items = [];
       layout.forEach((l, id) => modules.has(id) && !l.folder_id && items.push({ kind: "app", id, slot: l.sort_order, w: 1, h: 1 }));
       links.filter((l) => !l.folder_id).forEach((l) => items.push({ kind: "link", id: l.id, slot: l.sort_order, w: 1, h: 1 }));
-      folders.filter((f) => !boxOfFolder(f) || homeCopyOf(f.id) != null).forEach((f) => items.push({ kind: "folder", id: f.id, slot: boxOfFolder(f) ? homeCopyOf(f.id) : f.sort_order, w: 1, h: 1 }));
+      folders.filter((f) => !boxesOf(f).length || homeCopyOf(f.id) != null).forEach((f) => items.push({ kind: "folder", id: f.id, slot: boxesOf(f).length ? homeCopyOf(f.id) : f.sort_order, w: 1, h: 1 }));
       widgets.filter((w) => !isPinned(w) && !isFloating(w)).forEach((w) => items.push({ kind: "widget", id: w.id, slot: w.sort_order, w: SIZES[w.size][0], h: SIZES[w.size][1] }));
       return items.sort((a, b) => a.slot - b.slot || a.kind.localeCompare(b.kind));
     }
@@ -189,6 +189,9 @@ window.GWHome = (function () {
     /* 分享给我的文件夹（folder.shared_by = 拥有者）：文件夹、连结、App 都是对方的，我只能看、打开，位置记在 gw_folder_shares；
        里面的 App 只显示我自己也有权限的。自己的文件夹 is_shared = 分享用（可以选分享给谁）。 */
     const sharedApps = new Map(); // 分享给我的文件夹 → 里面的 App（module id）
+    const folderBiz = new Map(); // 文件夹 → 分享给哪些 Business [{ group_id, company_id, role }]
+    let bizTableOn = false; // 资料库有 gw_folder_business_shares（新 SQL 跑过）
+    const myGroups = new Set((opts && opts.memberOf) || []);
     const folderApps = (fid) => {
       const f = folders.find((x) => x.id === fid);
       if (f && f.shared_by) return (sharedApps.get(fid) || []).filter((id) => modules.has(id));
@@ -211,8 +214,17 @@ window.GWHome = (function () {
       if (mineRes.error || shareRes.error) return; // 资料库还没更新：没有分享功能，其他照常
       (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas, tag_group_id: r.tag_group_id || null, tag_company_id: r.tag_company_id || null, tag_role: r.tag_role || "view" }));
       const shares = shareRes.data || [];
-      // 分享给我所在 Business 的文件夹（不在 gw_folder_shares 里）：RLS 只给看得到的
-      const bizRes = tagsOn ? await sb.from("gw_user_folders").select("id").neq("user_id", me).not("tag_group_id", "is", null) : { data: [] };
+      // 文件夹分享给哪些 Business（一个文件夹可以好几个）：RLS 只给我看得到的
+      const bizAll = await sb.from("gw_folder_business_shares").select("folder_id, group_id, company_id, role");
+      bizTableOn = !bizAll.error;
+      if (bizTableOn) {
+        folderBiz.clear();
+        (bizAll.data || []).forEach((b) => folderBiz.set(b.folder_id, [...(folderBiz.get(b.folder_id) || []), b]));
+      }
+      // 还没跑新 SQL：用以前的单一 Business 设定
+      const legacyBiz = (f) => (f.tag_group_id ? [{ folder_id: f.id, group_id: f.tag_group_id, company_id: f.tag_company_id || null, role: f.tag_role || "view" }] : []);
+      folders.forEach((f) => !bizTableOn && folderBiz.set(f.id, legacyBiz(f)));
+      const bizRes = bizTableOn ? { data: [...folderBiz.keys()].filter((id) => !folders.some((f) => f.id === id)).map((id) => ({ id })) } : tagsOn ? await sb.from("gw_user_folders").select("id").neq("user_id", me).not("tag_group_id", "is", null) : { data: [] };
       const ids = [...new Set([...shares.map((x) => x.folder_id), ...((bizRes.data || []).map((x) => x.id))])];
       if (ids.length) {
         const [fs, ls, ly] = await Promise.all([
@@ -224,7 +236,9 @@ window.GWHome = (function () {
           if (folders.some((x) => x.id === f.id)) return;
           const sh = shares.find((x) => x.folder_id === f.id);
           // 权限：个人分享和 Business 分享取比较大的（有一个是 Editor 就是 Editor）
-          const viaBiz = f.tag_group_id ? f.tag_role || "view" : null;
+          if (!bizTableOn) folderBiz.set(f.id, legacyBiz(f));
+          const mine = (folderBiz.get(f.id) || []).filter((b) => isSuper || myGroups.has(b.group_id));
+          const viaBiz = mine.length ? (mine.some((b) => b.role === "edit") ? "edit" : "view") : null;
           const viaMe = sh ? sh.role || "edit" : null;
           folders.push({ ...f, shared_by: f.user_id, sort_order: sh ? sh.sort_order : 0, share_role: viaMe === "edit" || viaBiz === "edit" ? "edit" : "view" });
         });
@@ -320,7 +334,7 @@ window.GWHome = (function () {
       if (kind === "folder") {
         const f = folders.find((x) => x.id === id);
         // 从 Business 区块复制到 My Home 的文件夹：位置记在自己的 Notice Board 设定里
-        if (f && boxOfFolder(f) && homeCopyOf(id) != null) return setHomeCopy(id, slot);
+        if (f && boxesOf(f).length && homeCopyOf(id) != null) return setHomeCopy(id, slot);
         if (f) f.sort_order = slot;
         if (f && f.shared_by) return sb.from("gw_folder_shares").update({ sort_order: slot }).eq("folder_id", id).eq("user_id", data.profile.id);
         return sb.from("gw_user_folders").update({ sort_order: slot }).eq("id", id);
@@ -851,16 +865,18 @@ window.GWHome = (function () {
       return saveBoardConfig();
     }
     // 标了 Business（和 Company）的文件夹：放在那个 Business 区块里（固定在最后面，不能拖走）；我看不到那个区块就照旧在 My Home
-    function boxOfFolder(f) {
-      if (!f || !f.tag_group_id || !sectionsOn || !S.groups.some((g) => g.id === f.tag_group_id)) return null;
-      return f.tag_group_id;
+    // 文件夹在哪几个 Business 区块（分享给那些 Business、而且我看得到那个区块）
+    function boxesOf(f) {
+      if (!f || !sectionsOn) return [];
+      return (folderBiz.get(f.id) || []).map((b) => b.group_id).filter((gid) => S.groups.some((g) => g.id === gid));
     }
     // 这个区块现在要显示的文件夹（标了 Company 的，只在区块选那家 Company 时出现）
     const boxFolders = (gid) =>
       folders.filter((f) => {
-        if (boxOfFolder(f) !== gid) return false;
+        if (!boxesOf(f).includes(gid)) return false;
+        const e = (folderBiz.get(f.id) || []).find((b) => b.group_id === gid);
         const sel = selectedCompany(gid);
-        return !f.tag_company_id || ["all", f.tag_company_id].includes(sel) || (sel === "hq" && companiesOf(gid).some((c) => c.id === f.tag_company_id));
+        return !e.company_id || ["all", e.company_id].includes(sel) || (sel === "hq" && companiesOf(gid).some((c) => c.id === e.company_id));
       });
     // 区块最上层的东西：有记录的按记录排；还没记录的 App 按默认顺序补在后面
     function boxItems(gid) {
@@ -1029,7 +1045,7 @@ window.GWHome = (function () {
         const minis = [...folderApps(f.id).map((id) => miniColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => miniColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
         const shared = f.is_shared || f.shared_by;
         const iconHtml = shared ? sharedFolderIcon(f) : folderIcon(minis);
-        const copy = boxOfFolder(f) && homeCopyOf(f.id) != null;
+        const copy = boxesOf(f).length > 0 && homeCopyOf(f.id) != null;
         return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(copy ? "home.removeFromHome" : f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
       }
       return widgetTile(widgets.find((w) => w.id === it.id), p, it.key);
@@ -2283,7 +2299,7 @@ window.GWHome = (function () {
       const parts = [];
       S.groups.forEach((grp) => {
         // 一般人：Business 里有 App 才出现；super admin：新开的 Business 还没有模块也显示（空的区块）
-        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id) || folders.some((f) => boxOfFolder(f) === grp.id))) return;
+        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id) || folders.some((f) => boxesOf(f).includes(grp.id)))) return;
         const B = boxGeo(grp.id);
         parts.push([grp.id, boxShell(grp.id, grp.name, B, modeOf(grp.id) === "title" ? "" : boxTiles(grp.id, B))]);
       });
@@ -2697,66 +2713,92 @@ window.GWHome = (function () {
     /* mode = "grid"（图示格子）| "map"（心智图：视窗放大，右边一排工具；还是浮动窗，不换页）
        右上角小小的「两个人」= 分享给谁（分享用的文件夹、拥有者才有）；分享给我的文件夹右上角是淡蓝的「两个人」。
        分享给我的：不能移出里面的东西、不能改名。 */
-    // 文件夹标签：放在哪个 Business / Company 的区块
+    // 文件夹分享给哪些 Business（名字列在文件夹名称下面；拥有者点了可以改）
+    const bizNames = (f) => (folderBiz.get(f.id) || []).map((b) => (S.groups.find((g) => g.id === b.group_id) || {}).name).filter(Boolean);
     function folderTagChip(f, canChange) {
       if (!sectionsOn) return "";
-      const g = f.tag_group_id && S.groups.find((x) => x.id === f.tag_group_id);
-      const co = f.tag_company_id && S.companies.find((x) => x.id === f.tag_company_id);
-      const label = g ? g.name + (co ? " · " + (co.short_name || co.code || co.name) : "") + " · " + t(f.tag_role === "edit" ? "home.shareRoleEdit" : "home.shareRoleView") : t("home.folderTagAdd");
-      if (!g && !canChange) return "";
-      const cls_ = "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium shadow-sm backdrop-blur " + (g ? "bg-white/85 text-slate-700 dark:bg-slate-800/85 dark:text-slate-200" : "border border-dashed border-white/70 bg-white/20 text-white");
+      const names = bizNames(f);
+      if (!names.length && !canChange) return "";
+      const label = names.length ? names.join(", ") : t("home.folderTagAdd");
+      const cls_ = "inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium shadow-sm backdrop-blur " + (names.length ? "bg-white/85 text-slate-700 dark:bg-slate-800/85 dark:text-slate-200" : "border border-dashed border-white/70 bg-white/20 text-white");
       return canChange
-        ? `<button type="button" data-folder-tag class="${cls_} hover:bg-white">${icon(g ? "briefcase-business" : "tag", "size-3.5")}${esc(label)}${g ? icon("pencil", "size-3 opacity-60") : ""}</button>`
-        : `<span class="${cls_}">${icon("briefcase-business", "size-3.5")}${esc(label)}</span>`;
+        ? `<button type="button" data-folder-tag class="${cls_} hover:bg-white">${icon(names.length ? "briefcase-business" : "tag", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${names.length ? icon("pencil", "size-3 shrink-0 opacity-60") : ""}</button>`
+        : `<span class="${cls_}">${icon("briefcase-business", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span></span>`;
     }
+    // 分享给 Business：一排 Business，勾 = 分享给那个 Business（勾了旁边选 Viewer / Editor），按 Save 存
     function folderTagDialog(f, done) {
-      const coOpts = (gid) =>
-        `<option value="">${esc(t("home.folderTagAllCo"))}</option>` + (gid ? companiesOf(gid).map((c) => `<option value="${c.id}" ${f.tag_company_id === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("") : "");
+      const cur = new Map((folderBiz.get(f.id) || []).map((b) => [b.group_id, b.role || "view"]));
+      const st = new Map(cur);
+      const dirty = () => cur.size !== st.size || [...st].some(([g, r]) => cur.get(g) !== r);
+      const roleSel = (gid) => `<select data-biz-role="${gid}" aria-label="${esc(t("home.shareRole"))}" class="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900 ${st.has(gid) ? "" : "invisible"}">
+          <option value="view" ${st.get(gid) !== "edit" ? "selected" : ""}>${esc(t("home.shareRoleView"))}</option>
+          <option value="edit" ${st.get(gid) === "edit" ? "selected" : ""}>${esc(t("home.shareRoleEdit"))}</option>
+        </select>`;
       const dlg = modal(
         t("home.folderTagTitle"),
-        `<form class="space-y-4">
-          <p class="text-sm text-slate-500">${esc(t("home.folderTagHint"))}</p>
-          <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("home.folderTagBusiness"))}</span>
-            <select name="g" class="${cls.input}"><option value="">${esc(t("home.folderTagNone"))}</option>${S.groups.map((g) => `<option value="${g.id}" ${f.tag_group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>
-          </label>
-          <label data-co-wrap class="block space-y-1.5 ${f.tag_group_id ? "" : "hidden"}"><span class="${cls.label}">${esc(t("home.folderTagCompany"))}</span>
-            <select name="c" class="${cls.input}">${coOpts(f.tag_group_id)}</select>
-          </label>
-          <label data-role-wrap class="block space-y-1.5 ${f.tag_group_id ? "" : "hidden"}"><span class="${cls.label}">${esc(t("home.shareRole"))}</span>
-            <select name="r" class="${cls.input}">
-              <option value="view" ${f.tag_role !== "edit" ? "selected" : ""}>${esc(t("home.shareRoleView"))}</option>
-              <option value="edit" ${f.tag_role === "edit" ? "selected" : ""}>${esc(t("home.shareRoleEdit"))}</option>
-            </select>
-          </label>
+        `<div class="space-y-4">
+          <div class="max-h-80 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${
+            S.groups.length
+              ? S.groups
+                  .map(
+                    (g) => `<div class="flex items-center gap-3 px-3 py-2">
+                      <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+                        <input type="checkbox" data-biz-tick="${g.id}" ${st.has(g.id) ? "checked" : ""} class="size-4 accent-emerald-600">
+                        <span class="min-w-0 truncate text-sm font-medium">${esc(g.name)}</span>
+                      </label>
+                      ${roleSel(g.id)}
+                    </div>`,
+                  )
+                  .join("")
+              : `<p class="px-3 py-6 text-center text-sm text-slate-400">${esc(t("home.shareNone"))}</p>`
+          }</div>
           <div class="flex justify-end gap-2">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
-            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+            <button type="button" data-save class="${btn("primary")}">${esc(t("home.save"))}</button>
           </div>
-        </form>`,
+        </div>`,
+        { guard: dirty },
       );
-      const form = $("form", dlg.el);
       $("[data-cancel]", dlg.el).onclick = dlg.close;
-      form.g.addEventListener("change", () => {
-        form.c.innerHTML = coOpts(form.g.value);
-        $("[data-co-wrap]", dlg.el).classList.toggle("hidden", !form.g.value);
-        $("[data-role-wrap]", dlg.el).classList.toggle("hidden", !form.g.value);
+      dlg.el.addEventListener("change", (e) => {
+        const el = e.target;
+        if (el.dataset.bizTick) {
+          if (el.checked) st.set(el.dataset.bizTick, $(`[data-biz-role="${el.dataset.bizTick}"]`, dlg.el).value || "view");
+          else st.delete(el.dataset.bizTick);
+          $(`[data-biz-role="${el.dataset.bizTick}"]`, dlg.el).classList.toggle("invisible", !el.checked);
+        } else if (el.dataset.bizRole && st.has(el.dataset.bizRole)) st.set(el.dataset.bizRole, el.value);
       });
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        // 分享给 Business：那个 Business（或 Company）的人都看得到；文件夹也就变成分享用的
-        const row = { tag_group_id: form.g.value || null, tag_company_id: (form.g.value && form.c.value) || null, tag_role: form.r.value || "view", ...(form.g.value ? { is_shared: true } : {}) };
-        let { error } = await sb.from("gw_user_folders").update(row).eq("id", f.id);
-        if (error && /tag_role/.test(error.message || "")) {
-          delete row.tag_role; // 资料库还没加 Viewer / Editor：先只放区块
-          ({ error } = await sb.from("gw_user_folders").update(row).eq("id", f.id));
-          if (!error) toast(t("home.folderTagNeedsDb"));
+      $("[data-save]", dlg.el).onclick = async () => {
+        if (!bizTableOn) return toast(t("home.folderTagNeedsDb"));
+        const save = $("[data-save]", dlg.el);
+        save.disabled = true;
+        const add = [...st].filter(([g]) => !cur.has(g));
+        const drop = [...cur.keys()].filter((g) => !st.has(g));
+        const changed = [...st].filter(([g, r]) => cur.has(g) && cur.get(g) !== r);
+        const fail = (error) => ((save.disabled = false), toast(t("home.saveFailed") + (error && error.message ? " (" + error.message + ")" : "")));
+        if (add.length) {
+          const { error } = await sb.from("gw_folder_business_shares").insert(add.map(([g, r]) => ({ folder_id: f.id, group_id: g, role: r })));
+          if (error) return fail(error);
         }
-        if (error) return toast(/tag_/.test(error.message || "") ? t("home.folderTagNeedsDb") : t("home.saveFailed") + " (" + (error.message || "") + ")");
-        Object.assign(f, row);
+        for (const [g, r] of changed) {
+          const { error } = await sb.from("gw_folder_business_shares").update({ role: r }).eq("folder_id", f.id).eq("group_id", g);
+          if (error) return fail(error);
+        }
+        if (drop.length) {
+          const { error } = await sb.from("gw_folder_business_shares").delete().eq("folder_id", f.id).in("group_id", drop);
+          if (error) return fail(error);
+        }
+        // 分享给 Business 的文件夹就是分享用的文件夹（拥有者才有「分享」钮）
+        if (st.size && !f.is_shared) {
+          const { error } = await sb.from("gw_user_folders").update({ is_shared: true }).eq("id", f.id);
+          if (!error) f.is_shared = true;
+        }
+        const old = new Map((folderBiz.get(f.id) || []).map((b) => [b.group_id, b]));
+        folderBiz.set(f.id, [...st].map(([g, r]) => ({ folder_id: f.id, group_id: g, company_id: (old.get(g) || {}).company_id || null, role: r })));
         dlg.close();
         draw();
         if (done) done();
-      });
+      };
     }
 
     function openFolder(fid) {
@@ -3321,10 +3363,11 @@ window.GWHome = (function () {
     // 分享给谁（像 Google Drive）：同 Business 的在职同事（gw_folder_share_candidates），勾选 + 每个人 Can view / Can edit → 存 gw_folder_shares
     // 分享给 Business 的说明（分享名单最上面那一行）
     function bizShareLabel(f) {
-      const g = f.tag_group_id && S && S.groups.find((x) => x.id === f.tag_group_id);
-      if (!g) return t("home.shareBizNone");
-      const co = f.tag_company_id && S.companies.find((x) => x.id === f.tag_company_id);
-      return g.name + (co ? " · " + co.name : " · " + t("home.folderTagAllCo")) + " · " + t(f.tag_role === "edit" ? "home.shareRoleEdit" : "home.shareRoleView");
+      const list = (folderBiz.get(f.id) || []).map((b) => {
+        const g = S && S.groups.find((x) => x.id === b.group_id);
+        return g ? g.name + " (" + t(b.role === "edit" ? "home.shareRoleEdit" : "home.shareRoleView") + ")" : "";
+      }).filter(Boolean);
+      return list.length ? list.join(", ") : t("home.shareBizNone");
     }
     async function sharePicker(f, onTag) {
       const cand = await sb.rpc("gw_folder_share_candidates");
@@ -3439,7 +3482,7 @@ window.GWHome = (function () {
 
     async function deleteFolder(fid) {
       const f = folders.find((x) => x.id === fid);
-      if (boxOfFolder(f) && homeCopyOf(fid) != null) {
+      if (boxesOf(f).length && homeCopyOf(fid) != null) {
         // My Home 里的复制：只拿掉这一份，Business 区块里的还在
         await setHomeCopy(fid, null);
         return draw();

@@ -1,30 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <!-- green on the left loop, CPO orange on the right, blending where the rope crosses -->
-    <linearGradient id="rope" gradientUnits="userSpaceOnUse" x1="8" y1="0" x2="120" y2="0">
+    <!-- a long droplet lying on its side: tip at (0,0) pointing right, oval end to the left -->
+    <path id="drop" d="M0 0 C-7 -7 -18 -33 -37 -33 A26 33 0 1 0 -37 33 C-18 33 -7 7 0 0 Z"/>
+    <linearGradient id="green" x1="0" y1="0" x2="0.3" y2="1">
       <stop offset="0" stop-color="#3a9a62"/>
-      <stop offset="0.38" stop-color="#0f5a33"/>
-      <stop offset="0.62" stop-color="#f28a22"/>
+      <stop offset="1" stop-color="#0b4a2b"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
       <stop offset="1" stop-color="#e2590a"/>
     </linearGradient>
-    <!-- light from above: a soft shade over the whole rope -->
-    <linearGradient id="shade" gradientUnits="userSpaceOnUse" x1="0" y1="30" x2="0" y2="100">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.18"/>
-      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000" stop-opacity="0.18"/>
-    </linearGradient>
-    <!-- a gap in the lower strand where the upper strand crosses it -->
-    <mask id="gap" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
-      <rect width="128" height="128" fill="#fff"/>
-      <path d="M55.5 76.5 C58.4 72.7 61.2 68.5 64.0 64.0 C66.8 59.5 69.6 55.3 72.5 51.5" fill="none" stroke="#000" stroke-width="24" stroke-linecap="butt"/>
-    </mask>
   </defs>
-  <g fill="none" stroke-width="17" stroke-linejoin="round">
-    <g mask="url(#gap)">
-      <path d="M64 64 C54 48 44 35 31 35 C17 35 11 49 11 64 C11 79 17 93 31 93 C44 93 54 80 64 64 C74 48 84 35 97 35 C111 35 117 49 117 64 C117 79 111 93 97 93 C84 93 74 80 64 64 Z" stroke="url(#rope)"/>
-    </g>
-    <path d="M48.6 84.5 C54.0 79.2 59.0 72.0 64.0 64.0 C69.0 56.0 74.0 48.8 79.4 43.5" stroke="url(#rope)" stroke-linecap="butt"/>
-  </g>
-  <!-- shine on the orange (oil) side -->
-  <path d="M107 52 C104 45 100 42 95 41" fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- left: oil palm green; right: CPO orange; tips meet in the middle -->
+  <use href="#drop" transform="translate(64 64)" fill="url(#green)"/>
+  <use href="#drop" transform="translate(64 64) scale(-1 1)" fill="url(#orange)"/>
+  <!-- shine on the oil drop -->
+  <path d="M104 43 C114 48 118 59 116 71" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="4.5" stroke-linecap="round"/>
 </svg>

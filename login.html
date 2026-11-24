@@ -62,15 +62,6 @@
   .glass .go:disabled { opacity: .7; cursor: default; }
   .glass .link { font-size: 13px; color: #475569; background: none; border: 0; cursor: pointer; }
   .glass .link:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .glass .sso {
-    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 46px; border-radius: 12px; text-decoration: none;
-    font-weight: 600; font-size: 15px; color: #0f172a; background: rgba(255, 255, 255, .92); border: 1px solid rgba(15, 23, 42, .16);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, .06); transition: border-color .2s, box-shadow .2s, transform .15s;
-  }
-  .glass .sso:hover { border-color: #64707c; box-shadow: 0 6px 14px rgba(15, 23, 42, .12); transform: translateY(-1px); }
-  .glass .sso:active { transform: none; }
-  .glass .or { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #94a3b8; }
-  .glass .or::before, .glass .or::after { content: ""; flex: 1; height: 1px; background: rgba(15, 23, 42, .12); }
 
   @media (prefers-reduced-motion: reduce) {
     .logo { opacity: 1; transform: none; }
@@ -115,27 +106,6 @@ const params = new URLSearchParams(location.search);
 const card = $("#card");
 
 const field = (label, input) => `<label class="block"><span>${esc(label)}</span>${input}</label>`;
-// 登入后要去的页面：只接受 Intranet 自己的页面
-const nextPage = () => {
-  const n = params.get("next") || "";
-  return /^[a-z0-9-]+\.html(\?[\w=&.%-]*)?(#[\w-]*)?$/.test(n) && !n.startsWith("login.html") ? n : "index.html";
-};
-// OPIS PRO 回来：用一次性登录码换 session（码在 # 后面，先从网址拿掉）
-async function finishSso() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  const th = h.get("th");
-  const next = h.get("next");
-  history.replaceState(null, "", location.pathname);
-  if (!th) return showLogin(t("login.errors.ssoExpired"));
-  card.innerHTML = `<p class="py-6 text-center text-sm text-slate-500">${esc(t("login.submitting"))}</p>`;
-  let r = await sb.auth.verifyOtp({ token_hash: th, type: "magiclink" });
-  if (r.error) r = await sb.auth.verifyOtp({ token_hash: th, type: "email" });
-  if (r.error || !r.data || !r.data.session) return showLogin(t("login.errors.ssoExpired"));
-  try { localStorage.setItem("gw-sso", r.data.session.user.id); } catch (e) {}
-  if (next) params.set("next", next);
-  go(nextPage());
-}
-const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", no_access: "noAccess", link_expired: "linkExpired" };
 const message = (text, ok) =>
   text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
 
@@ -143,8 +113,6 @@ function showLogin(errorText) {
   card.innerHTML = `
     <form id="f" class="space-y-4">
       <div id="msg">${message(errorText)}</div>
-      <a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()))}">${esc(t("login.sso"))}</a>
-      <div class="or">${esc(t("login.or"))}</div>
       ${field(t("login.email"), `<input name="email" type="email" autocomplete="username" required inputmode="email">`)}
       ${field(t("login.password"), `<input name="password" type="password" autocomplete="current-password" required>`)}
       <button type="submit" class="go">${esc(t("login.submit"))}</button>
@@ -161,10 +129,7 @@ function showLogin(errorText) {
     const r = await invoke("gw-auth", { action: "login", email, password: String(form.get("password") || "") });
     if (r && r.session) {
       const { error } = await sb.auth.setSession(r.session);
-      if (!error) {
-        try { localStorage.removeItem("gw-sso"); } catch (e) {}
-        return go(r.must_change_password ? "login.html?mode=change" : nextPage());
-      }
+      if (!error) return go(r.must_change_password ? "login.html?mode=change" : "index.html");
     }
     const err = (r && r.error) || "unknown";
     const msg =
@@ -239,13 +204,12 @@ async function showChange(reset) {
     return showChange(mode === "reset");
   }
   if (mode === "forgot") return showForgot();
-  if (mode === "sso") return finishSso();
   // 已登录就直接进首页
   const { session, profile } = await GW.loadProfile();
   if (session && profile && profile.status === "active" && !error) {
     return go(profile.must_change_password ? "login.html?mode=change" : "index.html");
   }
-  showLogin(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : "");
+  showLogin(error === "no_access" ? t("login.errors.noAccess") : error === "link_expired" ? t("login.errors.linkExpired") : "");
 })();
 </script>
 </body>

@@ -266,7 +266,7 @@
     let editing = false;
     let draft = null; // { full_name, super }
     let saving = false;
-    const mkDraft = () => ({ full_name: u.full_name, role: roleKey(u), opispro: u.opispro_user_id || "" });
+    const mkDraft = () => ({ full_name: u.full_name, role: roleKey(u) });
     if (opts && opts.edit && (canEditProfile || canRolesAny())) ((editing = true), (draft = mkDraft()));
 
     // 这个 Business 里、这个人能用的模块：标到 Business、启用中；模块有标 Company 的话，这个人要在其中一个 Company
@@ -409,13 +409,6 @@
               ${editing && canEditProfile ? `<dt class="text-slate-500">${esc(t("admin.users.name"))}</dt><dd><input data-draft-name value="${esc(draft.full_name)}" required aria-label="${esc(t("admin.users.name"))}" class="${cls.input} h-9 max-w-xs"></dd>` : ""}
               <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
               <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
-              <dt class="text-slate-500">${esc(tu("opisproId"))}</dt><dd>${
-                editing && isSuper
-                  ? `<input data-draft-opispro value="${esc(draft.opispro)}" inputmode="numeric" maxlength="20" placeholder="${esc(tu("opisproAuto"))}" aria-label="${esc(tu("opisproId"))}" class="${cls.input} h-9 max-w-xs font-mono">`
-                  : u.opispro_user_id
-                    ? `<span class="font-mono font-medium">${esc(u.opispro_user_id)}</span>`
-                    : `<span class="text-slate-400">${esc(tu("opisproNotLinked"))}</span>`
-              }</dd>
               <dt class="text-slate-500">${esc(tu("role"))}</dt><dd>${rolePart}</dd>
             </dl>
             ${canPhoto && ownPhoto(u.avatar_url) ? `<button type="button" data-no-photo class="text-xs text-red-600 hover:underline dark:text-red-400">${esc(tu("removePhoto"))}</button>` : ""}
@@ -484,9 +477,6 @@
       if (!name) return;
       const patch = {};
       if (name !== u.full_name) patch.full_name = name;
-      const op = isSuper ? (draft.opispro || "").trim() : u.opispro_user_id || "";
-      if (op && !/^\d{1,20}$/.test(op)) return toast(tu("opisproBad"), "error");
-      if (isSuper && op !== (u.opispro_user_id || "")) patch.opispro_user_id = op || null;
       if (u.id !== me.id && isSuper && draft.role !== roleKey(u)) {
         if (draft.role === "super") ((patch.role = "super_admin"), (patch.role_id = null));
         else ((patch.role = "user"), (patch.role_id = draft.role || null));
@@ -497,8 +487,7 @@
         const { data, error } = await sb.from("gw_profiles").update(patch).eq("id", uid).select(PROFILE_COLS);
         saving = false;
         if (error || !data || !data.length) {
-          if (error && (error.code === "23505" || /opispro_user_id/.test(error.message || ""))) toast(tu(error.code === "23505" ? "opisproTaken" : "opisproNeedsDb"), "error");
-          else setMsg(t("admin.users.errors.forbidden"));
+          setMsg(t("admin.users.errors.forbidden"));
           return draw();
         }
         Object.assign(u, data[0]);
@@ -709,7 +698,6 @@
     }
     m.el.addEventListener("input", (e) => {
       if (e.target.matches("[data-draft-name]") && draft) draft.full_name = e.target.value;
-      if (e.target.matches("[data-draft-opispro]") && draft) draft.opispro = e.target.value;
     });
     m.el.addEventListener("change", (e) => {
       const box = e.target;

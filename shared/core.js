@@ -144,10 +144,7 @@ window.GW = (function () {
       await sb.auth.signOut();
       return go("login.html?error=no_access"), null;
     }
-    // 用 OPIS PRO 登入的人不需要 Intranet 密码，不强迫改
-    let viaSso = false;
-    try { viaSso = localStorage.getItem("gw-sso") === profile.id; } catch (e) {}
-    if (profile.must_change_password && !viaSso) return go("login.html?mode=change"), null;
+    if (profile.must_change_password) return go("login.html?mode=change"), null;
     if ((need === "manage" && !profile.manages) || (need === "super" && !profile.isSuper)) {
       return go(need === "super" && profile.manages ? "admin.html" : "index.html"), null;
     }

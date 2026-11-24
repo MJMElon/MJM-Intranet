@@ -56,7 +56,7 @@ jobs:
       - name: Deploy functions
         if: steps.check.outputs.skip != 'true'
         run: |
-          for fn in gw-auth gw-admin gw-issue-token gw-check-access gw-jwks gw-master-data gw-mcp gw-ai-chat gw-opispro; do
+          for fn in gw-auth gw-admin gw-issue-token gw-check-access gw-jwks gw-master-data gw-mcp gw-ai-chat; do
             echo "::group::$fn"
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF" --no-verify-jwt --yes
             echo "::endgroup::"

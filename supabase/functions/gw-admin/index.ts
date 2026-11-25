@@ -123,6 +123,8 @@ Deno.serve(async (req) => {
       if (error || !updated?.length) return json({ ok: false, error: "forbidden" });
       // 同时封锁 / 解封 Supabase 登录，现有 session 也无法再刷新
       await admin.auth.admin.updateUserById(body.id, { ban_duration: status === "disabled" ? "876000h" : "none" });
+      // 启用 = 批准（OPIS PRO 第一次登入自动开的帐号）；栏位还没加时忽略
+      if (status === "active") await admin.from("gw_profiles").update({ pending_approval: false }).eq("id", body.id).eq("pending_approval", true);
       await logEvent(me.id, status === "disabled" ? "user.disable" : "user.enable", "profiles", body.id, updated[0].email);
       return json({ ok: true });
     }

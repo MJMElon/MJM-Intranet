@@ -226,7 +226,7 @@ window.addEventListener("pageshow", (e) => {
   document.getElementById("stage").classList.remove("leaving");
   document.getElementById("warp").classList.remove("on");
 });
-const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", no_access: "noAccess", link_expired: "linkExpired" };
+const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", pending: "pending", no_access: "noAccess", link_expired: "linkExpired" };
 const message = (text, ok) =>
   text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
 

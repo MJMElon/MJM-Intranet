@@ -423,7 +423,9 @@
         </div>`;
       const statusBtn =
         isSuper && u.id !== me.id
-          ? `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
+          ? u.pending_approval && u.status === "disabled"
+            ? `<button data-set-status class="${btn("primary")} mr-auto">${icon("user-check", "size-4")} ${esc(t("admin.users.approve"))}</button>`
+            : `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
           : "";
       if (m.head)
         m.head.innerHTML = editing
@@ -473,8 +475,10 @@
       if (status === "disabled" && !(await confirmDialog(t("admin.users.disableAccount"), t("admin.users.disableBody", { name: u.full_name }), t("admin.users.disableAccount"), t("admin.users.cancel")))) return;
       const r = await invoke("gw-admin", { action: "set_status", id: u.id, status });
       if (!(r && r.ok)) return toast(t("admin.users.errors." + ((r && r.error) || "forbidden")));
+      const wasPending = !!u.pending_approval;
       u.status = status;
-      toast(t(status === "disabled" ? "admin.users.disabledOk" : "admin.users.enabledOk"));
+      if (status === "active") u.pending_approval = false;
+      toast(status === "disabled" ? t("admin.users.disabledOk") : wasPending ? t("admin.users.approvedOk") : t("admin.users.enabledOk"));
       draw();
     }
 
@@ -839,8 +843,10 @@
     function drawList() {
       const list = users.filter(match).sort(byRank);
       const active = list.filter((u) => u.status !== "disabled");
-      const off = list.filter((u) => u.status === "disabled");
-      const row = (u) => `<div data-user="${u.id}" class="flex items-center gap-3 p-3 sm:p-4 ${u.status === "disabled" ? "opacity-60" : ""}">
+      // 第一次用 OPIS PRO 登入自动开的帐号：等管理员批准（放最上面）
+      const waiting = list.filter((u) => u.status === "disabled" && u.pending_approval);
+      const off = list.filter((u) => u.status === "disabled" && !u.pending_approval);
+      const row = (u) => `<div data-user="${u.id}" class="flex items-center gap-3 p-3 sm:p-4 ${u.status === "disabled" && !u.pending_approval ? "opacity-60" : ""}">
           ${avatar(u, "size-10")}
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
             ${superMark(u)}
@@ -855,7 +861,15 @@
           </div>
         </div>`;
       const card = (arr) => `<div class="${cls.card} divide-y divide-slate-200 dark:divide-slate-800">${arr.map(row).join("")}</div>`;
-      $("#list").innerHTML = `${active.length ? card(active) : empty(tu("empty"))}
+      $("#list").innerHTML = `${
+          waiting.length
+            ? `<div class="mb-6 space-y-2">
+                <p class="flex items-center gap-1.5 px-1 text-[11px] font-bold tracking-wider text-amber-600 uppercase dark:text-amber-400">${icon("user-plus", "size-3.5")}${esc(tu("waiting"))} <span class="font-normal text-slate-400 normal-case">(${waiting.length})</span></p>
+                <p class="px-1 text-xs text-slate-500">${esc(tu("waitingHint"))}</p>
+                <div class="${cls.card} divide-y divide-amber-200 ring-1 ring-amber-300 dark:divide-amber-900 dark:ring-amber-800">${waiting.map(row).join("")}</div>
+              </div>`
+            : ""
+        }${active.length ? card(active) : empty(tu("empty"))}
         ${
           off.length
             ? `<div class="mt-6 space-y-2">

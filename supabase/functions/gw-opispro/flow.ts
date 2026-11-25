@@ -23,7 +23,7 @@ export type Deps = {
   // 验证 ID token（签名 RS256、iss、aud、exp）；失败就丢错误
   verifyIdToken: (idToken: string) => Promise<Claims>;
   // 找 Intranet 用户并产生一次性登录码；没有权限回 error
-  signIn: (claims: Claims) => Promise<{ tokenHash: string } | { error: "no_access" | "disabled" }>;
+  signIn: (claims: Claims) => Promise<{ tokenHash: string } | { error: "no_access" | "disabled" | "pending" }>;
   log: (event: string, detail?: Record<string, unknown>) => void; // 不可以放 token / code / secret
   now?: () => number;
 };

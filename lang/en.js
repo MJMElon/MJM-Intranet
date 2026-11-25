@@ -45,6 +45,7 @@ window.GW_LANG["en"] = {
       "ssoNotReady": "Sign in with OPIS PRO is not set up yet. Please contact your administrator.",
       "invalid": "Incorrect email or password.",
       "disabled": "This account has been disabled. Please contact your administrator.",
+      "pending": "Your account has been created and is waiting for administrator approval. Please contact your administrator.",
       "noAccess": "This account does not have access to MJM Intranet yet. Please contact your administrator.",
       "unknown": "Sign-in failed. Please try again later.",
       "linkExpired": "This link has expired. Please request a new password reset."
@@ -664,6 +665,10 @@ window.GW_LANG["en"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "approve": "Approve",
+      "approvedOk": "Approved. They can sign in now.",
+      "waiting": "Waiting for approval",
+      "waitingHint": "Signed in with OPIS PRO for the first time. Open the person and press Approve, then give them their modules.",
       "disableAccount": "Disable account",
       "enableAccount": "Enable account",
       "disableBody": "Disable {name}? They can't log in or open any module until the account is enabled again.",

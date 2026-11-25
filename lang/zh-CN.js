@@ -45,6 +45,7 @@ window.GW_LANG["zh-CN"] = {
       "ssoNotReady": "OPIS PRO 登录还没设定好，请联系管理员。",
       "invalid": "Email 或密码错误。",
       "disabled": "此帐号已停用，请联系管理员。",
+      "pending": "已为你建立帐号，正在等待管理员批准。请联系管理员。",
       "noAccess": "此帐号尚未开通 MJM Intranet，请联系管理员。",
       "unknown": "登录失败，请稍后再试。",
       "linkExpired": "链接已失效，请重新申请重设密码。"
@@ -664,6 +665,10 @@ window.GW_LANG["zh-CN"] = {
       "connector": "AI Connector"
     },
     "users": {
+      "approve": "批准",
+      "approvedOk": "已批准，现在可以登录了。",
+      "waiting": "等待批准",
+      "waitingHint": "第一次用 OPIS PRO 登录的人。打开这个人按「批准」，再给他模块权限。",
       "disableAccount": "停用帐号",
       "enableAccount": "启用帐号",
       "disableBody": "停用 {name}？在重新启用之前，他不能登入、也打不开任何模块。",

@@ -212,7 +212,11 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: () => stagedAcc.size > 0 || !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.role !== roleKey(u))) });
+    // 有没有还没存的改动（名字 / 角色 / OPIS PRO ID / 模块勾选）：点外面、叉、Esc、Cancel 都会先提醒
+    const unsaved = () =>
+      stagedAcc.size > 0 ||
+      !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.role !== roleKey(u) || (draft.opispro || "").trim() !== (u.opispro_user_id || "")));
+    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: unsaved });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -314,6 +318,19 @@
 
     // 一个 Business 方块：先收起来（只有名字），点了才展开
     //   展开：左边一排 Company 简称（滑过去看全名），右边是选中那家的模块清单：Access 勾（按 Save 才存，太多可以往下卷）
+    // 模块清单最上面「全选」：只管我有权限改的模块；勾了 = 全部有权限，取消 = 全部拿掉（一样按 Save 才存）
+    const accKeyOf = (gid, cid, mid) => gid + "|" + cid + "|" + mid;
+    const accOn = (gid, cid, mid) => (stagedAcc.has(accKeyOf(gid, cid, mid)) ? stagedAcc.get(accKeyOf(gid, cid, mid)) : !!rowOf(gid, mid, cid));
+    const changeable = (gid, cid, list) => (superU() ? [] : list.filter((mod) => (rowOf(gid, mod.id, cid) ? ctx.canRevoke(u, gid, mod.id) : ctx.canGrant(u, gid, mod.id))));
+    function selectAllRow(gid, cid, list) {
+      const can = changeable(gid, cid, list);
+      if (can.length < 2) return "";
+      const all = can.every((mod) => accOn(gid, cid, mod.id));
+      return `<label class="flex cursor-pointer items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-white/5 dark:text-slate-300">
+        <span class="min-w-0 flex-1">${esc(tu("selectAll"))}</span>
+        <span class="flex w-14 shrink-0 justify-center"><input type="checkbox" data-acc-all="${gid}|${cid}" ${all ? "checked" : ""} ${saving ? "disabled" : ""} class="size-4 cursor-pointer accent-emerald-600"></span>
+      </label>`;
+    }
     function bizBox(g) {
       const place = editing && canPlace(g.id);
       const open = openBiz.has(g.id);
@@ -337,10 +354,9 @@
         const changed = stagedAcc.has(k);
         const on = changed ? stagedAcc.get(k) : !!r;
         const box = (attr, on, ok, color, tip) => `<span class="flex w-14 shrink-0 justify-center"><input type="checkbox" ${attr} ${on ? "checked" : ""} ${ok && !busy ? "" : "disabled"} ${tip ? `title="${esc(tip)}"` : ""} class="size-4 ${ok && !busy ? "cursor-pointer" : "cursor-not-allowed opacity-40"} ${color}"></span>`;
-        return `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-slate-800 ${changed ? "bg-amber-50 dark:bg-amber-900/20" : on ? "bg-emerald-50/60 dark:bg-emerald-900/15" : ""}">
+        return `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-slate-800 ${on ? "bg-emerald-50/60 dark:bg-emerald-900/15" : ""}">
           <span class="shrink-0">${modLogo(mod, "size-7")}</span>
           <span class="min-w-0 flex-1 truncate text-sm font-medium" title="${esc(mod.name)}">${esc(mod.name)}</span>
-          ${changed ? `<span class="shrink-0 text-[10px] font-semibold tracking-wide text-amber-700 uppercase dark:text-amber-300">${esc(tu("unsaved"))}</span>` : ""}
           ${box(`data-acc="${k}"`, on, canAcc, "accent-emerald-600", canAcc ? "" : tu("noRightAccess"))}
         </div>`;
       };
@@ -355,7 +371,7 @@
               <span class="min-w-0 flex-1 truncate" title="${esc(coName)}">${esc(coName ? tu("modulesInShort", { company: coName }) : tu("withAccess"))}</span>
               <span class="w-14 shrink-0 text-center">${esc(tu("colAccess"))}</span>
             </div>
-            ${list.length ? `<div class="max-h-80 overflow-y-auto">${list.map(row).join("")}</div>` : `<p class="p-3 text-xs text-slate-400">${esc(tu("noModulesHere"))}</p>`}`;
+            ${list.length ? `${selectAllRow(g.id, cid, list)}<div class="max-h-80 overflow-y-auto">${list.map(row).join("")}</div>` : `<p class="p-3 text-xs text-slate-400">${esc(tu("noModulesHere"))}</p>`}`;
       const showCos = hasCos && ctx && ctx.companyMode;
       const addCo = (place || (canPlace(g.id) && !superU())) && hasCos;
       return `<section data-biz="${g.id}" class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -432,20 +448,18 @@
         isSuper && u.id !== me.id && !pending
           ? `<button data-set-status ${saving ? "disabled" : ""} class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
           : "";
-      if (m.head)
-        m.head.innerHTML = editing && !pending
-          ? `<button data-cancel class="${btn("secondary", "sm")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
-             <button data-save class="${btn("primary", "sm")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>`
-          : "";
+      if (m.head) m.head.innerHTML = ""; // Cancel / Save 一律放在最下面
       const buttons = pending
         ? `${allowBtn}${editing ? "" : `<div class="flex flex-wrap items-center justify-end gap-2">
             ${canEditProfile || canRolesAny() ? `<button data-edit class="${btn("secondary")}">${icon("pencil", "size-4")} ${esc(t("admin.users.edit"))}</button>` : ""}
             <button data-done class="${btn("primary")}">${esc(t("admin.users.done"))}</button>
           </div>`}`
         : editing
-        ? statusBtn
-          ? `<div class="flex items-center">${statusBtn}</div>`
-          : ""
+        ? `<div class="flex flex-wrap items-center justify-end gap-2">
+            ${statusBtn}
+            <button data-cancel class="${btn("secondary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
+            <button data-save class="${btn("primary")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>
+          </div>`
         : `<div class="flex flex-wrap items-center justify-end gap-2">
             ${statusBtn}
             ${canEditProfile || canRolesAny() ? `<button data-edit class="${btn("secondary")}">${icon("pencil", "size-4")} ${esc(t("admin.users.edit"))}</button>` : ""}
@@ -622,10 +636,15 @@
       let busy = false;
       const pm = modal(tu("companies", { business: g.name }), "", { wide: true, guard: dirty });
       const paint = () => {
+        const allIn = cos.length > 0 && cos.every((c) => st.get(c.id).in);
         pm.el.innerHTML = `<div class="space-y-4">
           ${
             cos.length
-              ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${cos
+              ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${
+                  cos.length > 1
+                    ? `<label class="flex cursor-pointer items-center gap-2.5 bg-slate-50/70 px-3 py-2 text-sm font-semibold dark:bg-white/5"><input type="checkbox" data-co-all ${allIn ? "checked" : ""} ${busy ? "disabled" : ""} class="size-4 accent-emerald-600">${esc(tu("selectAll"))}</label>`
+                    : ""
+                }${cos
                   .map((c) => {
                     const v = st.get(c.id);
                     return `<div class="flex items-center gap-3 px-3 py-2">
@@ -647,7 +666,13 @@
       paint();
       pm.el.addEventListener("change", (e) => {
         const el = e.target;
-        if (el.dataset.coIn) {
+        if ("coAll" in el.dataset) {
+          cos.forEach((c) => {
+            const v = st.get(c.id);
+            v.in = el.checked;
+            if (!v.in) v.role_id = null;
+          });
+        } else if (el.dataset.coIn) {
           const v = st.get(el.dataset.coIn);
           v.in = el.checked;
           if (!v.in) v.role_id = null;
@@ -658,7 +683,10 @@
       pm.el.addEventListener("click", async (e) => {
         const b = e.target.closest("button");
         if (!b || b.disabled) return;
-        if ("coCancel" in b.dataset) return pm.close();
+        if ("coCancel" in b.dataset) {
+          if (dirty() && !(await confirmDialog(t("unsaved.title"), t("unsaved.body"), t("unsaved.leave"), t("unsaved.stay")))) return;
+          return pm.close();
+        }
         if (!("coSave" in b.dataset)) return;
         busy = true;
         paint();
@@ -713,7 +741,7 @@
       m.head.addEventListener("click", (e) => {
         const b = e.target.closest("button");
         if (!b || b.disabled) return;
-        if ("cancel" in b.dataset) return ((editing = false), (draft = null), stagedAcc.clear(), draw());
+        if ("cancel" in b.dataset) return cancelEdit();
         if ("save" in b.dataset) return save();
       });
     m.el.addEventListener("click", (e) => {
@@ -728,7 +756,7 @@
         draft = mkDraft();
         return draw();
       }
-      if ("cancel" in d) return ((editing = false), (draft = null), stagedAcc.clear(), draw());
+      if ("cancel" in d) return cancelEdit();
       if ("save" in d) return save();
       if ("addBiz" in d) return addBusinessDialog();
       if (d.toggleBiz) {
@@ -744,6 +772,14 @@
       if (g && d.coDlg) return companyDialog(g);
       if (g && d.rmBiz) return removeBusiness(g);
     });
+    // Cancel：有没存的改动先问；放弃就回到原来的样子
+    async function cancelEdit() {
+      if (unsaved() && !(await confirmDialog(t("unsaved.title"), t("unsaved.body"), t("unsaved.leave"), t("unsaved.stay")))) return;
+      editing = false;
+      draft = null;
+      stagedAcc.clear();
+      draw();
+    }
     // 勾 / 取消模块：先不存，记下来（勾回原来的样子就等于没改）；进编辑模式，按 Save 才存、Cancel 就放弃
     function tickAccess(k, access) {
       if (saving) return;
@@ -762,6 +798,17 @@
       if (box.matches("[data-draft-role]") && draft) return ((draft.role = box.value), draw());
       if (box.matches("[data-avatar]") && box.files[0]) return uploadAvatar(box.files[0]);
       if (box.dataset.acc) return tickAccess(box.dataset.acc, box.checked);
+      if (box.dataset.accAll) {
+        if (saving) return;
+        const [gid, cid] = box.dataset.accAll.split("|");
+        for (const mod of changeable(gid, cid, modsForCo(gid, cid))) {
+          const k = accKeyOf(gid, cid, mod.id);
+          if (box.checked === !!rowOf(gid, mod.id, cid)) stagedAcc.delete(k);
+          else stagedAcc.set(k, box.checked);
+        }
+        if (!editing) ((editing = true), (draft = mkDraft()));
+        return draw();
+      }
     });
     draw();
     ctx = await loadAccess();

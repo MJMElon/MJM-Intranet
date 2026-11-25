@@ -688,3 +688,12 @@ update public.gw_modules
 update public.gw_modules
    set url = replace(url, 'oliviawsc.github.io/plantationstockmanagementsystem/', 'oliviawsc.github.io/MJM-PORT/')
  where url like '%oliviawsc.github.io/plantationstockmanagementsystem/%';
+
+
+-- ---------------------------------------------------------------------
+-- 20261125130000 STOCK / MGMT_REPORT / MANTAP: token sign-in (level 2) + MJM-PORT address
+-- ---------------------------------------------------------------------
+update public.gw_modules
+   set access_level = 2,
+       url = replace(url, 'oliviawsc.github.io/plantationstockmanagementsystem/', 'oliviawsc.github.io/MJM-PORT/')
+ where code in ('STOCK', 'MGMT_REPORT', 'MANTAP');

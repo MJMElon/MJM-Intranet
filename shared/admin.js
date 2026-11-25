@@ -2000,6 +2000,7 @@
               ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
               ${isSuper && mod.kind === "system" ? field(tmod("url"), `<input name="url" type="url" maxlength="500" value="${esc(mod.url || "")}" placeholder="https://" class="${cls.input} font-mono text-xs">`) : ""}
+              ${isSuper && mod.kind === "system" ? field(tmod("accessLevel"), `<select name="access_level" class="${cls.input}">${opt([[1, tmod("levels.1")], [2, tmod("levels.2")], [3, tmod("levels.3")]], mod.access_level || 1)}</select>`) : ""}
               ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`) : ""}
             </div>
           </div>
@@ -2207,6 +2208,10 @@
           if (f.url && f.url.value.trim() && f.url.value.trim() !== (mod.url || "")) {
             const { error: e4 } = await sb.from("gw_modules").update({ url: f.url.value.trim() }).eq("id", mod.id);
             if (e4) return err("saveFailed");
+          }
+          if (f.access_level && Number(f.access_level.value) !== Number(mod.access_level || 1)) {
+            const { error: e5 } = await sb.from("gw_modules").update({ access_level: Number(f.access_level.value) }).eq("id", mod.id);
+            if (e5) return err("saveFailed");
           }
           if (f.is_active.checked !== !!mod.is_active) {
             const { error: e3 } = await sb.from("gw_modules").update({ is_active: f.is_active.checked }).eq("id", mod.id);

@@ -30,6 +30,9 @@ window.GW_LANG["en"] = {
   },
   "login": {
     "sso": "Sign in with OPIS PRO",
+    "ssoWaiting": "Please continue in the OPIS PRO window.",
+    "ssoShow": "Show window",
+    "ssoStop": "Cancel",
     "or": "or",
     "title": "Sign in",
     "email": "Email",

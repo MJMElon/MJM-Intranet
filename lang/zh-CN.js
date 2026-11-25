@@ -30,6 +30,9 @@ window.GW_LANG["zh-CN"] = {
   },
   "login": {
     "sso": "用 OPIS PRO 登录",
+    "ssoWaiting": "请在 OPIS PRO 视窗里继续登录。",
+    "ssoShow": "显示视窗",
+    "ssoStop": "取消",
     "or": "或",
     "title": "登录",
     "email": "Email",

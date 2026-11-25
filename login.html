@@ -72,6 +72,24 @@
     background: radial-gradient(circle at 50% 45%, #4a5868 0%, #2a3441 55%, #1c232c 100%);
   }
   .warp.on { opacity: 1; transition: opacity .3s ease-in .4s; }
+  /* 电脑：OPIS PRO 在一个小视窗里登录（像 Google），后面的页面变暗，中间一张小卡片 */
+  .sso-wait {
+    position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px;
+    background: rgba(15, 23, 42, .38); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    animation: wait-in .25s ease both;
+  }
+  @keyframes wait-in { from { opacity: 0; } to { opacity: 1; } }
+  .sso-wait .card {
+    width: min(92vw, 340px); padding: 22px; border-radius: 18px; background: #fff; text-align: center;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .3); color: #0f172a;
+  }
+  .sso-wait .spin { width: 26px; height: 26px; margin: 0 auto 12px; border-radius: 999px; border: 3px solid #e2e8f0; border-top-color: #1f2933; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .sso-wait p { font-size: 14px; color: #334155; }
+  .sso-wait .row { display: flex; gap: 8px; margin-top: 16px; }
+  .sso-wait button { flex: 1; height: 38px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .sso-wait .show { border: 0; color: #fff; background: linear-gradient(180deg, #3a4651, #1f2933); }
+  .sso-wait .stop { border: 1px solid rgba(15, 23, 42, .16); background: #fff; color: #0f172a; }
   /* 从 OPIS PRO 回来换登录的那一下：整页留白，不播字标（登录失败才显示） */
   .sso-return .stage, .sso-return .warp { visibility: hidden; }
   .rule { width: clamp(120px, 28vw, 260px); height: 1px; margin: 18px 0 0; background: linear-gradient(90deg, transparent, #9aa4ae, transparent); opacity: 0; transition: opacity .6s 1.1s; }
@@ -179,7 +197,8 @@
     document.documentElement.classList.remove("sso-return");
     Promise.race([loaded, new Promise((r) => setTimeout(r, 1500))]).then(start, start);
   };
-  if (new URLSearchParams(location.search).get("mode") === "sso") document.documentElement.classList.add("sso-return");
+  const q = new URLSearchParams(location.search);
+  if (q.get("mode") === "sso" || q.get("popup")) document.documentElement.classList.add("sso-return");
   else window.gwIntro();
 })();
 </script>
@@ -207,19 +226,103 @@ async function finishSso() {
   if (!th) return failed();
   let r = await sb.auth.verifyOtp({ token_hash: th, type: "magiclink" });
   if (r.error) r = await sb.auth.verifyOtp({ token_hash: th, type: "email" });
-  if (r.error || !r.data || !r.data.session) return failed();
+  if (r.error || !r.data || !r.data.session) {
+    if (POPUP_ID) return popupDone({ error: "sso_expired" });
+    return failed();
+  }
   try { localStorage.setItem("gw-sso", r.data.session.user.id); } catch (e) {}
-  try { sessionStorage.setItem("gw-welcome", "1"); } catch (e) {}
   if (next) params.set("next", next);
+  if (POPUP_ID) return popupDone({ ok: true, next: nextPage() });
+  try { sessionStorage.setItem("gw-welcome", "1"); } catch (e) {}
   go(nextPage());
 }
-// 「用 OPIS PRO 登录」：先播放冲进去的动画，再在同一个分页打开 OPIS PRO
+
+// ---------------- 电脑：OPIS PRO 在小视窗里登录（像 Google）；手机或视窗被挡住：照旧在这个分页打开
+// 小视窗登录完成：session 已经存在这个网站，用 BroadcastChannel + window.opener 只通知「成功 + 要去的页面」或「错误代号」
+const POPUP_ID = /^[A-Za-z0-9_-]{8,64}$/.test(params.get("popup") || "") ? params.get("popup") : "";
+function popupDone(msg) {
+  const m = { type: "gw-sso", popup: POPUP_ID, ...msg };
+  try { const ch = new BroadcastChannel("gw-sso"); ch.postMessage(m); ch.close(); } catch (e) {}
+  try { if (window.opener && window.opener !== window) window.opener.postMessage(m, location.origin); } catch (e) {}
+  setTimeout(() => window.close(), 100);
+  // 关不掉（例如原本的页面已经关了）：就在这个视窗照常继续
+  setTimeout(() => {
+    if (window.closed) return;
+    if (msg.ok) {
+      try { sessionStorage.setItem("gw-welcome", "1"); } catch (e) {}
+      return go(nextPage());
+    }
+    window.gwIntro();
+    showLogin(SSO_ERRORS[msg.error] ? t("login.errors." + SSO_ERRORS[msg.error]) : t("login.errors.ssoFailed"), msg.error === "pending" ? "warn" : undefined);
+  }, 700);
+}
+function ssoWindow(href) {
+  const desktop = matchMedia("(pointer: fine)").matches && window.innerWidth >= 640;
+  if (!desktop) return false;
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const W = 480, H = 640;
+  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - W) / 2));
+  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - H) / 2));
+  // 一定要在点击当下开（不能先 await），浏览器才不会挡
+  const w = window.open(href + "&popup=" + id, "gw-opispro", `popup=yes,width=${W},height=${H},left=${left},top=${top}`);
+  if (!w) return false;
+  const wait = document.createElement("div");
+  wait.className = "sso-wait";
+  wait.innerHTML = `<div class="card" role="dialog" aria-live="polite"><div class="spin"></div><p>${esc(t("login.ssoWaiting"))}</p>
+    <div class="row"><button type="button" class="stop">${esc(t("login.ssoStop"))}</button><button type="button" class="show">${esc(t("login.ssoShow"))}</button></div></div>`;
+  document.body.appendChild(wait);
+  // done = 已经有结果（或按了取消）。视窗看起来关了只拿掉暗色画面、继续等讯息：
+  // 有些登录网站会切断两个视窗的连结，这时 w.closed 会提早变成 true，但登录其实还在进行
+  let done = false;
+  let ch = null;
+  const hideWait = () => {
+    clearInterval(timer);
+    wait.remove();
+  };
+  const end = () => {
+    done = true;
+    hideWait();
+    window.removeEventListener("message", onMsg);
+    try { ch && ch.close(); } catch (x) {}
+  };
+  const finish = (m) => {
+    if (done || !m || m.type !== "gw-sso" || m.popup !== id) return;
+    end();
+    try { w.close(); } catch (x) {}
+    if (m.ok) {
+      if (m.next) params.set("next", m.next);
+      try { sessionStorage.setItem("gw-welcome", "1"); } catch (x) {}
+      // 登录好了：MJM 冲到眼前盖满画面，再进主页
+      const stage = document.getElementById("stage");
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return go(nextPage());
+      stage.classList.add("leaving");
+      document.getElementById("warp").classList.add("on");
+      return setTimeout(() => go(nextPage()), 760);
+    }
+    showLogin(SSO_ERRORS[m.error] ? t("login.errors." + SSO_ERRORS[m.error]) : t("login.errors.ssoFailed"), m.error === "pending" ? "warn" : undefined);
+  };
+  const onMsg = (ev) => {
+    if (ev.origin !== location.origin || ev.source !== w) return;
+    finish(ev.data);
+  };
+  window.addEventListener("message", onMsg);
+  try { ch = new BroadcastChannel("gw-sso"); ch.onmessage = (ev) => finish(ev.data); } catch (x) {}
+  wait.querySelector(".show").onclick = () => { try { w.focus(); } catch (x) {} };
+  wait.querySelector(".stop").onclick = () => { try { w.close(); } catch (x) {} end(); };
+  // 自己把小视窗关掉：页面回复原样（讯息晚一点到也照样处理）
+  const timer = setInterval(() => {
+    if (!done && w.closed) setTimeout(() => !done && hideWait(), 1200);
+  }, 500);
+  return true;
+}
+// 「用 OPIS PRO 登录」：电脑开小视窗；手机（或小视窗被挡住）播放冲进去的动画，再在同一个分页打开 OPIS PRO
 function ssoGo(e) {
   if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // 自己要开新分页：照浏览器的
   e.preventDefault();
   const stage = document.getElementById("stage");
-  if (stage.classList.contains("leaving")) return;
+  if (stage.classList.contains("leaving") || document.querySelector(".sso-wait")) return;
   const href = e.currentTarget.href;
+  if (ssoWindow(href)) return; // 电脑：小视窗
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return location.assign(href);
   stage.classList.add("leaving");
   document.getElementById("warp").classList.add("on");
@@ -347,6 +450,7 @@ async function showChange(reset) {
   }
   if (mode === "forgot") return showForgot();
   if (mode === "sso") return finishSso();
+  if (POPUP_ID) return popupDone({ error: error || "sso_failed" }); // 小视窗里收到错误：告诉原本的页面，然后关掉
   // 已登录就直接进首页
   const { session, profile } = await GW.loadProfile();
   if (session && profile && profile.status === "active" && !error) {

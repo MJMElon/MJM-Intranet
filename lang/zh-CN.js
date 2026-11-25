@@ -3,6 +3,7 @@ window.GW_LANG = window.GW_LANG || {};
 window.GW_LANG["zh-CN"] = {
   "app": {
     "name": "MJM Intranet",
+    "welcomeBack": "欢迎回来",
     "tagline": "公司系统统一入口"
   },
   "nav": {

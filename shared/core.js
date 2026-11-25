@@ -152,7 +152,49 @@ window.GW = (function () {
       return go(need === "super" && profile.manages ? "admin.html" : "index.html"), null;
     }
     applyTheme(profile.theme);
+    welcomeBack(profile);
     return profile;
+  }
+
+  /* 刚登入（登录页留了 gw-welcome 记号）：画面中间浮出「Welcome back」，后面的主页模糊，
+     约两秒后字和模糊一起退掉，就可以开始用。只播一次。 */
+  function welcomeBack(profile) {
+    try {
+      if (!sessionStorage.getItem("gw-welcome")) return;
+      sessionStorage.removeItem("gw-welcome");
+    } catch (e) {
+      return;
+    }
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const css = document.createElement("style");
+    css.textContent = `
+      .gw-welcome { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none;
+        background-color: rgba(255, 255, 255, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0);
+        transition: opacity .7s ease, -webkit-backdrop-filter .7s ease, backdrop-filter .7s ease, background-color .7s ease; }
+      .gw-welcome.on { background-color: rgba(255, 255, 255, .5); -webkit-backdrop-filter: blur(16px) saturate(130%); backdrop-filter: blur(16px) saturate(130%); }
+      .dark .gw-welcome.on { background-color: rgba(2, 6, 23, .55); }
+      .gw-welcome-hi { font: 800 clamp(40px, 8vw, 84px)/1.05 "Segoe UI", "SF Pro Display", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: -.03em; text-align: center; padding: 0 16px;
+        background: linear-gradient(180deg, #4a5868, #1f2933); -webkit-background-clip: text; background-clip: text; color: transparent;
+        animation: gw-welcome-in .75s cubic-bezier(.2, .8, .2, 1) both; }
+      .dark .gw-welcome-hi { background-image: linear-gradient(180deg, #ffffff, #cbd5e1); }
+      .gw-welcome-name { font-size: 15px; font-weight: 600; letter-spacing: .02em; color: #64707c; text-align: center; padding: 0 16px; animation: gw-welcome-in .75s cubic-bezier(.2, .8, .2, 1) .18s both; }
+      .dark .gw-welcome-name { color: #94a3b8; }
+      @keyframes gw-welcome-in { from { opacity: 0; transform: scale(.55); filter: blur(12px); } to { opacity: 1; transform: none; filter: blur(0); } }
+      .gw-welcome.on.out { opacity: 0; background-color: rgba(255, 255, 255, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); }
+      .gw-welcome.out .gw-welcome-hi, .gw-welcome.out .gw-welcome-name { animation: gw-welcome-out .6s ease-in forwards; }
+      @keyframes gw-welcome-out { from { opacity: 1; transform: none; filter: blur(0); } to { opacity: 0; transform: scale(1.18); filter: blur(6px); } }
+      @media (prefers-reduced-motion: reduce) { .gw-welcome-hi, .gw-welcome-name, .gw-welcome.out .gw-welcome-hi, .gw-welcome.out .gw-welcome-name { animation: none; } }`;
+    const el = document.createElement("div");
+    el.className = "gw-welcome";
+    el.setAttribute("role", "status");
+    const first = String(profile.full_name || "").trim().split(/\s+/)[0];
+    el.innerHTML = `<div class="gw-welcome-hi">${esc(t("app.welcomeBack"))}</div>${first ? `<div class="gw-welcome-name">${esc(first)}</div>` : ""}`;
+    document.head.appendChild(css);
+    document.body.appendChild(el);
+    setTimeout(() => el.classList.add("on"), reduce ? 0 : 220); // 字先出来，接着后面的主页变模糊
+    setTimeout(() => el.classList.add("out"), reduce ? 1300 : 2000);
+    setTimeout(() => (el.remove(), css.remove()), reduce ? 2100 : 2800);
   }
 
   async function logout() {
@@ -546,6 +588,7 @@ window.GW = (function () {
     applyTheme,
     loadProfile,
     requireProfile,
+    welcomeBack,
     logout,
     changePassword,
     shell,

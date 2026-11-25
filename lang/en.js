@@ -3,6 +3,7 @@ window.GW_LANG = window.GW_LANG || {};
 window.GW_LANG["en"] = {
   "app": {
     "name": "MJM Intranet",
+    "welcomeBack": "Welcome back",
     "tagline": "One sign-in for every company system"
   },
   "nav": {

@@ -802,6 +802,7 @@ window.GW_LANG["zh-CN"] = {
       "deleteTitle": "删除模块",
       "deleteBody": "删除「{name}」？所有人都会失去它的权限，它也会从 Intranet 消失。另一个系统本身不受影响。",
       "noMatch": "没有符合筛选的模块。",
+      "url": "网址 (URL)",
       "activeLabel": "启用",
       "description": "大家可以从 MJM Intranet 打开的每一个 模块。System = MJM Intranet 旗下的系统（例如 Diesel）；Link = 现有系统或任何外部网站。给每个 模块 标上 Business（和 Company），开权限时就会出现在对的地方。",
       "add": "新增模块",

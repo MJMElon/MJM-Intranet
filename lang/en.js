@@ -802,6 +802,7 @@ window.GW_LANG["en"] = {
       "deleteTitle": "Delete module",
       "deleteBody": "Delete “{name}”? Everyone loses access to it and it disappears from the Intranet. The other system itself is not touched.",
       "noMatch": "No modules match the filter.",
+      "url": "Address (URL)",
       "activeLabel": "Active",
       "description": "Every module people can open from MJM Intranet. System = a system under MJM Intranet (e.g. Diesel). Link = an existing system or any outside website. Tag each module with its businesses (and companies) so it shows in the right place when you give access.",
       "add": "Add module",

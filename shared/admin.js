@@ -1999,6 +1999,7 @@
               </div>
               ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
+              ${isSuper && mod.kind === "system" ? field(tmod("url"), `<input name="url" type="url" maxlength="500" value="${esc(mod.url || "")}" placeholder="https://" class="${cls.input} font-mono text-xs">`) : ""}
               ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`) : ""}
             </div>
           </div>
@@ -2202,6 +2203,10 @@
             const { data: pub } = sb.storage.from("module-icons").getPublicUrl(path);
             const { error: e2 } = await sb.from("gw_modules").update({ image_url: pub.publicUrl }).eq("id", mod.id);
             if (e2) return err("saveFailed");
+          }
+          if (f.url && f.url.value.trim() && f.url.value.trim() !== (mod.url || "")) {
+            const { error: e4 } = await sb.from("gw_modules").update({ url: f.url.value.trim() }).eq("id", mod.id);
+            if (e4) return err("saveFailed");
           }
           if (f.is_active.checked !== !!mod.is_active) {
             const { error: e3 } = await sb.from("gw_modules").update({ is_active: f.is_active.checked }).eq("id", mod.id);

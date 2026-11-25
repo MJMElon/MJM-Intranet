@@ -421,18 +421,24 @@
             ${canPhoto && ownPhoto(u.avatar_url) ? `<button type="button" data-no-photo class="text-xs text-red-600 hover:underline dark:text-red-400">${esc(tu("removePhoto"))}</button>` : ""}
           </div>
         </div>`;
+      // 等待批准的人（第一次用 OPIS PRO 登入）：没有 Cancel / Save，只有一个和「Add Business」一样大小的「Allow access to Intranet」
+      const pending = isSuper && u.id !== me.id && u.pending_approval && u.status === "disabled";
+      const allowBtn = `<button type="button" data-set-status class="flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-2 py-2 text-xs font-semibold text-emerald-700 hover:border-emerald-500 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" ${saving ? "disabled" : ""}>${icon("user-check", "size-3.5")}${esc(t("admin.users.approve"))}</button>`;
       const statusBtn =
-        isSuper && u.id !== me.id
-          ? u.pending_approval && u.status === "disabled"
-            ? `<button data-set-status class="${btn("primary")} mr-auto">${icon("user-check", "size-4")} ${esc(t("admin.users.approve"))}</button>`
-            : `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
+        isSuper && u.id !== me.id && !pending
+          ? `<button data-set-status class="${btn(u.status === "disabled" ? "secondary" : "ghost")} mr-auto ${u.status === "disabled" ? "" : "text-red-600 dark:text-red-400"}">${icon(u.status === "disabled" ? "user-check" : "user-x", "size-4")} ${esc(t(u.status === "disabled" ? "admin.users.enableAccount" : "admin.users.disableAccount"))}</button>`
           : "";
       if (m.head)
-        m.head.innerHTML = editing
+        m.head.innerHTML = editing && !pending
           ? `<button data-cancel class="${btn("secondary", "sm")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.cancel"))}</button>
              <button data-save class="${btn("primary", "sm")}" ${saving ? "disabled" : ""}>${esc(t("admin.users.save"))}</button>`
           : "";
-      const buttons = editing
+      const buttons = pending
+        ? `${allowBtn}${editing ? "" : `<div class="flex flex-wrap items-center justify-end gap-2">
+            ${canEditProfile || canRolesAny() ? `<button data-edit class="${btn("secondary")}">${icon("pencil", "size-4")} ${esc(t("admin.users.edit"))}</button>` : ""}
+            <button data-done class="${btn("primary")}">${esc(t("admin.users.done"))}</button>
+          </div>`}`
+        : editing
         ? statusBtn
           ? `<div class="flex items-center">${statusBtn}</div>`
           : ""
@@ -471,6 +477,11 @@
 
     // 停用 / 启用帐号（只有 Super Admin；不能停用自己）。停用前先问
     async function setStatus() {
+      // 批准时还在编辑：先把改过的名字 / 角色存起来（没有另外的 Save 按钮）；存不成功就不批准
+      if (u.pending_approval && u.status === "disabled" && editing && draft) {
+        await save();
+        if (editing) return;
+      }
       const status = u.status === "disabled" ? "active" : "disabled";
       if (status === "disabled" && !(await confirmDialog(t("admin.users.disableAccount"), t("admin.users.disableBody", { name: u.full_name }), t("admin.users.disableAccount"), t("admin.users.cancel")))) return;
       const r = await invoke("gw-admin", { action: "set_status", id: u.id, status });

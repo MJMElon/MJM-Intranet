@@ -665,10 +665,10 @@ window.GW_LANG["en"] = {
       "connector": "AI Connector"
     },
     "users": {
-      "approve": "Approve",
+      "approve": "Allow access to Intranet",
       "approvedOk": "Approved. They can sign in now.",
       "waiting": "Waiting for approval",
-      "waitingHint": "Signed in with OPIS PRO for the first time. Open the person and press Approve, then give them their modules.",
+      "waitingHint": "Signed in with OPIS PRO for the first time. Open the person and press Allow access to Intranet, then give them their modules.",
       "disableAccount": "Disable account",
       "enableAccount": "Enable account",
       "disableBody": "Disable {name}? They can't log in or open any module until the account is enabled again.",

@@ -665,10 +665,10 @@ window.GW_LANG["zh-CN"] = {
       "connector": "AI Connector"
     },
     "users": {
-      "approve": "批准",
+      "approve": "允许进入 Intranet",
       "approvedOk": "已批准，现在可以登录了。",
       "waiting": "等待批准",
-      "waitingHint": "第一次用 OPIS PRO 登录的人。打开这个人按「批准」，再给他模块权限。",
+      "waitingHint": "第一次用 OPIS PRO 登录的人。打开这个人按「允许进入 Intranet」，再给他模块权限。",
       "disableAccount": "停用帐号",
       "enableAccount": "启用帐号",
       "disableBody": "停用 {name}？在重新启用之前，他不能登入、也打不开任何模块。",

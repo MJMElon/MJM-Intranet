@@ -576,6 +576,7 @@ window.GWHome = (function () {
         case "announcements": {
           // Notice Board：公告；管理员可以直接在这里发布
           const when = (d) => (d ? new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short" }).format(new Date(d)) : "");
+          const until = (d) => (d ? t("widgets.postUntil", { time: new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(d)) }) : "");
           return `<div class="mb-2 flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-100">${icon("megaphone", "size-4 text-brand-600 dark:text-brand-400")}${esc(t("widgets.types.announcements"))}</div>
               ${canPost && !readOnly && !editing ? `<button type="button" data-post class="no-drag flex items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900">${icon("plus", "size-3.5")}${esc(t("widgets.post"))}</button>` : ""}
@@ -584,7 +585,7 @@ window.GWHome = (function () {
               data.announcements.length
                 ? `<ul class="no-drag -mr-2 space-y-2 overflow-y-auto pr-2 h-[calc(100%-2.25rem)]">${data.announcements
                     .map(
-                      (a) => `<li class="flex gap-2.5 rounded-xl px-3 py-2 text-sm ${a.level === "warning" ? "bg-amber-100/60 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-white/50 dark:bg-white/5"}">${icon(a.level === "warning" ? "triangle-alert" : "info", `mt-0.5 size-4 shrink-0 ${a.level === "warning" ? "text-amber-500" : "text-sky-500"}`)}<div class="min-w-0 flex-1"><p class="whitespace-pre-line break-words"><span class="font-bold text-slate-900 dark:text-white">${esc(noticeBiz(a))} :</span> ${esc(a.message)}</p><p class="mt-0.5 text-[11px] text-slate-400">${esc([when(a.starts_at), a.author].filter(Boolean).join(" · "))}</p>${reactionBar(a)}</div>${
+                      (a) => `<li class="flex gap-2.5 rounded-xl px-3 py-2 text-sm ${a.level === "warning" ? "bg-amber-100/60 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-white/50 dark:bg-white/5"}">${icon(a.level === "warning" ? "triangle-alert" : "info", `mt-0.5 size-4 shrink-0 ${a.level === "warning" ? "text-amber-500" : "text-sky-500"}`)}<div class="min-w-0 flex-1"><p class="whitespace-pre-line break-words"><span class="font-bold text-slate-900 dark:text-white">${esc(noticeBiz(a))} :</span> ${esc(a.message)}</p><p class="mt-0.5 text-[11px] text-slate-400">${esc([when(a.starts_at), a.author, until(a.ends_at)].filter(Boolean).join(" · "))}</p>${reactionBar(a)}</div>${
                         !editing && (canEditNotice(a) || canDeleteNotice(a))
                           ? `<span class="flex shrink-0 items-start gap-0.5">${canEditNotice(a) ? `<button type="button" data-edit-notice="${a.id}" aria-label="${esc(t("widgets.editNotice"))}" title="${esc(t("widgets.editNotice"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-white/10">${icon("pencil", "size-3.5")}</button>` : ""}${canDeleteNotice(a) ? `<button type="button" data-del-notice="${a.id}" aria-label="${esc(t("widgets.deleteNotice"))}" title="${esc(t("widgets.deleteNotice"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("trash-2", "size-3.5")}</button>` : ""}</span>`
                           : ""
@@ -3252,7 +3253,13 @@ window.GWHome = (function () {
         ...(groups || []).filter((g) => isSuper || bizCan(g.id, "can_post_notice")).map((g) => [g.id, g.name]),
       ];
       if (!targets.length) return toast(t("widgets.postFailed"));
-      const cur = notice || { message: "", group_id: "", level: "info" };
+      const cur = notice || { message: "", group_id: "", level: "info", ends_at: null };
+      // datetime-local 要本地时间 YYYY-MM-DDTHH:MM
+      const localInput = (d) => {
+        const x = new Date(d);
+        const z = (n) => String(n).padStart(2, "0");
+        return `${x.getFullYear()}-${z(x.getMonth() + 1)}-${z(x.getDate())}T${z(x.getHours())}:${z(x.getMinutes())}`;
+      };
       const dlg = modal(
         notice ? t("widgets.editNotice") : t("widgets.postTitle"),
         `<form class="space-y-4">
@@ -3262,6 +3269,13 @@ window.GWHome = (function () {
             <select name="group_id" class="${cls.input}">${targets.map(([v, l]) => `<option value="${esc(v)}" ${v === (cur.group_id || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
           </label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="important" ${cur.level === "warning" ? "checked" : ""} class="size-4 accent-amber-500"> ${esc(t("widgets.postImportant"))}</label>
+          <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("widgets.postEnds"))}</span>
+            <span class="flex items-center gap-2">
+              <input type="datetime-local" name="ends_at" min="${localInput(Date.now())}" value="${cur.ends_at ? localInput(cur.ends_at) : ""}" class="${cls.input}">
+              <button type="button" data-clear-ends class="${btn("ghost", "sm")} shrink-0">${esc(t("widgets.postEndsClear"))}</button>
+            </span>
+            <span class="block text-xs text-slate-500">${esc(t("widgets.postEndsHint"))}</span>
+          </label>
           <div class="flex justify-end gap-2">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(t("settings.cancel"))}</button>
             <button type="submit" class="${btn("primary")}">${esc(notice ? t("widgets.save") : t("widgets.post"))}</button>
@@ -3269,14 +3283,19 @@ window.GWHome = (function () {
         </form>`,
       );
       $("[data-cancel]", dlg.el).onclick = dlg.close;
+      $("[data-clear-ends]", dlg.el).onclick = () => ($("[name=ends_at]", dlg.el).value = "");
       $("form", dlg.el).addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
         const groupId = f.group_id.value || null;
-        const fields = { message: f.message.value.trim(), level: f.important.checked ? "warning" : "info", group_id: groupId };
+        // 下架时间：空白 = 一直显示；要在现在之后
+        const ends = f.ends_at.value ? new Date(f.ends_at.value) : null;
+        if (ends && (isNaN(ends) || ends <= new Date())) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("widgets.postEndsPast")));
+        const fields = { message: f.message.value.trim(), level: f.important.checked ? "warning" : "info", group_id: groupId, ends_at: ends ? ends.toISOString() : null };
+        const cols = "id, message, level, starts_at, ends_at, group_id, created_by";
         const { data: row, error } = notice
-          ? await sb.from("gw_announcements").update(fields).eq("id", notice.id).select("id, message, level, starts_at, group_id, created_by").single()
-          : await sb.from("gw_announcements").insert({ ...fields, created_by: profile.id }).select("id, message, level, starts_at, group_id, created_by").single();
+          ? await sb.from("gw_announcements").update(fields).eq("id", notice.id).select(cols).single()
+          : await sb.from("gw_announcements").insert({ ...fields, created_by: profile.id }).select(cols).single();
         if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("widgets.postFailed")));
         dlg.close();
         if (notice) {
@@ -3811,6 +3830,30 @@ window.GWHome = (function () {
     if (sectionsOn) widgets.filter(isFloating).forEach(migratePos); // 旧版 px 位置换成格子（只在记忆中）
     draw();
     loadShared();
+
+    // 公告的下架时间：首页资料没有带，另外拿；时间到了就从公告栏拿掉（不用重新整理页面）
+    const expireNotices = () => {
+      const now = Date.now();
+      const left = data.announcements.filter((a) => !a.ends_at || new Date(a.ends_at).getTime() > now);
+      if (left.length !== data.announcements.length) {
+        data.announcements = left;
+        draw();
+      }
+    };
+    if (!readOnly && data.announcements && data.announcements.length) {
+      sb.from("gw_announcements")
+        .select("id, ends_at")
+        .in("id", data.announcements.map((a) => a.id))
+        .then(({ data: rows }) => {
+          const byId = new Map((rows || []).map((r) => [r.id, r.ends_at]));
+          let any = false;
+          data.announcements.forEach((a) => {
+            if (byId.get(a.id)) ((a.ends_at = byId.get(a.id)), (any = true));
+          });
+          if (any) draw();
+        });
+    }
+    setInterval(expireNotices, 30000);
   }
 
   return { render, WIDGETS };

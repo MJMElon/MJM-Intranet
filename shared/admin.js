@@ -429,13 +429,11 @@
           </div>
           <div class="min-w-0 flex-1 space-y-2.5">
             <dl class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-sm">
-              ${editing && canEditProfile ? `<dt class="text-slate-500">${esc(t("admin.users.name"))}</dt><dd class="${row}"><input data-draft-name value="${esc(draft.full_name)}" required aria-label="${esc(t("admin.users.name"))}" class="${cls.input} h-9 max-w-xs"></dd>` : ""}
               <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="${row} ${pad} font-mono font-medium">${esc(u.user_code || "—")}</dd>
               <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="${row} ${pad} font-medium"><span class="truncate">${esc(u.email)}</span></dd>
-              <dt class="text-slate-500">${esc(tu("opisproId"))}</dt><dd class="${row} ${editing && isSuper ? "" : pad}">${
-                editing && isSuper
-                  ? `<input data-draft-opispro value="${esc(draft.opispro)}" inputmode="numeric" maxlength="20" placeholder="${esc(tu("opisproAuto"))}" aria-label="${esc(tu("opisproId"))}" class="${cls.input} h-9 max-w-xs font-mono">`
-                  : u.opispro_user_id
+              <dt class="text-slate-500">${esc(tu("opisproId"))}</dt><dd class="${row} ${pad}">${
+                // 名字和 OPIS PRO ID 在这里不能改（只显示）
+                u.opispro_user_id
                     ? `<span class="font-mono font-medium">${esc(u.opispro_user_id)}</span>`
                     : `<span class="truncate text-slate-400">${esc(tu("opisproNotLinked"))}</span>`
               }</dd>

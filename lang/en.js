@@ -45,7 +45,7 @@ window.GW_LANG["en"] = {
       "ssoNotReady": "Sign in with OPIS PRO is not set up yet. Please contact your administrator.",
       "invalid": "Incorrect email or password.",
       "disabled": "This account has been disabled. Please contact your administrator.",
-      "pending": "Your account has been created and is waiting for administrator approval. Please contact your administrator.",
+      "pending": "Account created. Waiting for admin approval.",
       "noAccess": "This account does not have access to MJM Intranet yet. Please contact your administrator.",
       "unknown": "Sign-in failed. Please try again later.",
       "linkExpired": "This link has expired. Please request a new password reset."

@@ -227,21 +227,22 @@ window.addEventListener("pageshow", (e) => {
   document.getElementById("warp").classList.remove("on");
 });
 const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", pending: "pending", no_access: "noAccess", link_expired: "linkExpired" };
+// ok = true 绿色；ok = "warn" 黄橘色（例如：等待批准）；其他 红色
 const message = (text, ok) =>
-  text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
+  text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok === "warn" ? "border-amber-300 bg-amber-50 text-amber-800" : ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
 
 // 登录页只有「用 OPIS PRO 登录」。Email + 密码只在 login.html?mode=password（备用：OPIS PRO 连不上时给管理员用）
 const PASSWORD_MODE = params.get("mode") === "password";
-function showLogin(errorText) {
+function showLogin(errorText, tone) {
   const sso = `<a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()))}">${esc(t("login.sso"))}</a>`;
   if (!PASSWORD_MODE) {
-    card.innerHTML = `<div class="space-y-4"><div id="msg"${errorText ? "" : " hidden"}>${message(errorText)}</div>${sso}</div>`;
+    card.innerHTML = `<div class="space-y-4"><div id="msg"${errorText ? "" : " hidden"}>${message(errorText, tone)}</div>${sso}</div>`;
     $("#sso").addEventListener("click", ssoGo);
     return;
   }
   card.innerHTML = `
     <form id="f" class="space-y-4">
-      <div id="msg">${message(errorText)}</div>
+      <div id="msg">${message(errorText, tone)}</div>
       ${sso}
       <div class="or">${esc(t("login.or"))}</div>
       ${field(t("login.email"), `<input name="email" type="email" autocomplete="username" required inputmode="email">`)}
@@ -346,7 +347,7 @@ async function showChange(reset) {
   if (session && profile && profile.status === "active" && !error) {
     return go(profile.must_change_password ? "login.html?mode=change" : "index.html");
   }
-  showLogin(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : "");
+  showLogin(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : "", error === "pending" ? "warn" : undefined);
 })();
 </script>
 </body>

@@ -45,7 +45,7 @@ window.GW_LANG["zh-CN"] = {
       "ssoNotReady": "OPIS PRO 登录还没设定好，请联系管理员。",
       "invalid": "Email 或密码错误。",
       "disabled": "此帐号已停用，请联系管理员。",
-      "pending": "已为你建立帐号，正在等待管理员批准。请联系管理员。",
+      "pending": "帐号已建立，等待管理员批准。",
       "noAccess": "此帐号尚未开通 MJM Intranet，请联系管理员。",
       "unknown": "登录失败，请稍后再试。",
       "linkExpired": "链接已失效，请重新申请重设密码。"

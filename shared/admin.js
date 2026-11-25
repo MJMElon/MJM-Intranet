@@ -212,7 +212,7 @@
     const tu = (k, v) => t("admin.userWindow." + k, v);
     const ta = (k, v) => t("admin.users.accessDialog." + k, v);
     const ts = (k, v) => t("admin.structure." + k, v);
-    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: () => !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.role !== roleKey(u))) });
+    const m = modal("", GW.spinner(), { wide: "xl", onClose, guard: () => stagedAcc.size > 0 || !!(editing && draft && ((draft.full_name || "").trim() !== u.full_name || draft.role !== roleKey(u))) });
     const [{ data: u0 }, { data: mems0 }, { data: groups }, { data: companies }, { data: mods }, { data: gxRows }, { data: mcs0 }, { data: bizCos }, { data: roles }] = await Promise.all([
       sb.from("gw_profiles").select(PROFILE_COLS).eq("id", uid).maybeSingle(),
       sb.from("gw_group_members").select("group_id").eq("user_id", uid),
@@ -250,7 +250,8 @@
     const rowOf = (gid, mid, cid) => (superU() ? SUPER_ROW : ctx.rows.get(accessKey(u.id, mid, gid, ctx.companyMode ? cid : ""))); // 这个人在这个 Business（＋ Company）的这个模块
     const selCo = new Map(); // 每个 Business 现在选的 Company（"" = 没有 Company）
     const openBiz = new Set(); // 展开的 Business（一开始全部收起来）
-    let busyKey = null; // 正在存的那一格
+    // 勾 / 取消模块权限：先记在这里（还没存），按 Save 才一起存；key = Business|Company|模块 → 要不要有权限
+    const stagedAcc = new Map();
     const canEditAccess = () =>
       !locked() &&
       (isSuper ||
@@ -312,7 +313,7 @@
     const countIn = (gid, cid) => (superU() ? modsForCo(gid, cid).length : [...ctx.rows.values()].filter((r) => r.user_id === u.id && r.group_id === gid && (r.company_id || "") === cid).length);
 
     // 一个 Business 方块：先收起来（只有名字），点了才展开
-    //   展开：左边一排 Company 简称（滑过去看全名），右边是选中那家的模块清单：Access / Admin 两个勾（马上存，太多可以往下卷）
+    //   展开：左边一排 Company 简称（滑过去看全名），右边是选中那家的模块清单：Access 勾（按 Save 才存，太多可以往下卷）
     function bizBox(g) {
       const place = editing && canPlace(g.id);
       const open = openBiz.has(g.id);
@@ -332,12 +333,15 @@
         const r = rowOf(g.id, mod.id, cid);
         const k = g.id + "|" + cid + "|" + mod.id;
         const canAcc = !superU() && (r ? ctx.canRevoke(u, g.id, mod.id) : ctx.canGrant(u, g.id, mod.id));
-        const busy = busyKey === k;
+        const busy = saving;
+        const changed = stagedAcc.has(k);
+        const on = changed ? stagedAcc.get(k) : !!r;
         const box = (attr, on, ok, color, tip) => `<span class="flex w-14 shrink-0 justify-center"><input type="checkbox" ${attr} ${on ? "checked" : ""} ${ok && !busy ? "" : "disabled"} ${tip ? `title="${esc(tip)}"` : ""} class="size-4 ${ok && !busy ? "cursor-pointer" : "cursor-not-allowed opacity-40"} ${color}"></span>`;
-        return `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-slate-800 ${r ? "bg-emerald-50/60 dark:bg-emerald-900/15" : ""}">
+        return `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-0 dark:border-slate-800 ${changed ? "bg-amber-50 dark:bg-amber-900/20" : on ? "bg-emerald-50/60 dark:bg-emerald-900/15" : ""}">
           <span class="shrink-0">${modLogo(mod, "size-7")}</span>
           <span class="min-w-0 flex-1 truncate text-sm font-medium" title="${esc(mod.name)}">${esc(mod.name)}</span>
-          ${box(`data-acc="${k}"`, !!r, canAcc, "accent-emerald-600", canAcc ? "" : tu("noRightAccess"))}
+          ${changed ? `<span class="shrink-0 text-[10px] font-semibold tracking-wide text-amber-700 uppercase dark:text-amber-300">${esc(tu("unsaved"))}</span>` : ""}
+          ${box(`data-acc="${k}"`, on, canAcc, "accent-emerald-600", canAcc ? "" : tu("noRightAccess"))}
         </div>`;
       };
       const coName = cid ? (coById.get(cid) || {}).name || "" : "";
@@ -508,17 +512,30 @@
       }
       saving = true;
       draw();
+      let changed = false;
       if (Object.keys(patch).length) {
         const { data, error } = await sb.from("gw_profiles").update(patch).eq("id", uid).select(PROFILE_COLS);
-        saving = false;
         if (error || !data || !data.length) {
+          saving = false;
           if (error && (error.code === "23505" || /opispro_user_id/.test(error.message || ""))) toast(tu(error.code === "23505" ? "opisproTaken" : "opisproNeedsDb"), "error");
           else setMsg(t("admin.users.errors.forbidden"));
           return draw();
         }
         Object.assign(u, data[0]);
-        toast(t("admin.users.savedOk"));
-      } else saving = false;
+        changed = true;
+      }
+      // 模块权限：把勾过 / 取消过的一起存（取消 Access 也会取消 Admin）；有一格存不成功就留在编辑模式
+      for (const [k, access] of [...stagedAcc]) {
+        const [gid, cid, mid] = k.split("|");
+        if (!(await saveAccess(ctx, uid, mid, gid, cid, access, false))) {
+          saving = false;
+          return draw();
+        }
+        stagedAcc.delete(k);
+        changed = true;
+      }
+      saving = false;
+      if (changed) toast(t("admin.users.savedOk"));
       editing = false;
       draft = null;
       setTitle();
@@ -680,7 +697,7 @@
       m.head.addEventListener("click", (e) => {
         const b = e.target.closest("button");
         if (!b || b.disabled) return;
-        if ("cancel" in b.dataset) return ((editing = false), (draft = null), draw());
+        if ("cancel" in b.dataset) return ((editing = false), (draft = null), stagedAcc.clear(), draw());
         if ("save" in b.dataset) return save();
       });
     m.el.addEventListener("click", (e) => {
@@ -695,7 +712,7 @@
         draft = mkDraft();
         return draw();
       }
-      if ("cancel" in d) return ((editing = false), (draft = null), draw());
+      if ("cancel" in d) return ((editing = false), (draft = null), stagedAcc.clear(), draw());
       if ("save" in d) return save();
       if ("addBiz" in d) return addBusinessDialog();
       if (d.toggleBiz) {
@@ -711,15 +728,13 @@
       if (g && d.coDlg) return companyDialog(g);
       if (g && d.rmBiz) return removeBusiness(g);
     });
-    // 勾 / 取消模块：马上存（取消 Access 也会取消 Admin；勾 Admin 一定已经有 Access）
-    async function tickAccess(k, access, admin) {
-      if (busyKey) return;
+    // 勾 / 取消模块：先不存，记下来（勾回原来的样子就等于没改）；进编辑模式，按 Save 才存、Cancel 就放弃
+    function tickAccess(k, access) {
+      if (saving) return;
       const [gid, cid, mid] = k.split("|");
-      busyKey = k;
-      draw();
-      const ok = await saveAccess(ctx, uid, mid, gid, cid, access, admin);
-      busyKey = null;
-      if (ok) toast(t("admin.users.savedOk"));
+      if (access === !!rowOf(gid, mid, cid)) stagedAcc.delete(k);
+      else stagedAcc.set(k, access);
+      if (!editing) ((editing = true), (draft = mkDraft()));
       draw();
     }
     m.el.addEventListener("input", (e) => {
@@ -730,11 +745,7 @@
       const box = e.target;
       if (box.matches("[data-draft-role]") && draft) return ((draft.role = box.value), draw());
       if (box.matches("[data-avatar]") && box.files[0]) return uploadAvatar(box.files[0]);
-      if (box.dataset.acc) {
-        const [gid, cid, mid] = box.dataset.acc.split("|");
-        const r = rowOf(gid, mid, cid);
-        return tickAccess(box.dataset.acc, box.checked, false);
-      }
+      if (box.dataset.acc) return tickAccess(box.dataset.acc, box.checked);
     });
     draw();
     ctx = await loadAccess();

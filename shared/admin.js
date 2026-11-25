@@ -1198,11 +1198,12 @@
   async function companyInfo(companyId, fromGroupId) {
     const tc = (k, v) => t("admin.company." + k, v);
     const m = modal("", GW.spinner());
-    const [{ data: c }, { data: links }, { data: groups }, { data: mems }] = await Promise.all([
+    const [{ data: c }, { data: links }, { data: groups }, { data: mems }, { data: locs }] = await Promise.all([
       sb.from("gw_companies").select("*").eq("id", companyId).maybeSingle(),
       sb.from("gw_business_companies").select("group_id, area, area_unit").eq("company_id", companyId),
       sb.from("gw_groups").select("id, name, code").order("sort_order").order("name"),
       sb.from("gw_member_companies").select("group_id").eq("company_id", companyId),
+      sb.from("gw_company_locations").select("*").eq("company_id", companyId).order("sort_order").order("name"), // 资料库还没更新时就是空的
     ]);
     if (!c) return m.close();
     const gName = new Map((groups || []).map((g) => [g.id, g]));
@@ -1212,6 +1213,9 @@
       .sort((a, b) => (a.group_id === fromGroupId ? -1 : b.group_id === fromGroupId ? 1 : 0));
     const area = (l) => (l.area != null ? `${Number(l.area).toLocaleString(GW.LOCALE)} ${esc(l.area_unit || "")}` : "—");
     const people = (gid) => (mems || []).filter((x) => x.group_id === gid).length;
+    // 每个 Business 底下的 Location（还没分 Business 的旧 Location 算在第一个 Business）
+    const firstGid = rows.length ? [...rows].sort((a, b) => (groups || []).findIndex((g) => g.id === a.group_id) - (groups || []).findIndex((g) => g.id === b.group_id))[0].group_id : null;
+    const locsOf = (gid) => (locs || []).filter((x) => x.group_id === gid || (!x.group_id && gid === firstGid));
     const from = fromGroupId ? gName.get(fromGroupId) : null;
     const h = m.el.parentElement.querySelector("h2");
     if (h) h.textContent = from ? from.name : c.name;
@@ -1224,25 +1228,55 @@
           ${c.description ? `<p class="mt-1 text-sm">${esc(c.description)}</p>` : ""}
         </div>
       </div>
-      <div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+      <div class="space-y-2">
         ${
           rows.length
             ? rows
-                .map(
-                  (l, i) => `<div class="flex items-center gap-3 px-3 py-2.5 ${i === 0 && from ? "bg-brand-50/60 dark:bg-brand-900/20" : ""}">
-                    ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
-                    <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(l.g.name)}</span><span class="block text-xs text-slate-500">${esc(tc("members", { count: people(l.group_id) }))}</span></span>
-                    <span class="text-sm"><span class="text-xs text-slate-500">${esc(tc("area"))} </span><span class="font-medium">${area(l)}</span></span>
-                  </div>`,
-                )
+                .map((l, i) => {
+                  const ls = locsOf(l.group_id);
+                  const can = c.has_locations && ls.length > 0;
+                  return `<div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 ${i === 0 && from ? "ring-1 ring-brand-500/40" : ""}">
+                    <button type="button" ${can ? `data-exp="${l.group_id}" aria-expanded="false"` : "disabled"} class="flex w-full items-center gap-2.5 px-3 py-2.5 text-left ${can ? "hover:bg-slate-50 dark:hover:bg-white/5" : "cursor-default"}">
+                      <span data-chev class="shrink-0 text-slate-400 transition-transform ${can ? "" : "invisible"}">${icon("chevron-right", "size-4")}</span>
+                      ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
+                      <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(l.g.name)}</span><span class="block text-xs text-slate-500">${esc(tc("members", { count: people(l.group_id) }))}${c.has_locations ? " · " + esc(ls.length === 1 ? tc("oneLocation") : ls.length ? tc("locationCount", { count: ls.length }) : tc("noLocationYet")) : ""}</span></span>
+                      <span class="text-sm"><span class="text-xs text-slate-500">${esc(tc("area"))} </span><span class="font-medium">${area(l)}</span></span>
+                    </button>
+                    ${
+                      can
+                        ? `<div data-exp-body="${l.group_id}" class="hidden border-t border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-white/5">
+                        <div class="grid grid-cols-[8rem_1fr_auto] gap-2 pb-1 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span class="text-right">${esc(tc("area"))}</span></div>
+                        ${ls
+                          .map(
+                            (x) => `<div class="grid grid-cols-[8rem_1fr_auto] gap-2 border-t border-slate-200/70 py-1.5 text-sm dark:border-slate-700/60">
+                              <span class="truncate font-mono text-xs leading-5 text-slate-500">${esc(x.location_id || "—")}</span>
+                              <span class="truncate">${esc(x.name)}</span>
+                              <span class="text-right tabular-nums">${x.area != null ? `${Number(x.area).toLocaleString(GW.LOCALE)} ${esc(tc("unitHa"))}` : "—"}</span>
+                            </div>`,
+                          )
+                          .join("")}
+                      </div>`
+                        : ""
+                    }
+                  </div>`;
+                })
                 .join("")
-            : `<p class="px-3 py-4 text-center text-sm text-slate-400">${esc(tc("noBusinessYet"))}</p>`
+            : `<p class="rounded-xl border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-400 dark:border-slate-700">${esc(tc("noBusinessYet"))}</p>`
         }
       </div>
       <div class="flex justify-end"><button data-done class="${btn("primary")}">${esc(t("admin.users.done"))}</button></div>
     </div>`;
     refreshIcons();
     $("[data-done]", m.el).onclick = m.close;
+    // 点 Business：展开 / 收起它底下的 Location
+    m.el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-exp]");
+      if (!b) return;
+      const body = $(`[data-exp-body="${b.dataset.exp}"]`, m.el);
+      const open = body.classList.toggle("hidden") === false;
+      b.setAttribute("aria-expanded", open ? "true" : "false");
+      $("[data-chev]", b).classList.toggle("rotate-90", open);
+    });
   }
 
   // 拖拉排顺序（Business、Company 卡片）：拖完把新的顺序存进 sort_order
@@ -1591,7 +1625,8 @@
          Business：已加的 Business 标签 +「+」；每个 Business 一行面积（Ha）
            勾「This company has multiple locations」：每个 Business 下面 Opispro Location ID / Location name / 面积（Ha），可以加列；
            这时 Business 的面积 = 它底下 Location 面积的总和（自动算，不能手改）
-         两个方块：Company details（公司资料＋Billing details 在同一个方块）、Business details（每个 Business 一行：名称、面积、X 移出；标题右边「+」加到别的 Business）
+         两个分页（点上面的分页切换）：Company details（公司资料＋Billing details）、Business details（每个 Business 一行：名称、面积、X 移出；
+           「Add to a business」加到别的 Business；勾了「多个 Location」时点 Business 展开它底下的 Location）
          Location ID / 名称的输入框不放范例字
        全部先记在画面上，按 Save 一次写入 */
     function companyDialog(c, presetGroupId) {
@@ -1605,79 +1640,87 @@
       const locsOf = (gid) => myLocs.filter((x) => x.group_id === gid || (!x.group_id && gid === firstBiz));
       const numVal = (x) => (x == null ? "" : esc(String(x)));
       const ha = `<span class="text-xs text-slate-400">${esc(tc("unitHa"))}</span>`;
-      const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[7.5rem_1fr_7.5rem_auto] items-center gap-2">
+      const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[8rem_1fr_7.5rem_auto] items-center gap-2">
           <input data-loc-id maxlength="40" value="${esc(x ? x.location_id || "" : "")}" aria-label="${esc(tc("opisproLocationId"))}" class="${cls.input} h-9 font-mono">
           <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" aria-label="${esc(tc("locationName"))}" class="${cls.input} h-9">
-          <span class="flex items-center gap-1"><input data-loc-area type="number" min="0" step="0.01" value="${x ? numVal(x.area) : ""}" placeholder="0" class="${cls.input} h-9 min-w-0">${ha}</span>
-          <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
+          <span class="flex items-center gap-1"><input data-loc-area type="number" min="0" step="0.01" value="${x ? numVal(x.area) : ""}" placeholder="0" aria-label="${esc(tc("area"))}" class="${cls.input} h-9 min-w-0">${ha}</span>
+          <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
         </div>`;
-      // 有 Location 的 Business：标题 + 栏名（有列才显示）+ 列；没有 Location 就只有「+ Add row」
-      const locBlock = (g) => {
-        const rows = locsOf(g.id);
-        return `<div data-loc-biz="${g.id}" class="${bizSel.has(g.id) ? "" : "hidden"} rounded-lg bg-slate-50 p-2.5 dark:bg-white/5">
-          <p class="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-100">${icon("map-pin", "size-3.5 text-slate-500")}${esc(g.name)} <span class="text-xs font-normal text-slate-500">· ${esc(tc("locationsOf"))}</span></p>
-          <div data-loc-head class="${rows.length ? "grid" : "hidden"} mb-1 grid-cols-[7.5rem_1fr_7.5rem_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span>${esc(tc("area"))}</span><span class="w-8"></span></div>
-          <div data-loc-rows class="space-y-2">${rows.map(locRow).join("")}</div>
-          <button type="button" data-loc-row-add="${g.id}" class="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">${icon("plus", "size-3.5")} ${esc(tc("addRow"))}</button>
-        </div>`;
-      };
-      const areaRow = (g) => {
+      // 一个 Business 一行：名称、面积、X；勾了「多个 Location」时名称前面有箭头，点开看 / 改这个 Business 底下的 Location
+      const bizRow = (g) => {
         const l = link(g.id);
-        return `<div data-area-box="${g.id}" class="${bizSel.has(g.id) ? "flex" : "hidden"} items-center gap-3 rounded-lg bg-slate-50 px-3 py-1.5 dark:bg-white/5">
-          <span class="min-w-0 flex-1 truncate text-sm font-medium">${esc(g.name)}</span>
-          <span class="text-xs text-slate-500">${esc(tc("area"))}</span>
-          <span data-area-sum="${g.id}" class="hidden text-[11px] font-medium text-emerald-700 dark:text-emerald-300">${esc(tc("sumOfLocations"))}</span>
-          <span class="w-32 shrink-0"><input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l ? numVal(l.area) : ""}" class="${cls.input} h-8"></span>${ha}
-          <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
-          <button type="button" data-biz-rm="${g.id}" aria-label="${esc(tc("removeFromBusiness"))}" title="${esc(tc("removeFromBusiness"))}" class="flex size-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30">${icon("x", "size-4")}</button>
+        const rows = locsOf(g.id);
+        return `<div data-area-box="${g.id}" class="${bizSel.has(g.id) ? "" : "hidden"} overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+          <div class="flex items-center gap-2 px-2 py-1.5">
+            <button type="button" data-loc-toggle="${g.id}" aria-expanded="false" class="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1 text-left hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-white/5">
+              <span data-chev class="shrink-0 text-slate-400 transition-transform">${icon("chevron-right", "size-4")}</span>
+              ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
+              <span class="truncate text-sm font-semibold">${esc(g.name)}</span>
+              <span data-loc-count class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300"></span>
+            </button>
+            <span data-area-sum="${g.id}" class="hidden text-[11px] font-medium text-emerald-700 dark:text-emerald-300">${esc(tc("sumOfLocations"))}</span>
+            <span class="text-xs text-slate-500">${esc(tc("area"))}</span>
+            <span class="w-28 shrink-0"><input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l ? numVal(l.area) : ""}" class="${cls.input} h-8"></span>${ha}
+            <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
+            <button type="button" data-biz-rm="${g.id}" aria-label="${esc(tc("removeFromBusiness"))}" title="${esc(tc("removeFromBusiness"))}" class="flex size-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30">${icon("x", "size-4")}</button>
+          </div>
+          <div data-loc-biz="${g.id}" class="hidden border-t border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-white/5">
+            <div data-loc-head class="${rows.length ? "grid" : "hidden"} mb-1 grid-cols-[8rem_1fr_7.5rem_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span>${esc(tc("area"))}</span><span class="w-8"></span></div>
+            <div data-loc-rows class="space-y-2">${rows.map(locRow).join("")}</div>
+            <button type="button" data-loc-row-add="${g.id}" class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-100">${icon("plus", "size-3.5")} ${esc(tc("addLocation"))}</button>
+          </div>
         </div>`;
       };
-      // 每一段的标题条：图示 + 粗体标题，跟内容分开（一眼看得出哪个是标题）
-      const secHead = (ic, text, extra = "") =>
-        `<div class="-mx-3 -mt-3 mb-3 flex flex-wrap items-center gap-2 rounded-t-xl border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-white/5">${icon(ic, "size-4 shrink-0 text-brand-600")}<p class="mr-1 text-sm font-bold tracking-tight text-slate-900 dark:text-white">${esc(text)}</p>${extra}</div>`;
+      const tabBtn = (k, ic, text) =>
+        `<button type="button" role="tab" data-tab="${k}" class="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition">${icon(ic, "size-4")}${esc(text)}</button>`;
       const m = modal(
         c ? c.name : tc("addTitle"),
-        `<form class="space-y-5"><div data-err></div>
+        `<form class="space-y-4"><div data-err></div>
           <div data-name-box class="${c ? "hidden" : ""}">${field(tc("name"), `<input name="name" required maxlength="100" value="${esc(v.name)}" class="${cls.input}">`)}</div>
-          <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-          ${secHead("building-2", tc("details"))}
-          <div class="grid gap-3 sm:grid-cols-2">
-            ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
-            ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`)}
-            ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
-            ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
-            <div class="sm:col-span-2">${field(tc("remark"), `<textarea name="description" rows="2" maxlength="300" class="${cls.input} h-auto py-2">${esc(v.description || "")}</textarea>`)}</div>
+          <div role="tablist" class="flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-white/5">
+            ${tabBtn("co", "building-2", tc("details"))}
+            ${tabBtn("biz", "briefcase-business", tc("businessDetails"))}
           </div>
-          <div class="mt-4 space-y-3 border-t border-dashed border-slate-200 pt-3 dark:border-slate-700">
-            <p class="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">${icon("receipt-text", "size-3.5")} ${esc(tc("billing"))}</p>
-            ${field(tc("billingAddress"), `<textarea name="billing_address" rows="2" maxlength="400" class="${cls.input} h-auto py-2">${esc(v.billing_address || "")}</textarea>`)}
-            <div class="grid gap-3 sm:grid-cols-2">
+          <div data-pane="co" class="min-h-[22rem] space-y-3">
+            <div class="grid gap-3 sm:grid-cols-3">
+              ${field(tc("code"), `<input name="code" required maxlength="20" value="${esc(v.code || nextCode(companies))}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
+              ${field(tc("shortName"), `<input name="short_name" maxlength="40" value="${esc(v.short_name || "")}" class="${cls.input}">`)}
+              ${field(tc("registrationNo"), `<input name="registration_no" maxlength="40" value="${esc(v.registration_no || "")}" class="${cls.input}">`)}
+              ${field(tc("opisproId"), `<input name="opispro_id" maxlength="40" value="${esc(v.opispro_id || "")}" class="${cls.input} font-mono">`)}
               ${field(tc("phone"), `<input name="phone" maxlength="60" value="${esc(v.phone || "")}" class="${cls.input}">`)}
               ${field(tc("fax"), `<input name="fax" maxlength="60" value="${esc(v.fax || "")}" class="${cls.input}">`)}
             </div>
+            ${field(tc("billingAddress"), `<textarea name="billing_address" rows="2" maxlength="400" class="${cls.input} h-auto py-2">${esc(v.billing_address || "")}</textarea>`)}
+            ${field(tc("remark"), `<textarea name="description" rows="2" maxlength="300" class="${cls.input} h-auto py-2">${esc(v.description || "")}</textarea>`)}
           </div>
-          </div>
-          <div class="space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-            ${secHead(
-              "briefcase-business",
-              tc("businessDetails"),
-              `<button type="button" data-biz-add aria-label="${esc(tc("addToBusiness"))}" title="${esc(tc("addToBusiness"))}" class="ml-auto flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:bg-transparent dark:hover:border-white dark:hover:text-white">${icon("plus", "size-4")}</button>`,
-            )}
-            <div class="space-y-1.5">${groups.map(areaRow).join("")}</div>
-            <p data-biz-none class="${bizSel.size ? "hidden" : ""} text-xs text-slate-500">${esc(tc("noBusinessYet"))}</p>
-            <label class="flex cursor-pointer items-center gap-2 pt-1 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
-            <div data-locations class="${v.has_locations ? "" : "hidden"} space-y-2.5">
-              ${groups.map(locBlock).join("")}
-              <p data-loc-nobiz class="${bizSel.size ? "hidden" : ""} text-xs text-slate-500">${esc(tc("locationsTickBusiness"))}</p>
+          <div data-pane="biz" class="hidden min-h-[22rem] space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
+              <button type="button" data-biz-add class="${btn("secondary", "sm")} ml-auto">${icon("plus", "size-4")} ${esc(tc("addToBusiness"))}</button>
             </div>
+            <p data-loc-hint class="hidden text-xs text-slate-500">${esc(tc("locationsClickHint"))}</p>
+            <div class="space-y-2">${groups.map(bizRow).join("")}</div>
+            <p data-biz-none class="${bizSel.size ? "hidden" : ""} rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700">${esc(tc("noBusinessYet"))}</p>
           </div>
-          <div class="flex justify-between gap-2">
+          <div class="flex justify-between gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
             ${c && canDelCo ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
             <div class="flex gap-2"><button type="button" data-cancel class="${btn("secondary")}">${esc(tg("cancel"))}</button><button type="submit" class="${btn("primary")}">${esc(tg("save"))}</button></div>
           </div>
         </form>`,
-        { wide: true },
+        { wide: "xl" },
       );
+      // 两个分页：Company details / Business details（切换只是显示，资料都留在画面上，Save 一起存）
+      const showTab = (k) => {
+        $$("[data-tab]", m.el).forEach((tb) => {
+          const on = tb.dataset.tab === k;
+          tb.setAttribute("aria-selected", on ? "true" : "false");
+          ["bg-white", "shadow-sm", "text-slate-900", "dark:bg-slate-800", "dark:text-white"].forEach((x) => tb.classList.toggle(x, on));
+          tb.classList.toggle("text-slate-500", !on);
+        });
+        $$("[data-pane]", m.el).forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== k));
+      };
+      showTab("co");
+      const openLoc = new Set(); // 点开了的 Business（看得到它的 Location）
       // 标题旁边的铅笔：点了标题本身变成输入框（直接在标题改名，不另外开一行）
       if (c && m.head) {
         m.head.innerHTML = `<button type="button" data-name-edit aria-label="${esc(tc("editName"))}" title="${esc(tc("editName"))}" class="${btn("ghost", "sm")}">${icon("pencil")}</button>`;
@@ -1716,20 +1759,34 @@
           $(`[data-area-sum="${g.id}"]`, m.el).classList.toggle("hidden", !auto);
         });
       };
-      syncAreas(); // only after it is defined (called earlier it threw, and Cancel / Save never got wired)
+      // 箭头、Location 数目、点开 / 收起（只有勾了「多个 Location」才能点开）
+      const syncLoc = () => {
+        const hasLoc = $("[name=has_locations]", m.el).checked;
+        groups.forEach((g) => {
+          const box = $(`[data-area-box="${g.id}"]`, m.el);
+          const n = $$(`[data-loc-biz="${g.id}"] [data-loc-row]`, m.el).length;
+          const isOpen = hasLoc && openLoc.has(g.id);
+          const tg2 = $("[data-loc-toggle]", box);
+          tg2.disabled = !hasLoc;
+          tg2.setAttribute("aria-expanded", isOpen ? "true" : "false");
+          tg2.title = hasLoc ? (isOpen ? tc("hideLocations") : tc("showLocations")) : "";
+          $("[data-chev]", box).classList.toggle("invisible", !hasLoc);
+          $("[data-chev]", box).classList.toggle("rotate-90", isOpen);
+          const cnt = $("[data-loc-count]", box);
+          cnt.classList.toggle("hidden", !hasLoc);
+          cnt.textContent = n === 1 ? tc("oneLocation") : n ? tc("locationCount", { count: n }) : tc("noLocationYet");
+          $(`[data-loc-biz="${g.id}"]`, m.el).classList.toggle("hidden", !isOpen);
+        });
+        $("[data-loc-hint]", m.el).classList.toggle("hidden", !hasLoc || !bizSel.size);
+        syncAreas();
+      };
+      syncLoc(); // only after it is defined (called earlier it threw, and Cancel / Save never got wired)
       m.el.addEventListener("input", (e) => e.target.matches("[data-loc-area]") && syncAreas());
-      // Business 加入 / 拿掉：标签、面积列、Location 区一起出现 / 收起
+      // Business 加入 / 拿掉：那一行出现 / 收起
       const syncBiz = () => {
         $("[data-biz-none]", m.el).classList.toggle("hidden", bizSel.size > 0);
-        groups.forEach((g) => {
-          const on = bizSel.has(g.id);
-          const ab = $(`[data-area-box="${g.id}"]`, m.el);
-          ab.classList.toggle("hidden", !on);
-          ab.classList.toggle("flex", on);
-          $(`[data-loc-biz="${g.id}"]`, m.el).classList.toggle("hidden", !on);
-        });
-        $("[data-loc-nobiz]", m.el).classList.toggle("hidden", bizSel.size > 0);
-        syncAreas();
+        groups.forEach((g) => $(`[data-area-box="${g.id}"]`, m.el).classList.toggle("hidden", !bizSel.has(g.id)));
+        syncLoc();
         refreshIcons();
         m.touch();
       };
@@ -1758,8 +1815,14 @@
       m.el.addEventListener("click", (e) => {
         const b = e.target.closest("button[type=button]");
         if (!b) return;
+        if (b.dataset.tab) return showTab(b.dataset.tab);
         if ("bizAdd" in b.dataset) return pickBusiness();
-        if (b.dataset.bizRm) return (bizSel.delete(b.dataset.bizRm), syncBiz());
+        if (b.dataset.bizRm) return (bizSel.delete(b.dataset.bizRm), openLoc.delete(b.dataset.bizRm), syncBiz());
+        if (b.dataset.locToggle) {
+          const gid = b.dataset.locToggle;
+          openLoc.has(gid) ? openLoc.delete(gid) : openLoc.add(gid);
+          return syncLoc();
+        }
         if ("locRowAdd" in b.dataset) {
           const blk = $(`[data-loc-biz="${b.dataset.locRowAdd}"]`, m.el);
           const host = $("[data-loc-rows]", blk);
@@ -1767,22 +1830,23 @@
           $("[data-loc-head]", blk).classList.replace("hidden", "grid");
           refreshIcons();
           const rows = $$("[data-loc-row]", host);
-          syncAreas();
+          syncLoc();
+          m.touch();
           return $("[data-loc-id]", rows[rows.length - 1]).focus();
         }
         if ("locRowDel" in b.dataset) {
           const blk = b.closest("[data-loc-biz]");
           b.closest("[data-loc-row]").remove();
           if (!$("[data-loc-row]", blk)) $("[data-loc-head]", blk).classList.replace("grid", "hidden"); // 没有 Location 就空白
-          syncAreas();
+          syncLoc();
           m.touch();
         }
       });
-      // 勾了「有多个 Location」才出现 Location 区
+      // 勾了「有多个 Location」：每个 Business 前面出现箭头；还没有 Location 的 Business 先点开，方便加
       m.el.addEventListener("change", (e) => {
         if (e.target.name === "has_locations") {
-          $("[data-locations]", m.el).classList.toggle("hidden", !e.target.checked);
-          syncAreas();
+          if (e.target.checked) bizSel.forEach((gid) => !$(`[data-loc-biz="${gid}"] [data-loc-row]`, m.el) && openLoc.add(gid));
+          syncLoc();
         }
       });
 
@@ -1811,7 +1875,12 @@
               )
               .filter((r) => r.location_id || r.name || r.area != null)
           : [];
-        if (locRows.some((r) => !r.name)) return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
+        if (locRows.some((r) => !r.name)) {
+          locRows.filter((r) => !r.name).forEach((r) => openLoc.add(r.group_id));
+          syncLoc();
+          showTab("biz");
+          return ($("[data-err]", m.el).innerHTML = alertBox(tc("locationIncomplete")));
+        }
         submit.disabled = true;
         submit.innerHTML = `<span class="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>`;
         const row = {

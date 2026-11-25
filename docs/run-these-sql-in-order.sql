@@ -679,3 +679,12 @@ update public.gw_modules
        description = 'Plantation Operation portal: Stock, Management Report and the other estate modules',
        category    = 'Plantation'
  where code = 'STOCK';
+
+
+-- ---------------------------------------------------------------------
+-- 20261125120000 Plantation Operation moved to oliviawsc.github.io/MJM-PORT/
+-- ---------------------------------------------------------------------
+-- =====================================================================
+update public.gw_modules
+   set url = replace(url, 'oliviawsc.github.io/plantationstockmanagementsystem/', 'oliviawsc.github.io/MJM-PORT/')
+ where url like '%oliviawsc.github.io/plantationstockmanagementsystem/%';

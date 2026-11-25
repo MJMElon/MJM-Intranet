@@ -7,7 +7,7 @@
 
 insert into public.gw_modules (code, name, icon, url, description, category, access_level, open_mode, sort_order, kind)
 values
-  ('STOCK', 'Stock', 'package',
+  ('PORT', 'Plantation Operation', 'tractor',
    'https://oliviawsc.github.io/plantationstockmanagementsystem/?module=stock',
    'Plantation stock, field operations, rainfall and tools', 'Plantation', 1, 'new_tab', 20, 'system'),
   ('MGMT_REPORT', 'Management Report', 'chart-line',

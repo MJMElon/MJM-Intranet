@@ -697,3 +697,9 @@ update public.gw_modules
    set access_level = 2,
        url = replace(url, 'oliviawsc.github.io/plantationstockmanagementsystem/', 'oliviawsc.github.io/MJM-PORT/')
  where code in ('STOCK', 'MGMT_REPORT', 'MANTAP');
+
+
+-- ---------------------------------------------------------------------
+-- 20261125140000 Plantation Operation icon code STOCK -> PORT
+-- ---------------------------------------------------------------------
+update public.gw_modules set code = 'PORT' where code = 'STOCK';

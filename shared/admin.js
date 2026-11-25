@@ -1861,7 +1861,29 @@
         e.preventDefault();
         const f = e.target;
         const submit = $("button[type=submit]", f);
-        const fail = (error) => (($("[data-err]", m.el).innerHTML = alertBox(error.code === "loc-dup" ? tc("locationDuplicate") : error.code === "23505" ? tc("duplicate") : error.code === "23514" ? tc("badCode") : /billing_address|phone|fax/.test(error.message || "") ? tc("billingNotReady") : /opispro_id|has_locations|gw_company_locations|group_id|area/.test(error.message || "") ? tc("locationsNotReady") : tg("saveFailed"))), (submit.disabled = false), (submit.textContent = tg("save")));
+        // 「要先跑 SQL」只在资料库真的少了栏位 / 表时才说；其他错误照实显示原因
+        const missing = (error) => ["42703", "42P01", "PGRST204", "PGRST205"].includes(error.code);
+        const fail = (error) => (
+          ($("[data-err]", m.el).innerHTML = alertBox(
+            error.code === "loc-dup"
+              ? tc("locationDuplicate")
+              : error.code === "23505"
+                ? tc("duplicate")
+                : error.code === "23514"
+                  ? tc("badCode")
+                  : missing(error) && /billing_address|phone|fax/.test(error.message || "")
+                    ? tc("billingNotReady")
+                    : missing(error) && /opispro_id|has_locations|gw_company_locations|group_id|area/.test(error.message || "")
+                      ? tc("locationsNotReady")
+                      : error.code === "42501" || /row-level security/i.test(error.message || "")
+                        ? tc("noRight")
+                        : error.message
+                          ? tg("saveFailed") + " (" + error.message + ")"
+                          : tg("saveFailed"),
+          )),
+          (submit.disabled = false),
+          (submit.textContent = tg("save"))
+        );
         const areaOf = (el) => (el && el.value !== "" ? Number(el.value) : null);
         const hasLoc = f.has_locations.checked;
         // 只收现在这家公司所在 Business 底下的 Location（整列空白的略过；有填的一定要有名字）
@@ -1934,7 +1956,7 @@
           return Promise.all(ops);
         };
         let bad = (await run(true)).find((r) => r.error);
-        if (bad && /area/.test(bad.error.message || "")) {
+        if (bad && missing(bad.error) && /area/.test(bad.error.message || "")) {
           bad = (await run(false)).find((r) => r.error);
           if (!bad) toast(tc("locationAreaNeedsDb"));
         }

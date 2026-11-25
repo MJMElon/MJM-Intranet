@@ -1090,7 +1090,7 @@ window.GWHome = (function () {
             ? editing && sectionsOn
               ? `<button type="button" data-home-rename class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 dark:hover:bg-white/10" title="${esc(t("home.renameHome"))}" aria-label="${esc(t("home.renameHome"))}">${icon("pencil", "size-4")}</button>${homeOn() ? `<button type="button" data-home-remove class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" title="${esc(t("home.removeHome"))}" aria-label="${esc(t("home.removeHome"))}">${icon("minus-circle", "size-4")}</button>` : ""}`
               : ""
-            : companyPicker(key) + estatePicker(key)
+            : companyPicker(key) // 只选 Company；Location 在模块里面自己选
         }
         <div class="ml-auto flex shrink-0 items-center">${sectionsOn ? secGrip() : ""}${steps}</div></div>`;
     }
@@ -1140,7 +1140,7 @@ window.GWHome = (function () {
       </div>`;
     };
 
-    // 区块标题旁边的 Location 选择（公司有多于一个 Location 才出现）
+    // 区块标题旁边的 Location 选择（不再显示：Location 改在模块里面选；保留以后要用）
     const estatePicker = (gid) => {
       const c = currentCompany(gid);
       const list = c ? estatesOf(c.id, gid) : [];
@@ -3583,8 +3583,8 @@ window.GWHome = (function () {
       const origin = (id) => { try { return new URL(modules.get(id).url).origin; } catch (e) { return ""; } };
       const maps = (S.companyMappings || []).filter((x) => x.company_id === c.id);
       const map = maps.find((x) => x.module_id === moduleId) || maps.find((x) => modules.has(x.module_id) && origin(x.module_id) && origin(x.module_id) === origin(moduleId));
-      const est = selectedEstate(gid);
-      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "", opispro: c.opispro_id || "", location: est ? est.name : "", location_id: est ? est.location_id || "" : "" };
+      // 只带 Company 进模块；要看哪个 Location 的资料在模块里面设定
+      return { company: (map && map.external_id) || c.name, company_name: c.name, company_short: c.short_name || c.code || "", opispro: c.opispro_id || "" };
     }
 
     async function open(id, gid) {

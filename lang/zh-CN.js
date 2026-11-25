@@ -1045,6 +1045,7 @@ window.GW_LANG["zh-CN"] = {
       "modulesInShort": "模块 — {company}",
       "nCompanies": "{count} 家公司",
       "nModules": "{count} 项模块权限",
+      "clearAll": "全部取消",
       "selectAll": "全选",
       "unsaved": "未保存",
       "noRightAccess": "你不能在这里改这个模块的权限",

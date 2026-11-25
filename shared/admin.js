@@ -326,10 +326,10 @@
       const can = changeable(gid, cid, list);
       if (can.length < 2) return "";
       const all = can.every((mod) => accOn(gid, cid, mod.id));
-      return `<label class="flex cursor-pointer items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-xs font-medium text-slate-600 dark:border-slate-800 dark:bg-white/5 dark:text-slate-300">
-        <span class="min-w-0 flex-1">${esc(tu("selectAll"))}</span>
-        <span class="flex w-14 shrink-0 justify-center"><input type="checkbox" data-acc-all="${gid}|${cid}" ${all ? "checked" : ""} ${saving ? "disabled" : ""} class="size-4 cursor-pointer accent-emerald-600"></span>
-      </label>`;
+      return `<div class="flex items-center gap-2 border-b border-slate-100 px-3 py-1 dark:border-slate-800">
+        <span class="min-w-0 flex-1"></span>
+        <span class="flex w-14 shrink-0 justify-center"><button type="button" data-acc-all="${gid}|${cid}" data-on="${all ? "0" : "1"}" ${saving ? "disabled" : ""} class="whitespace-nowrap text-[11px] font-semibold text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-100">${esc(tu(all ? "clearAll" : "selectAll"))}</button></span>
+      </div>`;
     }
     function bizBox(g) {
       const place = editing && canPlace(g.id);
@@ -408,13 +408,16 @@
       const curRole = editing && draft ? draft.role : roleKey(u);
       const rolePart =
         editing && isSuper && u.id !== me.id
-          ? `<select data-draft-role aria-label="${esc(tu("role"))}" class="h-9 w-52 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+          ? `<select data-draft-role aria-label="${esc(tu("role"))}" class="h-9 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900">
               <option value="" ${curRole === "" ? "selected" : ""}>${esc(t("admin.users.roles.user"))}</option>
               <option value="super" ${curRole === "super" ? "selected" : ""}>${esc(t("admin.users.roles.super_admin"))}</option>
               ${(roles || []).map((r) => `<option value="${r.id}" ${curRole === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
             </select>`
           : badge(roleName(curRole), curRole === "super" ? "red" : curRole ? "amber" : "slate");
       const canPhoto = editing && isSuper;
+      // 资料一行一样高；编辑时没有框的值（User ID、Email…）往右靠，跟框里面的字对齐（框 = 1px 边 + 12px 内距）
+      const row = editing ? "flex h-9 min-w-0 items-center" : "flex min-h-7 min-w-0 items-center";
+      const pad = editing ? "px-[13px]" : "";
       const head = `<div class="flex items-center gap-8">
           <div class="relative shrink-0">
             ${avatar(u, "size-24", "text-3xl")}
@@ -426,17 +429,17 @@
           </div>
           <div class="min-w-0 flex-1 space-y-2.5">
             <dl class="grid min-w-0 grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-sm">
-              ${editing && canEditProfile ? `<dt class="text-slate-500">${esc(t("admin.users.name"))}</dt><dd><input data-draft-name value="${esc(draft.full_name)}" required aria-label="${esc(t("admin.users.name"))}" class="${cls.input} h-9 max-w-xs"></dd>` : ""}
-              <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="font-mono font-medium">${esc(u.user_code || "—")}</dd>
-              <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="truncate font-medium">${esc(u.email)}</dd>
-              <dt class="text-slate-500">${esc(tu("opisproId"))}</dt><dd>${
+              ${editing && canEditProfile ? `<dt class="text-slate-500">${esc(t("admin.users.name"))}</dt><dd class="${row}"><input data-draft-name value="${esc(draft.full_name)}" required aria-label="${esc(t("admin.users.name"))}" class="${cls.input} h-9 max-w-xs"></dd>` : ""}
+              <dt class="text-slate-500">${esc(tu("userId"))}</dt><dd class="${row} ${pad} font-mono font-medium">${esc(u.user_code || "—")}</dd>
+              <dt class="text-slate-500">${esc(tu("loginEmail"))}</dt><dd class="${row} ${pad} font-medium"><span class="truncate">${esc(u.email)}</span></dd>
+              <dt class="text-slate-500">${esc(tu("opisproId"))}</dt><dd class="${row} ${editing && isSuper ? "" : pad}">${
                 editing && isSuper
                   ? `<input data-draft-opispro value="${esc(draft.opispro)}" inputmode="numeric" maxlength="20" placeholder="${esc(tu("opisproAuto"))}" aria-label="${esc(tu("opisproId"))}" class="${cls.input} h-9 max-w-xs font-mono">`
                   : u.opispro_user_id
                     ? `<span class="font-mono font-medium">${esc(u.opispro_user_id)}</span>`
-                    : `<span class="text-slate-400">${esc(tu("opisproNotLinked"))}</span>`
+                    : `<span class="truncate text-slate-400">${esc(tu("opisproNotLinked"))}</span>`
               }</dd>
-              <dt class="text-slate-500">${esc(tu("role"))}</dt><dd>${rolePart}</dd>
+              <dt class="text-slate-500">${esc(tu("role"))}</dt><dd class="${row} ${editing && isSuper && u.id !== me.id ? "" : pad}">${rolePart}</dd>
             </dl>
             ${canPhoto && ownPhoto(u.avatar_url) ? `<button type="button" data-no-photo class="text-xs text-red-600 hover:underline dark:text-red-400">${esc(tu("removePhoto"))}</button>` : ""}
           </div>
@@ -642,7 +645,7 @@
             cos.length
               ? `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${
                   cos.length > 1
-                    ? `<label class="flex cursor-pointer items-center gap-2.5 bg-slate-50/70 px-3 py-2 text-sm font-semibold dark:bg-white/5"><input type="checkbox" data-co-all ${allIn ? "checked" : ""} ${busy ? "disabled" : ""} class="size-4 accent-emerald-600">${esc(tu("selectAll"))}</label>`
+                    ? `<div class="px-3 py-1.5"><button type="button" data-co-all data-on="${allIn ? "0" : "1"}" ${busy ? "disabled" : ""} class="text-xs font-semibold text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-100">${esc(tu(allIn ? "clearAll" : "selectAll"))}</button></div>`
                     : ""
                 }${cos
                   .map((c) => {
@@ -666,13 +669,7 @@
       paint();
       pm.el.addEventListener("change", (e) => {
         const el = e.target;
-        if ("coAll" in el.dataset) {
-          cos.forEach((c) => {
-            const v = st.get(c.id);
-            v.in = el.checked;
-            if (!v.in) v.role_id = null;
-          });
-        } else if (el.dataset.coIn) {
+        if (el.dataset.coIn) {
           const v = st.get(el.dataset.coIn);
           v.in = el.checked;
           if (!v.in) v.role_id = null;
@@ -683,6 +680,15 @@
       pm.el.addEventListener("click", async (e) => {
         const b = e.target.closest("button");
         if (!b || b.disabled) return;
+        if ("coAll" in b.dataset) {
+          const on = b.dataset.on === "1";
+          cos.forEach((c) => {
+            const v = st.get(c.id);
+            v.in = on;
+            if (!on) v.role_id = null;
+          });
+          return paint();
+        }
         if ("coCancel" in b.dataset) {
           if (dirty() && !(await confirmDialog(t("unsaved.title"), t("unsaved.body"), t("unsaved.leave"), t("unsaved.stay")))) return;
           return pm.close();
@@ -759,6 +765,19 @@
       if ("cancel" in d) return cancelEdit();
       if ("save" in d) return save();
       if ("addBiz" in d) return addBusinessDialog();
+      if (d.accAll) {
+        // 「Select all」全部勾；全部已经勾了就是「Clear all」全部取消（一样按 Save 才存）
+        if (saving) return;
+        const on = d.on === "1";
+        const [gid, cid] = d.accAll.split("|");
+        for (const mod of changeable(gid, cid, modsForCo(gid, cid))) {
+          const k = accKeyOf(gid, cid, mod.id);
+          if (on === !!rowOf(gid, mod.id, cid)) stagedAcc.delete(k);
+          else stagedAcc.set(k, on);
+        }
+        if (!editing) ((editing = true), (draft = mkDraft()));
+        return draw();
+      }
       if (d.toggleBiz) {
         openBiz.has(d.toggleBiz) ? openBiz.delete(d.toggleBiz) : openBiz.add(d.toggleBiz);
         return draw();
@@ -798,17 +817,7 @@
       if (box.matches("[data-draft-role]") && draft) return ((draft.role = box.value), draw());
       if (box.matches("[data-avatar]") && box.files[0]) return uploadAvatar(box.files[0]);
       if (box.dataset.acc) return tickAccess(box.dataset.acc, box.checked);
-      if (box.dataset.accAll) {
-        if (saving) return;
-        const [gid, cid] = box.dataset.accAll.split("|");
-        for (const mod of changeable(gid, cid, modsForCo(gid, cid))) {
-          const k = accKeyOf(gid, cid, mod.id);
-          if (box.checked === !!rowOf(gid, mod.id, cid)) stagedAcc.delete(k);
-          else stagedAcc.set(k, box.checked);
-        }
-        if (!editing) ((editing = true), (draft = mkDraft()));
-        return draw();
-      }
+
     });
     draw();
     ctx = await loadAccess();

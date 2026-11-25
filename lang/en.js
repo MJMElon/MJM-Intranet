@@ -1045,6 +1045,7 @@ window.GW_LANG["en"] = {
       "modulesInShort": "Modules — {company}",
       "nCompanies": "{count} companies",
       "nModules": "{count} module access",
+      "clearAll": "Clear all",
       "selectAll": "Select all",
       "unsaved": "Unsaved",
       "noRightAccess": "You can't change access to this module here",

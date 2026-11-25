@@ -12,8 +12,8 @@
 <script src="shared/head.js?v=__GW_VERSION__"></script>
 <style>
   /* 登录封面：白底，MJM 字标（assets/mjm-logo）。
-     进页面：字标从很远的地方（很小、模糊）加速冲到前面 → 正后面浮出一个大大、淡淡、像影子的「Intranet」
-             （两个字都在画面正中间，停好之后不再有任何效果）→ 出现白色玻璃方框。
+     进页面：字标从很远的地方（很小、模糊）加速冲到前面 → 正后面浮出一个比 MJM 大、淡淡、像影子的「Intranet」
+             （两个字都在画面正中间、字底对齐，Intranet 高出来的部分在 MJM 上面看得到；停好之后不再有任何效果）→ 出现白色玻璃方框。
      按「用 OPIS PRO 登录」：方框退下 → 字标冲到眼前盖满整个画面 → 直接在同一个分页打开 OPIS PRO。 */
   :root { --frame: #1f2933; --frame-deep: #0f172a; }
   html, body { background: #ffffff !important; color: #0f172a; }
@@ -23,11 +23,11 @@
     background: radial-gradient(ellipse 70% 45% at 50% 38%, #f3f5f8 0%, #ffffff 70%);
   }
 
-  /* MJM 字标 + 正后面的影子字「Intranet」（叠在一起，都在正中间） */
+  /* MJM 字标 + 正后面的影子字「Intranet」（叠在一起，都在正中间，字底对齐） */
   .mark { position: relative; display: flex; align-items: center; justify-content: center; }
   .mark-float { position: relative; z-index: 3; }
   /* MJM 字标图档（背景透明） */
-  .logo { position: relative; display: block; width: min(64vw, 490px); margin: -17px 0 -21px; opacity: 0; transform: scale(.02); will-change: transform, opacity, filter; }
+  .logo { position: relative; display: block; width: min(44vw, 490px); margin: -17px 0 -21px; opacity: 0; transform: scale(.02); will-change: transform, opacity, filter; }
   .logo img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
   /* 从远处：一开始很慢（远），越来越快冲过来，稍微冲过头再停好 */
   @keyframes approach {
@@ -38,11 +38,12 @@
   }
   .ready .logo { animation: approach 1.15s forwards; }
 
-  /* 影子字：比 MJM 大、很淡、有点模糊，在 MJM 正后面慢慢浮现 */
-  .ghost-wrap { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  /* 影子字：比 MJM 大、很淡、有点模糊，在 MJM 正后面慢慢浮现。
+     上下位置由下面的脚本算：让 Intranet 的字底刚好对齐 MJM 的字底（top 先给个大概值） */
+  .ghost-wrap { position: absolute; left: 50%; top: -40%; z-index: 1; translate: -50% 0; pointer-events: none; }
   .ghost {
-    white-space: nowrap; user-select: none;
-    font: 800 min(22vw, 190px)/1 "Segoe UI", "SF Pro Display", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: block; white-space: nowrap; user-select: none; transform-origin: 50% 85%;
+    font: 800 min(24vw, 265px)/1 "Segoe UI", "SF Pro Display", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
     letter-spacing: -.035em; color: rgba(51, 65, 85, .13);
     filter: blur(1px);
     opacity: 0; transform: scale(.8);
@@ -147,6 +148,26 @@
     setTimeout(() => stage.classList.add("show-glass"), reduce ? 0 : 1500);
   };
   const img = document.querySelector(".logo img");
+  // Intranet 的字底（baseline）放在 MJM 字母的底部（字母底部约在图档高度的 70.5%）
+  const ghost = document.querySelector(".ghost");
+  const place = () => {
+    const cs = getComputedStyle(ghost);
+    const F = parseFloat(cs.fontSize);
+    let below = 0.22 * F; // 量不到字型资料时的大概值：baseline 到字框底部的距离
+    try {
+      const c = document.createElement("canvas").getContext("2d");
+      c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const m = c.measureText("Intranet");
+      if (m.fontBoundingBoxAscent) below = m.fontBoundingBoxDescent + (F - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
+    } catch (e) {}
+    const logo = document.querySelector(".logo");
+    const letterBottom = logo.parentElement.offsetTop + logo.offsetTop + img.offsetHeight * 0.705;
+    ghost.parentElement.style.top = letterBottom - (F - below) + "px";
+  };
+  place();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
+  img.addEventListener("load", place);
+  addEventListener("resize", place);
   const loaded = img.complete ? Promise.resolve() : new Promise((r) => img.addEventListener("load", r, { once: true }));
   // 从 OPIS PRO 回来：先不播，登录失败（回到登录画面）才播
   window.gwIntro = () => {

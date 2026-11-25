@@ -795,6 +795,9 @@ window.GW_LANG["en"] = {
     "modules": {
       "removeBusinessBody": "Remove “{module}” from {business}? Everyone in {business} loses the icon until it is added back and Save is pressed.",
       "searchName": "Search name…",
+      "detailsBox": "Module Details",
+      "connectionBox": "Connection",
+      "allShort": "All",
       "editTitleNamed": "Edit “{name}” module",
       "removeBusiness": "Remove from business",
       "allCompanies": "All companies in this business",

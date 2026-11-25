@@ -2026,6 +2026,12 @@
        底下一个 Business 一个方块（这个模块有开的 Business）：Company 徽章（没有 = 这个 Business 全部 Company 都能用）、
          「+」勾 Company、负责人；最底下「+ Add business」开给别的 Business
        Business / Company 的改动先记在画面上，按 Save 一次写入 */
+    // 编辑窗里的一个方块：标题条（图示 + 粗体标题，右边可以放东西）+ 内容
+    const modBox = (ic, title, body, extra = "") =>
+      `<section class="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+        <div class="-mx-3 -mt-3 mb-3 flex items-center gap-2 rounded-t-xl border-b border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-white/5">${icon(ic, "size-4 shrink-0 text-brand-600")}<p class="text-sm font-bold tracking-tight text-slate-900 dark:text-white">${esc(title)}</p>${extra}</div>
+        ${body}
+      </section>`;
     function moduleDialog(mod) {
       const bizOn0 = new Set(bizTags.filter((x) => x.module_id === mod.id).map((x) => x.group_id));
       const coOn0 = new Set(coTags.filter((x) => x.module_id === mod.id).map((x) => x.company_id));
@@ -2038,32 +2044,44 @@
       let photo = null; // 新选的照片
       const m = modal(
         tmod("editTitleNamed", { name: mod.name }),
-        `<form class="space-y-4">
+        `<form class="space-y-3">
           <div data-err></div>
-          <div class="flex items-start gap-4">
-            <div class="flex flex-col items-center gap-2">
-              <div data-preview>${logo(mod, "size-20")}</div>
-              ${isSuper ? `<label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(tmod("uploadPhoto"))}<input type="file" name="photo" accept="image/*" class="hidden"></label>` : ""}
-            </div>
-            <div class="min-w-0 flex-1 space-y-3">
-              ${isSuper ? `<label class="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : ""}
-              <div class="grid gap-3 sm:grid-cols-[8rem_1fr]">
-                ${field(tmod("kind"), `<input value="${esc(tmod("kinds." + mod.kind))}" readonly class="${cls.input} bg-slate-50 dark:bg-slate-800">`)}
-                ${field(tmod("code"), `<input value="${esc(mod.code)}" readonly class="${cls.input} bg-slate-50 font-mono dark:bg-slate-800">`)}
+          ${modBox(
+            "layout-grid",
+            tmod("detailsBox"),
+            `<div class="flex items-start gap-3">
+              <div class="flex shrink-0 flex-col items-center gap-1.5">
+                <div data-preview>${logo(mod, "size-14")}</div>
+                ${isSuper ? `<label class="cursor-pointer text-[11px] font-medium text-brand-600 hover:underline dark:text-brand-100">${esc(tmod("uploadPhoto"))}<input type="file" name="photo" accept="image/*" class="hidden"></label>` : ""}
               </div>
-              ${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input}">`)}
-              ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
-              ${isSuper && mod.kind === "system" ? field(tmod("url"), `<input name="url" type="url" maxlength="500" value="${esc(mod.url || "")}" placeholder="https://" class="${cls.input} font-mono text-xs">`) : ""}
-              ${isSuper && mod.kind === "system" ? field(tmod("accessLevel"), `<select name="access_level" class="${cls.input}">${opt([[1, tmod("levels.1")], [2, tmod("levels.2")], [3, tmod("levels.3")]], mod.access_level || 1)}</select>`) : ""}
-              ${isSuper && mod.kind === "system" ? `<div data-key-box class="rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700">
-                <div class="flex items-center justify-between gap-2"><span data-key-state class="text-slate-500">…</span>
-                  <button type="button" data-gen-key class="${btn("secondary", "sm")}">${icon("key", "size-3.5")} ${esc(tmod("generateKey"))}</button></div>
-                <div data-key-out class="hidden"></div>
-              </div>` : ""}
-              ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`) : ""}
-            </div>
-          </div>
-          ${isSuper ? `<div><p class="mb-1.5 ${cls.label}">${esc(tmod("businessTags"))}</p><div data-biz-area class="space-y-3"></div></div>` : ""}
+              <div class="grid min-w-0 flex-1 gap-2.5 sm:grid-cols-6">
+                <div class="sm:col-span-3">${field(tmod("name"), `<input name="name" required maxlength="60" value="${esc(mod.name)}" class="${cls.input} h-9">`)}</div>
+                <div class="sm:col-span-3">${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input} h-9">`)}</div>
+                <div class="sm:col-span-2">${field(tmod("kind"), `<input value="${esc(tmod("kinds." + mod.kind))}" readonly class="${cls.input} h-9 bg-slate-50 dark:bg-slate-800">`)}</div>
+                <div class="sm:col-span-2">${field(tmod("code"), `<input value="${esc(mod.code)}" readonly class="${cls.input} h-9 bg-slate-50 font-mono dark:bg-slate-800">`)}</div>
+                ${isSuper && sectorsReady ? `<div class="sm:col-span-2">${field(tmod("sector"), `<select name="sector" class="${cls.input} h-9">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`)}</div>` : ""}
+              </div>
+            </div>`,
+            isSuper ? `<label class="ml-auto flex items-center gap-1.5 text-xs font-medium"><input type="checkbox" name="is_active" ${mod.is_active ? "checked" : ""} class="size-4 accent-emerald-600">${esc(tmod("activeLabel"))}</label>` : "",
+          )}
+          ${
+            isSuper && mod.kind === "system"
+              ? modBox(
+                  "plug",
+                  tmod("connectionBox"),
+                  `<div class="grid gap-2.5 sm:grid-cols-[1fr_13rem]">
+                    ${field(tmod("url"), `<input name="url" type="url" maxlength="500" value="${esc(mod.url || "")}" placeholder="https://" class="${cls.input} h-9 font-mono text-xs">`)}
+                    ${field(tmod("accessLevel"), `<select name="access_level" class="${cls.input} h-9">${opt([[1, tmod("levels.1")], [2, tmod("levels.2")], [3, tmod("levels.3")]], mod.access_level || 1)}</select>`)}
+                  </div>
+                  <div data-key-box class="mt-2.5 rounded-lg bg-slate-50 px-3 py-2 text-xs dark:bg-white/5">
+                    <div class="flex items-center justify-between gap-2"><span data-key-state class="text-slate-500">…</span>
+                      <button type="button" data-gen-key class="${btn("secondary", "sm")}">${icon("key", "size-3.5")} ${esc(tmod("generateKey"))}</button></div>
+                    <div data-key-out class="hidden"></div>
+                  </div>`,
+                )
+              : ""
+          }
+          ${isSuper ? modBox("briefcase-business", tmod("businessTags"), `<div data-biz-area class="space-y-2.5"></div>`) : ""}
           <div class="flex justify-between gap-2">
             ${canDelMod ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
             <div class="flex gap-2">
@@ -2095,6 +2113,7 @@
         if (!bizArea) return;
         const on = groups.filter((g) => bizOn.has(g.id));
         const free = groups.filter((g) => !bizOn.has(g.id));
+        const allChip = (gid, c, canOff) => `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50/60 py-0.5 ${canOff ? "pr-1.5" : "pr-2.5"} pl-2.5 text-xs font-medium dark:border-emerald-900 dark:bg-emerald-900/20" title="${esc(c.name)}"><span class="truncate">${esc(c.name)}</span>${canOff ? `<button type="button" data-co-off-all="${gid}|${c.id}" aria-label="${esc(tg("delete"))}" class="rounded-full p-0.5 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("x", "size-3")}</button>` : ""}</span>`;
         const chip = (c) => `<span class="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-1.5 pl-2.5 text-xs font-medium dark:border-slate-700 dark:bg-white/5" title="${esc(c.name)}"><span class="truncate">${esc(c.name)}</span><button type="button" data-co-off="${c.id}" aria-label="${esc(tg("delete"))}" class="rounded-full p-0.5 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("x", "size-3")}</button></span>`;
         bizArea.innerHTML = `${on
           .map((g) => {
@@ -2108,9 +2127,14 @@
               </header>
               <div class="flex flex-wrap items-center gap-1.5 px-3 py-2">
                 ${icon("building-2", "size-3.5 shrink-0 text-slate-400")}
-                ${mine.map(chip).join("")}
-                ${mine.length ? "" : `<span class="text-xs text-slate-400">${esc(cos.length ? tmod("allCompanies") : tmod("noCompanies"))}</span>`}
-                ${cos.some((c) => !coOn.has(c.id)) ? plusBtn(`data-co-add="${g.id}"`, ts("addCompany")) : ""}
+                ${
+                  mine.length
+                    ? mine.map(chip).join("") + (cos.some((c) => !coOn.has(c.id)) ? plusBtn(`data-co-add="${g.id}"`, ts("addCompany")) : "")
+                    : cos.length
+                      ? // 没有选特定 Company = 这个 Business 的全部 Company 都能用：全部列出来；拿掉一个 = 只开给其他的
+                        `<span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">${esc(tmod("allShort"))}</span>` + cos.map((c) => allChip(g.id, c, cos.length > 1)).join("")
+                      : `<span class="text-xs text-slate-400">${esc(tmod("noCompanies"))}</span>`
+                }
               </div>
               ${
                 sectorsReady
@@ -2225,6 +2249,13 @@
         if ("bizAdd" in d) return bizPick();
         if (d.coAdd) return companyPick(groups.find((g) => g.id === d.coAdd));
         if (d.coOff) coOn.delete(d.coOff);
+        if (d.coOffAll) {
+          // 「全部 Company」里拿掉一个：改成只开给这个 Business 的其他 Company
+          const [gid, cid] = d.coOffAll.split("|");
+          companiesIn(gid).forEach((c) => c.id !== cid && coOn.add(c.id));
+          m.touch();
+          return paintBiz();
+        }
         if (d.coOff || d.bizOff) m.touch();
         if (d.bizOff) {
           bizOn.delete(d.bizOff);
@@ -2243,7 +2274,7 @@
         const el = e.target;
         if (el.name === "photo" && el.files[0]) {
           photo = el.files[0];
-          $("[data-preview]", m.el).innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" class="size-20 rounded-xl object-cover">`;
+          $("[data-preview]", m.el).innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" class="size-14 rounded-xl object-cover">`;
         }
       });
       // API key for the target system: shown once after generating (the Intranet keeps only a hash)

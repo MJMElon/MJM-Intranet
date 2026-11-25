@@ -12,7 +12,8 @@
 <script src="shared/head.js?v=__GW_VERSION__"></script>
 <style>
   /* 登录封面：白底，MJM 字标（assets/mjm-logo）。
-     进页面时字标从上方落下，接着出现白色玻璃方框。 */
+     进页面：字标从很远的地方（很小、模糊）加速冲到前面，接着出现白色玻璃方框。
+     按「用 OPIS PRO 登录」：方框退下 → 字标冲到眼前盖满整个画面 → 深色画面上白色 MJM 往后飞远 → 同一个分页打开 OPIS PRO。 */
   :root { --frame: #1f2933; --frame-deep: #0f172a; }
   html, body { background: #ffffff !important; color: #0f172a; }
   body { overflow-x: hidden; }
@@ -22,15 +23,35 @@
   }
 
   /* MJM 字标图档（背景透明） */
-  .logo { display: block; width: min(64vw, 490px); margin: -17px 0 -21px; opacity: 0; transform: translateY(-110vh); }
+  .logo { position: relative; z-index: 3; display: block; width: min(64vw, 490px); margin: -17px 0 -21px; opacity: 0; transform: scale(.02); will-change: transform, opacity, filter; }
   .logo img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
-  @keyframes drop {
-    0% { opacity: 1; transform: translateY(-110vh); }
-    72% { opacity: 1; transform: translateY(10px); }
-    86% { transform: translateY(-4px); }
-    100% { opacity: 1; transform: translateY(0); }
+  /* 从远处：一开始很慢（远），越来越快冲过来，稍微冲过头再停好 */
+  @keyframes approach {
+    0% { opacity: 0; transform: scale(.02); filter: blur(6px); animation-timing-function: cubic-bezier(.7, 0, .84, .3); }
+    14% { opacity: .85; }
+    80% { opacity: 1; transform: scale(1.08); filter: blur(0); animation-timing-function: cubic-bezier(.2, .8, .3, 1); }
+    100% { opacity: 1; transform: scale(1); filter: blur(0); }
   }
-  .ready .logo { animation: drop .9s cubic-bezier(.3, .7, .3, 1) forwards; }
+  .ready .logo { animation: approach 1.15s forwards; }
+  /* 登录：冲到眼前（以 J 为中心放大） */
+  @keyframes rush { from { opacity: 1; transform: scale(1); filter: blur(0); } to { opacity: 1; transform: scale(30); filter: blur(3px); } }
+  .leaving .logo { transform-origin: 52% 42%; animation: rush .7s cubic-bezier(.55, 0, .9, .25) forwards; }
+  .stage.leaving .rule { opacity: 0; transition: opacity .2s; }
+  .stage.leaving .glass { opacity: 0; transform: translateY(46px) scale(.94); transition: opacity .25s, transform .35s ease-in; }
+  /* 盖满画面的深色 + 往后飞远的白色 MJM */
+  .warp {
+    position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle at 50% 50%, #2b3641 0%, #0f172a 72%);
+  }
+  .warp.on { opacity: 1; transition: opacity .3s ease-in .4s; }
+  .warp-logo { width: min(64vw, 490px); opacity: 0; }
+  .warp-logo img { display: block; width: 100%; height: auto; filter: brightness(0) invert(1) drop-shadow(0 0 28px rgba(255, 255, 255, .35)); }
+  @keyframes recede {
+    0% { opacity: 0; transform: scale(2.6); filter: blur(4px); }
+    22% { opacity: .95; filter: blur(0); }
+    100% { opacity: 0; transform: scale(.03); filter: blur(1px); }
+  }
+  .warp.on .warp-logo { animation: recede .6s cubic-bezier(.4, 0, .9, .45) .62s forwards; }
   .rule { width: clamp(120px, 28vw, 260px); height: 1px; margin: 18px 0 0; background: linear-gradient(90deg, transparent, #9aa4ae, transparent); opacity: 0; transition: opacity .6s 1.1s; }
   .ready .rule { opacity: 1; }
 
@@ -69,13 +90,12 @@
   }
   .glass .sso:hover { border-color: #64707c; box-shadow: 0 6px 14px rgba(15, 23, 42, .12); transform: translateY(-1px); }
   .glass .sso:active { transform: none; }
-  .glass .sso.waiting { color: #64707c; border-style: dashed; pointer-events: none; }
   .glass .or { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #94a3b8; }
   .glass .or::before, .glass .or::after { content: ""; flex: 1; height: 1px; background: rgba(15, 23, 42, .12); }
 
   @media (prefers-reduced-motion: reduce) {
     .logo { opacity: 1; transform: none; }
-    .ready .logo { animation: none; }
+    .ready .logo, .leaving .logo, .warp.on .warp-logo { animation: none; }
     .glass, .rule { transition: none; }
   }
 </style>
@@ -92,15 +112,21 @@
     <div id="card"></div>
   </div>
 </main>
+<div class="warp" id="warp" aria-hidden="true">
+  <picture class="warp-logo">
+    <source srcset="assets/mjm-logo.webp" type="image/webp">
+    <img src="assets/mjm-logo.png" alt="" width="1333" height="628" draggable="false">
+  </picture>
+</div>
 
 <script>
-/* 字标图片载入后才开始落下；载入失败也照常显示 */
+/* 字标图片载入后才开始飞进来；载入失败也照常显示 */
 (function () {
   const stage = document.getElementById("stage");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const start = () => {
     requestAnimationFrame(() => stage.classList.add("ready"));
-    setTimeout(() => stage.classList.add("show-glass"), reduce ? 0 : 1200);
+    setTimeout(() => stage.classList.add("show-glass"), reduce ? 0 : 1050);
   };
   const img = document.querySelector(".logo img");
   const loaded = img.complete ? Promise.resolve() : new Promise((r) => img.addEventListener("load", r, { once: true }));
@@ -127,13 +153,7 @@ async function finishSso() {
   const th = h.get("th");
   const next = h.get("next");
   history.replaceState(null, "", location.pathname);
-  const failed = () => {
-    if (POPUP_ID) {
-      notifyOpener({ error: "sso_expired" });
-      return closePopup(t("login.errors.ssoExpired"));
-    }
-    showLogin(t("login.errors.ssoExpired"));
-  };
+  const failed = () => showLogin(t("login.errors.ssoExpired"));
   if (!th) return failed();
   card.innerHTML = `<p class="py-6 text-center text-sm text-slate-500">${esc(t("login.submitting"))}</p>`;
   let r = await sb.auth.verifyOtp({ token_hash: th, type: "magiclink" });
@@ -141,72 +161,26 @@ async function finishSso() {
   if (r.error || !r.data || !r.data.session) return failed();
   try { localStorage.setItem("gw-sso", r.data.session.user.id); } catch (e) {}
   if (next) params.set("next", next);
-  if (POPUP_ID) {
-    notifyOpener({ ok: true, next: nextPage() });
-    return closePopup(t("login.ssoPopupDone"));
-  }
   go(nextPage());
 }
-// ---------------- 电脑：OPIS PRO 在小视窗登入（手机或视窗被挡住：照常整页跳转）
-// 小视窗登入完成后用 BroadcastChannel（同一个网站才收得到）+ window.opener 通知原本的页面，
-// 只传「成功 + 要去的页面」或「错误代号」，原本的页面再前往（session 已经存在这个网站）
-const POPUP_ID = /^[A-Za-z0-9_-]{8,64}$/.test(params.get("popup") || "") ? params.get("popup") : "";
-function notifyOpener(msg) {
-  const m = { type: "gw-sso", popup: POPUP_ID, ...msg };
-  try { const ch = new BroadcastChannel("gw-sso"); ch.postMessage(m); ch.close(); } catch (e) {}
-  try { if (window.opener && window.opener !== window) window.opener.postMessage(m, location.origin); } catch (e) {}
-}
-function closePopup(text) {
-  card.innerHTML = `<p class="py-6 text-center text-sm text-slate-500">${esc(text)}</p>`;
-  setTimeout(() => window.close(), 150);
-}
-function ssoPopup(e) {
-  const desktop = matchMedia("(pointer: fine)").matches && window.innerWidth >= 640;
-  if (!desktop || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
-  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
-  const W = 480, H = 640;
-  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - W) / 2));
-  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - H) / 2));
-  // 不可以先 await：浏览器只让「点击当下」开视窗
-  const w = window.open(e.currentTarget.href + "&popup=" + id, "gw-opispro", `popup=yes,width=${W},height=${H},left=${left},top=${top}`);
-  if (!w) return; // 被挡住：照常整页跳转
+// 「用 OPIS PRO 登录」：先播放冲进去的动画，再在同一个分页打开 OPIS PRO
+function ssoGo(e) {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // 自己要开新分页：照浏览器的
   e.preventDefault();
-  let done = false;
-  const btn = $("#sso");
-  btn.classList.add("waiting");
-  btn.textContent = t("login.ssoWaiting");
-  const finish = (m) => {
-    if (done || !m || m.type !== "gw-sso" || m.popup !== id) return;
-    done = true;
-    try { ch && ch.close(); } catch (x) {}
-    window.removeEventListener("message", onMsg);
-    try { w.close(); } catch (x) {}
-    if (m.ok) {
-      if (m.next) params.set("next", m.next);
-      return go(nextPage());
-    }
-    showLogin(SSO_ERRORS[m.error] ? t("login.errors." + SSO_ERRORS[m.error]) : t("login.errors.ssoFailed"));
-  };
-  const onMsg = (ev) => {
-    if (ev.origin !== location.origin || ev.source !== w) return;
-    finish(ev.data);
-  };
-  window.addEventListener("message", onMsg);
-  let ch = null;
-  try { ch = new BroadcastChannel("gw-sso"); ch.onmessage = (ev) => finish(ev.data); } catch (x) {}
-  // 自己把小视窗关掉：按钮回复原样（讯息晚到也照样处理）
-  const timer = setInterval(() => {
-    if (done) return clearInterval(timer);
-    if (w.closed) {
-      clearInterval(timer);
-      setTimeout(() => {
-        if (done || !$("#sso")) return;
-        $("#sso").classList.remove("waiting");
-        $("#sso").textContent = t("login.sso");
-      }, 1500);
-    }
-  }, 500);
+  const stage = document.getElementById("stage");
+  if (stage.classList.contains("leaving")) return;
+  const href = e.currentTarget.href;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return location.assign(href);
+  stage.classList.add("leaving");
+  document.getElementById("warp").classList.add("on");
+  setTimeout(() => location.assign(href), 1200);
 }
+// 从 OPIS PRO 按「上一页」回来（浏览器直接拿出旧画面）：回复原样
+window.addEventListener("pageshow", (e) => {
+  if (!e.persisted) return;
+  document.getElementById("stage").classList.remove("leaving");
+  document.getElementById("warp").classList.remove("on");
+});
 const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", no_access: "noAccess", link_expired: "linkExpired" };
 const message = (text, ok) =>
   text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
@@ -217,7 +191,7 @@ function showLogin(errorText) {
   const sso = `<a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()))}">${esc(t("login.sso"))}</a>`;
   if (!PASSWORD_MODE) {
     card.innerHTML = `<div class="space-y-4"><div id="msg">${message(errorText)}</div>${sso}</div>`;
-    $("#sso").addEventListener("click", ssoPopup);
+    $("#sso").addEventListener("click", ssoGo);
     return;
   }
   card.innerHTML = `
@@ -231,7 +205,7 @@ function showLogin(errorText) {
       <div class="text-center"><button type="button" class="link" id="forgot">${esc(t("login.forgot"))}</button></div>
     </form>`;
   $("#forgot").onclick = showForgot;
-  $("#sso").addEventListener("click", ssoPopup);
+  $("#sso").addEventListener("click", ssoGo);
   $("#f").addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
@@ -321,11 +295,6 @@ async function showChange(reset) {
   }
   if (mode === "forgot") return showForgot();
   if (mode === "sso") return finishSso();
-  // 小视窗里收到错误：告诉原本的页面，然后关掉
-  if (POPUP_ID && error) {
-    notifyOpener({ error });
-    return closePopup(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : t("login.errors.ssoFailed"));
-  }
   // 已登录就直接进首页
   const { session, profile } = await GW.loadProfile();
   if (session && profile && profile.status === "active" && !error) {

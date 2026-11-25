@@ -8,4 +8,4 @@
 update public.gw_modules
    set access_level = 2,
        url = replace(url, 'oliviawsc.github.io/plantationstockmanagementsystem/', 'oliviawsc.github.io/MJM-PORT/')
- where code in ('STOCK', 'MGMT_REPORT', 'MANTAP');
+ where code in ('PORT', 'STOCK', 'MGMT_REPORT', 'MANTAP');

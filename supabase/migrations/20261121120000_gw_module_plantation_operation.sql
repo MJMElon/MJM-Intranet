@@ -11,4 +11,4 @@ update public.gw_modules
        url         = 'https://oliviawsc.github.io/plantationstockmanagementsystem/',
        description = 'Plantation Operation portal: Stock, Management Report and the other estate modules',
        category    = 'Plantation'
- where code = 'STOCK';
+ where code in ('PORT', 'STOCK');

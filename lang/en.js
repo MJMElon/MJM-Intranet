@@ -666,6 +666,7 @@ window.GW_LANG["en"] = {
     },
     "users": {
       "approve": "Allow access to Intranet",
+      "approving": "Allowing access…",
       "approvedOk": "Approved. They can sign in now.",
       "waiting": "Waiting for approval",
       "waitingHint": "Signed in with OPIS PRO for the first time. Open the person and press Allow access to Intranet, then give them their modules.",

@@ -666,6 +666,7 @@ window.GW_LANG["zh-CN"] = {
     },
     "users": {
       "approve": "允许进入 Intranet",
+      "approving": "正在允许进入…",
       "approvedOk": "已批准，现在可以登录了。",
       "waiting": "等待批准",
       "waitingHint": "第一次用 OPIS PRO 登录的人。打开这个人按「允许进入 Intranet」，再给他模块权限。",

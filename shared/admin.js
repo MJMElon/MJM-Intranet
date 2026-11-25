@@ -1696,11 +1696,10 @@
           <div data-pane="biz" class="hidden min-h-[22rem] space-y-2">
             <div class="flex flex-wrap items-center gap-2">
               <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
-              <button type="button" data-biz-add class="${btn("secondary", "sm")} ml-auto">${icon("plus", "size-4")} ${esc(tc("addToBusiness"))}</button>
             </div>
-            <p data-loc-hint class="hidden text-xs text-slate-500">${esc(tc("locationsClickHint"))}</p>
             <div class="space-y-2">${groups.map(bizRow).join("")}</div>
             <p data-biz-none class="${bizSel.size ? "hidden" : ""} rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700">${esc(tc("noBusinessYet"))}</p>
+            <button type="button" data-biz-add class="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-100">${icon("plus", "size-3.5")} ${esc(tc("addToBusiness"))}</button>
           </div>
           <div class="flex justify-between gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
             ${c && canDelCo ? `<button type="button" data-del class="${btn("ghost")} text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(tg("delete"))}</button>` : "<span></span>"}
@@ -1777,7 +1776,6 @@
           cnt.textContent = n === 1 ? tc("oneLocation") : n ? tc("locationCount", { count: n }) : tc("noLocationYet");
           $(`[data-loc-biz="${g.id}"]`, m.el).classList.toggle("hidden", !isOpen);
         });
-        $("[data-loc-hint]", m.el).classList.toggle("hidden", !hasLoc || !bizSel.size);
         syncAreas();
       };
       syncLoc(); // only after it is defined (called earlier it threw, and Cancel / Save never got wired)

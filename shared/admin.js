@@ -2001,6 +2001,11 @@
               ${field(tmod("descriptionLabel"), `<input name="description" maxlength="120" value="${esc(mod.description || "")}" class="${cls.input}">`)}
               ${isSuper && mod.kind === "system" ? field(tmod("url"), `<input name="url" type="url" maxlength="500" value="${esc(mod.url || "")}" placeholder="https://" class="${cls.input} font-mono text-xs">`) : ""}
               ${isSuper && mod.kind === "system" ? field(tmod("accessLevel"), `<select name="access_level" class="${cls.input}">${opt([[1, tmod("levels.1")], [2, tmod("levels.2")], [3, tmod("levels.3")]], mod.access_level || 1)}</select>`) : ""}
+              ${isSuper && mod.kind === "system" ? `<div data-key-box class="rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-700">
+                <div class="flex items-center justify-between gap-2"><span data-key-state class="text-slate-500">…</span>
+                  <button type="button" data-gen-key class="${btn("secondary", "sm")}">${icon("key", "size-3.5")} ${esc(tmod("generateKey"))}</button></div>
+                <div data-key-out class="hidden"></div>
+              </div>` : ""}
               ${isSuper && sectorsReady ? field(tmod("sector"), `<select name="sector" class="${cls.input}">${opt([["", "—"], ...sectors.map((x) => [x.id, x.name])], sector0)}</select>`) : ""}
             </div>
           </div>
@@ -2187,6 +2192,29 @@
           $("[data-preview]", m.el).innerHTML = `<img src="${URL.createObjectURL(photo)}" alt="" class="size-20 rounded-xl object-cover">`;
         }
       });
+      // API key for the target system: shown once after generating (the Intranet keeps only a hash)
+      const keyBox = $("[data-key-box]", m.el);
+      if (keyBox) {
+        const state = $("[data-key-state]", keyBox), out = $("[data-key-out]", keyBox);
+        invoke("gw-admin", { action: "list_api_keys" }).then((r) => {
+          const k = r && r.ok && (r.keys || []).find((x) => x.module_id === mod.id);
+          state.textContent = k ? tmod("apiKeySet", { prefix: k.key_prefix }) : tmod("apiKeyMissing");
+          if (k) $("[data-gen-key]", keyBox).innerHTML = `${icon("key", "size-3.5")} ${esc(tmod("rotateKey"))}`;
+        });
+        $("[data-gen-key]", keyBox).addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          if (!confirm(tmod("apiKeyWarning"))) return;
+          const r = await invoke("gw-admin", { action: "generate_api_key", module_id: mod.id });
+          if (!r || !r.ok || !r.key) return alert(tmod("saveFailed"));
+          state.textContent = tmod("apiKeySet", { prefix: r.key.slice(0, 10) });
+          out.classList.remove("hidden");
+          out.innerHTML = `<p class="mt-2 text-slate-600 dark:text-slate-300">${esc(tmod("apiKeyBody"))}</p>
+            <div class="mt-1 flex items-center gap-2"><code data-key-text class="flex-1 select-all break-all rounded-lg bg-slate-100 px-2 py-1.5 font-mono dark:bg-slate-800">${esc(r.key)}</code>
+            <button type="button" data-copy-key class="${btn("secondary", "sm")}">${icon("copy", "size-3.5")}</button></div>
+            <p class="mt-1 text-amber-700 dark:text-amber-400">${esc(tmod("apiKeyWarning"))}</p>`;
+          $("[data-copy-key]", out).addEventListener("click", () => navigator.clipboard && navigator.clipboard.writeText(r.key));
+        });
+      }
       f.addEventListener("submit", async (e) => {
         e.preventDefault();
         const submit = $("button[type=submit]", f);

@@ -26,6 +26,11 @@
   /* MJM 字标 + 正后面的影子字「Intranet」（叠在一起，都在正中间，字底对齐） */
   .mark { position: relative; display: flex; align-items: center; justify-content: center; }
   .mark-float { position: relative; z-index: 3; }
+  /* MJM 后面一圈柔和的白光：Intranet 靠近 MJM 的地方淡掉，不会从 M、J、M 中间的缝透出来，看起来干净 */
+  .mark-float::before {
+    content: ""; position: absolute; z-index: -1; left: -14%; right: -14%; top: -2%; bottom: -8%; pointer-events: none;
+    background: radial-gradient(closest-side, #ffffff 62%, rgba(255, 255, 255, .85) 78%, rgba(255, 255, 255, 0) 100%);
+  }
   /* MJM 字标图档（背景透明） */
   .logo { position: relative; display: block; width: min(44vw, 490px); margin: -17px 0 -21px; opacity: 0; transform: scale(.02); will-change: transform, opacity, filter; }
   .logo img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
@@ -43,8 +48,8 @@
   .ghost-wrap { position: absolute; left: 50%; top: -40%; z-index: 1; translate: -50% 0; pointer-events: none; }
   .ghost {
     display: block; white-space: nowrap; user-select: none; transform-origin: 50% 85%;
-    font: 800 min(24vw, 265px)/1 "Segoe UI", "SF Pro Display", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
-    letter-spacing: -.035em; color: rgba(51, 65, 85, .13);
+    font: 800 min(25vw, 398px)/1 "Segoe UI", "SF Pro Display", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: -.035em; color: rgba(51, 65, 85, .11);
     filter: blur(1px);
     opacity: 0; transform: scale(.8);
   }

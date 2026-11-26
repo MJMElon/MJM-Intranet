@@ -1741,8 +1741,7 @@ window.GWHome = (function () {
       if (!page) return;
       const g = pageGeo();
       const T = topRows();
-      const stack = $("#gw-stack", page);
-      if (stack) stack.style.marginTop = T * g.rh + "px";
+      page.style.paddingTop = T * g.rh + "px"; // 用 padding（margin 会跟外框合并，小工具那层也跟着往下跑）
       let bottom = 0;
       pageWidgets().forEach((w) => {
         const p = shownOf(w);
@@ -2382,8 +2381,8 @@ window.GWHome = (function () {
       return `<div id="gw-frame" class="mx-auto max-w-full" style="width:${g.width}px">
         ${boardHtml()}
         ${editing ? `<p class="mx-2 mb-2 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
-        <div id="gw-page" class="relative mb-6">
-          <div id="gw-stack" class="flex flex-wrap items-start" style="margin-top:${T0 * g.rh}px">${parts.map((x) => x[1]).join("")}</div>
+        <div id="gw-page" class="relative mb-6" style="padding-top:${T0 * g.rh}px">
+          <div id="gw-stack" class="flex flex-wrap items-start">${parts.map((x) => x[1]).join("")}</div>
           <div id="gw-float" class="pointer-events-none absolute inset-0 z-10 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g, T0)).join("")}</div>
         </div>
       </div>`;

@@ -1299,12 +1299,13 @@
                     ${
                       can
                         ? `<div data-exp-body="${l.group_id}" class="hidden border-t border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-white/5">
-                        <div class="grid grid-cols-[8rem_1fr_auto] gap-2 pb-1 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span class="text-right">${esc(tc("area"))}</span></div>
+                        <div class="grid grid-cols-[8rem_1fr_5rem_auto] gap-2 pb-1 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span>${esc(tc("locationShortName"))}</span><span class="text-right">${esc(tc("area"))}</span></div>
                         ${ls
                           .map(
-                            (x) => `<div class="grid grid-cols-[8rem_1fr_auto] gap-2 border-t border-slate-200/70 py-1.5 text-sm dark:border-slate-700/60">
+                            (x) => `<div class="grid grid-cols-[8rem_1fr_5rem_auto] gap-2 border-t border-slate-200/70 py-1.5 text-sm dark:border-slate-700/60">
                               <span class="truncate font-mono text-xs leading-5 text-slate-500">${esc(x.location_id || "—")}</span>
                               <span class="truncate">${esc(x.name)}</span>
+                              <span class="truncate text-slate-500">${esc(x.short_name || "—")}</span>
                               <span class="text-right tabular-nums">${x.area != null ? `${Number(x.area).toLocaleString(GW.LOCALE)} ${esc(tc("unitHa"))}` : "—"}</span>
                             </div>`,
                           )
@@ -1694,9 +1695,10 @@
       const locsOf = (gid) => myLocs.filter((x) => x.group_id === gid || (!x.group_id && gid === firstBiz));
       const numVal = (x) => (x == null ? "" : esc(String(x)));
       const ha = `<span class="text-xs text-slate-400">${esc(tc("unitHa"))}</span>`;
-      const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[8rem_1fr_7.5rem_auto] items-center gap-2">
+      const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[8rem_1fr_6.5rem_7.5rem_auto] items-center gap-2">
           <input data-loc-id maxlength="40" value="${esc(x ? x.location_id || "" : "")}" aria-label="${esc(tc("opisproLocationId"))}" class="${cls.input} h-9 font-mono">
           <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" aria-label="${esc(tc("locationName"))}" class="${cls.input} h-9">
+          <input data-loc-short maxlength="20" value="${esc(x ? x.short_name || "" : "")}" aria-label="${esc(tc("locationShortName"))}" placeholder="${esc(tc("locationShortNamePh"))}" class="${cls.input} h-9">
           <span class="flex items-center gap-1"><input data-loc-area type="number" min="0" step="0.01" value="${x ? numVal(x.area) : ""}" placeholder="0" aria-label="${esc(tc("area"))}" class="${cls.input} h-9 min-w-0">${ha}</span>
           <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
         </div>`;
@@ -1719,7 +1721,7 @@
             <button type="button" data-biz-rm="${g.id}" aria-label="${esc(tc("removeFromBusiness"))}" title="${esc(tc("removeFromBusiness"))}" class="flex size-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30">${icon("x", "size-4")}</button>
           </div>
           <div data-loc-biz="${g.id}" class="hidden border-t border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-700 dark:bg-white/5">
-            <div data-loc-head class="${rows.length ? "grid" : "hidden"} mb-1 grid-cols-[8rem_1fr_7.5rem_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span>${esc(tc("area"))}</span><span class="w-8"></span></div>
+            <div data-loc-head class="${rows.length ? "grid" : "hidden"} mb-1 grid-cols-[8rem_1fr_6.5rem_7.5rem_auto] gap-2 text-[11px] font-medium text-slate-500"><span>${esc(tc("opisproLocationId"))}</span><span>${esc(tc("locationName"))}</span><span>${esc(tc("locationShortName"))}</span><span>${esc(tc("area"))}</span><span class="w-8"></span></div>
             <div data-loc-rows class="space-y-2">${rows.map(locRow).join("")}</div>
             <button type="button" data-loc-row-add="${g.id}" class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-100">${icon("plus", "size-3.5")} ${esc(tc("addLocation"))}</button>
           </div>
@@ -1945,9 +1947,9 @@
           ? $$("[data-loc-biz]", f)
               .filter((bx) => bizSel.has(bx.dataset.locBiz))
               .flatMap((bx) =>
-                $$("[data-loc-row]", bx).map((r) => ({ id: r.dataset.locRowid || null, group_id: bx.dataset.locBiz, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim(), area: areaOf($("[data-loc-area]", r)) })),
+                $$("[data-loc-row]", bx).map((r) => ({ id: r.dataset.locRowid || null, group_id: bx.dataset.locBiz, location_id: $("[data-loc-id]", r).value.trim(), name: $("[data-loc-name]", r).value.trim(), short_name: $("[data-loc-short]", r).value.trim(), area: areaOf($("[data-loc-area]", r)) })),
               )
-              .filter((r) => r.location_id || r.name || r.area != null)
+              .filter((r) => r.location_id || r.name || r.short_name || r.area != null)
           : [];
         if (locRows.some((r) => !r.name)) {
           locRows.filter((r) => !r.name).forEach((r) => openLoc.add(r.group_id));
@@ -1994,22 +1996,32 @@
         const keepIds = new Set(locRows.filter((r) => r.id).map((r) => r.id));
         const gone = myLocs.filter((x) => !keepIds.has(x.id)).map((x) => x.id);
         const sameArea = (x, r) => (x.area == null ? null : Number(x.area)) === r.area;
-        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, group_id: r.group_id, location_id: r.location_id || null, name: r.name, area: r.area, sort_order: myLocs.length + i }));
-        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && ((x.location_id || "") !== r.location_id || x.name !== r.name || x.group_id !== r.group_id || !sameArea(x, r))));
+        const adds = locRows.filter((r) => !r.id).map((r, i) => ({ company_id: id, group_id: r.group_id, location_id: r.location_id || null, name: r.name, short_name: r.short_name || null, area: r.area, sort_order: myLocs.length + i }));
+        const edits = locRows.filter((r) => r.id && myLocs.some((x) => x.id === r.id && ((x.location_id || "") !== r.location_id || x.name !== r.name || (x.short_name || "") !== r.short_name || x.group_id !== r.group_id || !sameArea(x, r))));
         // 资料库还没加 Location 面积这一栏：先不存面积
-        const noArea = (x) => {
+        // 资料库还没加 short_name 这一栏：先不存简称
+        let withShort = true;
+        const trim = (x) => {
           const y = { ...x };
-          delete y.area;
+          if (!withArea0) delete y.area;
+          if (!withShort) delete y.short_name;
           return y;
         };
+        let withArea0 = true;
         const run = (withArea) => {
+          withArea0 = withArea;
           const ops = [];
           if (gone.length) ops.push(sb.from("gw_company_locations").delete().in("id", gone));
-          if (adds.length) ops.push(sb.from("gw_company_locations").insert(withArea ? adds : adds.map(noArea)));
-          edits.forEach((r) => ops.push(sb.from("gw_company_locations").update(withArea ? { group_id: r.group_id, location_id: r.location_id || null, name: r.name, area: r.area } : { group_id: r.group_id, location_id: r.location_id || null, name: r.name }).eq("id", r.id)));
+          if (adds.length) ops.push(sb.from("gw_company_locations").insert(adds.map(trim)));
+          edits.forEach((r) => ops.push(sb.from("gw_company_locations").update(trim({ group_id: r.group_id, location_id: r.location_id || null, name: r.name, short_name: r.short_name || null, area: r.area })).eq("id", r.id)));
           return Promise.all(ops);
         };
         let bad = (await run(true)).find((r) => r.error);
+        if (bad && missing(bad.error) && /short_name/.test(bad.error.message || "")) {
+          withShort = false;
+          bad = (await run(true)).find((r) => r.error);
+          if (!bad) toast(tc("locationShortNeedsDb"));
+        }
         if (bad && missing(bad.error) && /area/.test(bad.error.message || "")) {
           bad = (await run(false)).find((r) => r.error);
           if (!bad) toast(tc("locationAreaNeedsDb"));

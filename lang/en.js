@@ -87,6 +87,8 @@ window.GW_LANG["en"] = {
     "removeHomeNotEmpty": "Move or remove the icons in this box first.",
     "addThis": "Add",
     "hqAllCompanies": "All companies ({count})",
+    "hqShowCompanies": "Show the companies in this business",
+    "hqCompaniesIncluded": "{count} companies included",
     "transferLater": "Later",
     "transferDecline": "Decline",
     "transferAccept": "Accept",

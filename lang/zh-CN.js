@@ -87,6 +87,8 @@ window.GW_LANG["zh-CN"] = {
     "removeHomeNotEmpty": "先把这个方块里的图示移走或删掉。",
     "addThis": "加入",
     "hqAllCompanies": "所有 Company（{count}）",
+    "hqShowCompanies": "看这个 Business 包括哪些 Company",
+    "hqCompaniesIncluded": "包括 {count} 家 Company",
     "transferLater": "之后再说",
     "transferDecline": "拒绝",
     "transferAccept": "接受",

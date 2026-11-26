@@ -577,7 +577,7 @@ window.GWHome = (function () {
           // Notice Board：公告；管理员可以直接在这里发布
           const when = (d) => (d ? new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short" }).format(new Date(d)) : "");
           const until = (d) => (d ? t("widgets.postUntil", { time: new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(d)) }) : "");
-          return `<div class="mb-2 flex items-center justify-between gap-2">
+          return `<div class="${data.announcements.length ? "mb-2" : ""} flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-100">${icon("megaphone", "size-4 text-brand-600 dark:text-brand-400")}${esc(t("widgets.types.announcements"))}</div>
               ${canPost && !readOnly && !editing ? `<button type="button" data-post class="no-drag flex items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900">${icon("plus", "size-3.5")}${esc(t("widgets.post"))}</button>` : ""}
             </div>
@@ -592,7 +592,7 @@ window.GWHome = (function () {
                       }</li>`,
                     )
                     .join("")}</ul>`
-                : `<div class="flex h-[calc(100%-2.25rem)] flex-col items-center justify-center gap-1 text-center text-sm text-slate-400">${icon("inbox", "size-6")}<span>${esc(t("widgets.noAnnouncements"))}</span></div>`
+                : "" // 没有公告：下面不留空白（看得到的只有能发公告的人：只剩标题列和「+ Post」）
             }`;
         }
         case "calendar": {
@@ -664,15 +664,18 @@ window.GWHome = (function () {
     }
 
     // Notice Board：固定在最上面、占满整行；区块版拖拉下缘调高度（高度记在这个小工具的 config.height）
+    // 没有公告：一般人不显示整个 Notice Board；能发公告的人只显示标题列 +「+ Post」（不占高度）
     function boardHtml() {
       const w = board();
       if (!w) return "";
+      const empty = !data.announcements.length;
+      if (empty && !(canPost && !readOnly)) return "";
       const h = Number(w.config && w.config.height);
-      const sized = sectionsOn && h > 0;
-      return `<div data-kind="widget" data-id="${w.id}" class="gw-pinned relative ${sectionsOn ? "mx-2 mb-2" : "mb-4"} ${sized ? "" : w.size === "large" ? "h-[22rem]" : "h-[13rem]"}" ${sized ? `style="height:${Math.round(h)}px"` : ""}>
+      const sized = sectionsOn && h > 0 && !empty;
+      return `<div data-kind="widget" data-id="${w.id}" class="gw-pinned relative ${sectionsOn ? "mx-2 mb-2" : "mb-4"} ${sized || empty ? "" : w.size === "large" ? "h-[22rem]" : "h-[13rem]"}" ${sized ? `style="height:${Math.round(h)}px"` : ""}>
         <div class="${glass}">${widgetBody(w)}</div>
-        ${editing && !sectionsOn ? badge(`data-resize="${w.id}"`, "scaling", t("widgets.resize"), "-right-2 -bottom-2") : ""}
-        ${sectionsOn && editing ? `<div data-board-resize title="${esc(t("widgets.resize"))}" aria-label="${esc(t("widgets.resize"))}" class="absolute inset-x-0 -bottom-3 z-10 flex h-6 cursor-ns-resize touch-none items-center justify-center"><span class="h-1.5 w-14 rounded-full bg-slate-400/60 shadow backdrop-blur"></span></div>` : ""}
+        ${editing && !sectionsOn && !empty ? badge(`data-resize="${w.id}"`, "scaling", t("widgets.resize"), "-right-2 -bottom-2") : ""}
+        ${sectionsOn && editing && !empty ? `<div data-board-resize title="${esc(t("widgets.resize"))}" aria-label="${esc(t("widgets.resize"))}" class="absolute inset-x-0 -bottom-3 z-10 flex h-6 cursor-ns-resize touch-none items-center justify-center"><span class="h-1.5 w-14 rounded-full bg-slate-400/60 shadow backdrop-blur"></span></div>` : ""}
       </div>`;
     }
 

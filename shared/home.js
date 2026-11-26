@@ -3153,6 +3153,9 @@ window.GWHome = (function () {
        或选好的整栏 / 整列，不然就是现在这一格。
        点一下 = 选这一格（不进去打字）；按两下、Enter、F2 = 进去改字；选好直接打字 = 换掉内容。方向键换格子；
        Delete / Backspace 清掉选好的格子（一格、一块、或整栏 / 整列）。格子上按右键：在选好的栏 / 列里 → 栏 / 列选单；不然 → 宽度 / 高度 / 清除。
+       框线（像 Google Sheets）：全部、内框、横线、直线、外框、左 / 上 / 右 / 下、清除；可选颜色、粗细 / 虚线 / 点线。
+       框线记在格子上：下面那条 bb、右边那条 br（第一列的上面 bt、第一栏的左边 bl），两格中间只记一次。
+       另有粗体（b）、底色（bg）。
        复原 / 重做：Ctrl+Z（Mac：⌘Z）复原，Ctrl+Y 或 Ctrl+Shift+Z 重做；工具列也有两个钮。打字、贴上、格式、大小、加 / 删栏列都可以复原（留言不算）。存在 fmt { "列:栏": { s: 字大小, a: "l"|"c"|"r", v: "t"|"m"|"b" } }。
        放大 / 缩小：缩小时画面能放更多格，空的格子自动补满（不用自己加）。
        留言：看得到这个文件夹的人都可以对一格留言（谁、内容、日期时间），存在 gw_folder_cell_comments（要先跑 20261206 SQL）。
@@ -3184,6 +3187,9 @@ window.GWHome = (function () {
           if (Number.isInteger(Number(v.s)) && Number(v.s) >= FS_MIN && Number(v.s) <= FS_MAX) x.s = Number(v.s);
           if (["l", "c", "r"].includes(v.a)) x.a = v.a;
           if (["t", "m", "b"].includes(v.v)) x.v = v.v;
+          if (v.b === 0 || v.b === 1) x.b = v.b;
+          if (typeof v.bg === "string" && /^#[0-9a-f]{6}$/i.test(v.bg)) x.bg = v.bg;
+          for (const e of ["bt", "bb", "bl", "br"]) if (typeof v[e] === "string" && /^[123do]\|#[0-9a-f]{6}$/i.test(v[e])) x[e] = v[e];
           if (Object.keys(x).length) fmt.set(k, x);
         }
       const fmtOf = (k) => fmt.get(k) || {};
@@ -3228,7 +3234,7 @@ window.GWHome = (function () {
       let focus = null; // [列, 栏]：最后点的格子
       let sel = null; // 选好的栏 / 列：{ kind: "col" | "row", a, b, anchor }
       let range = null; // 拉选的一块格子：{ r1, c1, r2, c2 }（已排好大小）
-      const RANGE_CLS = ["bg-sky-100", "dark:bg-sky-900/40"];
+      const RANGE_CLS = ["gw-rng", "shadow-[inset_0_0_0_9999px_rgba(14,165,233,0.18)]"]; // 一层淡蓝盖在格子上（有底色也看得到）
       const inRange = (r, c) => !!range && r >= range.r1 && r <= range.r2 && c >= range.c1 && c <= range.c2;
       const inSel = (kind, i) => !!sel && sel.kind === kind && i >= sel.a && i <= sel.b;
       let timer = null;
@@ -3429,6 +3435,10 @@ window.GWHome = (function () {
           <input data-fmt-size type="number" min="${FS_MIN}" max="${FS_MAX}" step="1" value="${DEF_FS}" title="${esc(t("home.sheetFontSize"))}" aria-label="${esc(t("home.sheetFontSize"))}" class="h-7 w-11 rounded-md border border-slate-200 bg-white text-center text-xs font-semibold tabular-nums text-slate-700 outline-none [appearance:textfield] focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-white [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none">
           <button type="button" data-fmt="bigger" title="${esc(t("home.sheetFontBigger"))}" aria-label="${esc(t("home.sheetFontBigger"))}" class="flex size-7 items-center justify-center rounded-lg text-base font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10">+</button>
           ${sep}
+          ${tb('data-fmt="b"', "bold", t("home.sheetBold"))}
+          ${tb('data-fill data-pop-anchor', "paint-bucket", t("home.sheetFill"))}
+          ${tb('data-borders data-pop-anchor', "grid-2x2", t("home.sheetBorders"))}
+          ${sep}
           ${tb('data-fmt="a:l"', "align-left", t("home.sheetAlignLeft"))}
           ${tb('data-fmt="a:c"', "align-center", t("home.sheetAlignCenter"))}
           ${tb('data-fmt="a:r"', "align-right", t("home.sheetAlignRight"))}
@@ -3459,6 +3469,8 @@ window.GWHome = (function () {
         const fm = k ? fmtOf(k) : {};
         const fsBox = $("[data-fmt-size]", bar);
         if (document.activeElement !== fsBox) fsBox.value = fm.s || DEF_FS; // 正在打的时候不要盖掉
+        const bb = $('[data-fmt="b"]', bar);
+        if (bb) bb.setAttribute("aria-pressed", String(fm.b != null ? fm.b === 1 : !!k && k.startsWith("0:")));
         $$("[data-fmt]", bar).forEach((b) => {
           const [key, val] = b.dataset.fmt.split(":");
           if (!val) return;
@@ -3478,6 +3490,17 @@ window.GWHome = (function () {
             const next = what === "bigger" ? FONT_SIZES.find((n) => n > cur) : [...FONT_SIZES].reverse().find((n) => n < cur);
             x.s = next || cur;
             if (x.s === DEF_FS) delete x.s;
+          } else if (what === "b") {
+            // 粗体：跟第一格相反（第一列预设是粗体）
+            const k0 = list[0];
+            const f0 = fmtOf(k0);
+            const now = f0.b != null ? f0.b === 1 : k0.startsWith("0:");
+            const r = Number(k.split(":")[0]);
+            x.b = now ? 0 : 1;
+            if ((x.b === 1) === (r === 0)) delete x.b; // 跟预设一样就不用记
+          } else if (key === "bg") {
+            if (val) x.bg = val;
+            else delete x.bg;
           } else if (key === "s") {
             x.s = Number(val);
             if (x.s === DEF_FS) delete x.s;
@@ -3495,9 +3518,104 @@ window.GWHome = (function () {
           if (el) el.focus();
         }
       }
+      // ---- 框线
+      const BSTYLE = { 1: "1px solid", 2: "2px solid", 3: "3px solid", d: "1px dashed", o: "1px dotted" };
+      const BCOLORS = ["#0f172a", "#64748b", "#cbd5e1", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#7c3aed"];
+      const FILLS = ["#f1f5f9", "#e2e8f0", "#fef9c3", "#ffedd5", "#fee2e2", "#dcfce7", "#cffafe", "#dbeafe", "#f3e8ff", "#fce7f3"];
+      let bStyle = "1", bColor = "#0f172a";
+      // 要画框线的那一块（长方形）：拉选的一块 → 选好的整栏 / 整列 → 现在这一格
+      function rect() {
+        if (range) return { ...range };
+        if (sel) return sel.kind === "col" ? { r1: 0, r2: showR - 1, c1: sel.a, c2: sel.b } : { r1: sel.a, r2: sel.b, c1: 0, c2: showC - 1 };
+        if (focus) return { r1: focus[0], r2: focus[0], c1: focus[1], c2: focus[1] };
+        return null;
+      }
+      const setEdge = (k, e, v) => {
+        const x = { ...fmtOf(k) };
+        v ? (x[e] = v) : delete x[e];
+        Object.keys(x).length ? fmt.set(k, x) : fmt.delete(k);
+      };
+      // 横线：(r, c) 下面那条（r = -1 = 第一列上面）；直线：(r, c) 右边那条（c = -1 = 第一栏左边）
+      const hEdge = (r, c, v) => (r < 0 ? setEdge("0:" + c, "bt", v) : setEdge(r + ":" + c, "bb", v));
+      const vEdge = (r, c, v) => (c < 0 ? setEdge(r + ":0", "bl", v) : setEdge(r + ":" + c, "br", v));
+      function applyBorder(kind) {
+        const R = rect();
+        if (!R) return toast(t("home.sheetPickCells"));
+        const { r1, r2, c1, c2 } = R;
+        const v = kind === "clear" ? null : bStyle + "|" + bColor;
+        const H = (r) => { for (let c = c1; c <= c2; c++) hEdge(r, c, v); };
+        const V = (c) => { for (let r = r1; r <= r2; r++) vEdge(r, c, v); };
+        remember();
+        if (kind === "all" || kind === "clear") {
+          for (let r = r1 - 1; r <= r2; r++) H(r);
+          for (let c = c1 - 1; c <= c2; c++) V(c);
+        } else if (kind === "inner") {
+          for (let r = r1; r < r2; r++) H(r);
+          for (let c = c1; c < c2; c++) V(c);
+        } else if (kind === "horizontal") for (let r = r1; r < r2; r++) H(r);
+        else if (kind === "vertical") for (let c = c1; c < c2; c++) V(c);
+        else if (kind === "outer") (H(r1 - 1), H(r2), V(c1 - 1), V(c2));
+        else if (kind === "top") H(r1 - 1);
+        else if (kind === "bottom") H(r2);
+        else if (kind === "left") V(c1 - 1);
+        else if (kind === "right") V(c2);
+        grow(r2, c2);
+        const keep = focus && !range && !sel ? focus.slice() : null;
+        render();
+        later();
+        if (keep) {
+          const el = cellEl(keep[0], keep[1]);
+          if (el) el.focus();
+        }
+      }
+      // 选项的小图（像 Google Sheets）：淡色格子，深色 = 会画的线
+      const BORDER_KINDS = ["all", "inner", "horizontal", "vertical", "outer", "left", "top", "right", "bottom", "clear"];
+      const borderIcon = (kind) => {
+        const L = { top: "M2 2H16", bottom: "M2 16H16", left: "M2 2V16", right: "M16 2V16", h: "M2 9H16", v: "M9 2V16" };
+        const on = { all: ["top", "bottom", "left", "right", "h", "v"], inner: ["h", "v"], horizontal: ["h"], vertical: ["v"], outer: ["top", "bottom", "left", "right"], left: ["left"], top: ["top"], right: ["right"], bottom: ["bottom"], clear: [] }[kind];
+        const faint = Object.values(L).map((d) => `<path d="${d}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="1.5 1.5"/>`).join("");
+        const dark = on.map((x) => `<path d="${L[x]}" stroke="currentColor" stroke-width="2"/>`).join("");
+        return `<svg viewBox="0 0 18 18" class="size-[18px]" fill="none">${faint}${dark}${kind === "clear" ? `<path d="M3 15L15 3" stroke="#dc2626" stroke-width="1.6"/>` : ""}</svg>`;
+      };
+      function borderMenu(anchor) {
+        const swatch = (c) => `<button type="button" data-bcolor="${c}" title="${c}" class="size-6 rounded-full ring-offset-2 ${c === bColor ? "ring-2 ring-slate-900 dark:ring-white" : "ring-1 ring-slate-200 dark:ring-slate-700"}" style="background:${c}"></button>`;
+        const styleBtn = (st) => `<button type="button" data-bstyle="${st}" class="flex h-8 flex-1 items-center justify-center rounded-lg ${st === bStyle ? "bg-slate-900 dark:bg-white" : "hover:bg-slate-100 dark:hover:bg-white/10"}"><span class="block w-8" style="border-top:${BSTYLE[st]} ${st === bStyle ? "var(--sw,#fff)" : "#334155"}"></span></button>`;
+        const paint = (el) => {
+          el.innerHTML = `<p class="mb-2 text-xs font-bold text-slate-500">${esc(t("home.sheetBorders"))}</p>
+            <div class="grid grid-cols-5 gap-1">${BORDER_KINDS.map((k) => `<button type="button" data-border="${k}" title="${esc(t("home.sheetBorder_" + k))}" aria-label="${esc(t("home.sheetBorder_" + k))}" class="flex h-9 items-center justify-center rounded-lg text-slate-800 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-white/10">${borderIcon(k)}</button>`).join("")}</div>
+            <p class="mt-3 mb-1.5 text-xs text-slate-500">${esc(t("home.sheetBorderColor"))}</p>
+            <div class="flex flex-wrap gap-1.5 px-0.5">${BCOLORS.map(swatch).join("")}</div>
+            <p class="mt-3 mb-1.5 text-xs text-slate-500">${esc(t("home.sheetBorderStyle"))}</p>
+            <div class="flex gap-1 [--sw:#fff] dark:[--sw:#0f172a]">${["1", "2", "3", "d", "o"].map(styleBtn).join("")}</div>`;
+        };
+        const el = pop(anchor, "", 260);
+        paint(el);
+        el.addEventListener("click", (e) => {
+          const b = e.target.closest("button");
+          if (!b) return;
+          if (b.dataset.bcolor) return ((bColor = b.dataset.bcolor), paint(el));
+          if (b.dataset.bstyle) return ((bStyle = b.dataset.bstyle), paint(el));
+          if (b.dataset.border) applyBorder(b.dataset.border); // 选单留着，可以接着按
+        });
+      }
+      function fillMenu(anchor) {
+        const el = pop(
+          anchor,
+          `<p class="mb-2 text-xs font-bold text-slate-500">${esc(t("home.sheetFill"))}</p>
+          <div class="grid grid-cols-5 gap-2 px-0.5">${FILLS.map((c) => `<button type="button" data-fillc="${c}" title="${c}" class="size-8 rounded-lg ring-1 ring-slate-200 dark:ring-slate-700" style="background:${c}"></button>`).join("")}</div>
+          <button type="button" data-fillc="" class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-1.5 text-xs font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-white/5">${icon("eraser", "size-3.5")}${esc(t("home.sheetFillNone"))}</button>`,
+          220,
+        );
+        el.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-fillc]");
+          if (!b) return;
+          closePop();
+          applyFmt("bg:" + b.dataset.fillc);
+        });
+      }
       // 拉选的那一块：格子底色
       function paintRange() {
-        $$("td." + RANGE_CLS[0], host).forEach((x) => x.classList.remove(...RANGE_CLS));
+        $$("td.gw-rng", host).forEach((x) => x.classList.remove(...RANGE_CLS));
         if (range)
           for (let r = range.r1; r <= range.r2; r++)
             for (let c = range.c1; c <= range.c2; c++) {
@@ -3523,11 +3641,21 @@ window.GWHome = (function () {
             const va = fm.v === "t" ? "top" : fm.v === "b" ? "bottom" : "middle";
             const fsz = fm.s || DEF_FS;
             const rangeCls = inRange(r, c) ? " " + RANGE_CLS.join(" ") : "";
+            const isBold = fm.b != null ? fm.b === 1 : r === 0;
+            // 框线：自己的下面 / 右边（第一列另外有上面、第一栏有左边）；没设就是淡淡的格线
+            const edge = (v) => (v ? BSTYLE[v.split("|")[0]] + " " + v.split("|")[1] : "");
+            const bs = [
+              fm.bb ? `border-bottom:${edge(fm.bb)}` : "",
+              fm.br ? `border-right:${edge(fm.br)}` : "",
+              r === 0 && fm.bt ? `border-top:${edge(fm.bt)}` : "",
+              c === 0 && fm.bl ? `border-left:${edge(fm.bl)}` : "",
+              fm.bg ? `background-color:${fm.bg};color:#0f172a` : "",
+            ].filter(Boolean).join(";");
             const bold = inSel("col", c) || inSel("row", r) ? "bg-sky-50 dark:bg-sky-900/20" + (r === 0 ? " font-semibold" : "") : r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
             const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
-              ? `<td data-td="${k}" style="vertical-align:${va}" class="group relative border-r border-b border-slate-200 p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:border-slate-700 dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" readonly maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 read-only:cursor-default read-only:caret-transparent read-only:select-none dark:text-slate-100 ${r === 0 ? "font-semibold" : ""}">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
-              : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} style="vertical-align:${va};text-align:${ta};font-size:${fsz}px" class="relative overflow-hidden border-r border-b border-slate-200 px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
+              ? `<td data-td="${k}" style="vertical-align:${va};${bs}" class="group relative border-r border-b border-slate-200 p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:border-slate-700 dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" readonly maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta};${fm.bg ? "color:#0f172a;" : ""}font-weight:${isBold ? 600 : 400}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 read-only:cursor-default read-only:caret-transparent read-only:select-none dark:text-slate-100">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
+              : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} style="vertical-align:${va};text-align:${ta};font-size:${fsz}px;font-weight:${isBold ? 600 : 400};${bs}" class="relative overflow-hidden border-r border-b border-slate-200 px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
           return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 p-0 text-center text-[11px] font-medium select-none dark:border-slate-700 ${hs(inSel("row", r))}">
             <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
@@ -3917,6 +4045,8 @@ window.GWHome = (function () {
         if ("zoomOut" in d) return setZoom(SHEET_ZOOMS[Math.max(0, SHEET_ZOOMS.indexOf(zoom) - 1)]);
         if ("zoomReset" in d) return setZoom(100);
         if (d.fmt) return canEdit && applyFmt(d.fmt);
+        if ("fill" in d) return canEdit && fillMenu(b);
+        if ("borders" in d) return canEdit && borderMenu(b);
         if ("undo" in d) return canEdit && undo();
         if ("redo" in d) return canEdit && redo();
         if (d.cmt) return openNotes(d.cmt, b.closest("td") || b);

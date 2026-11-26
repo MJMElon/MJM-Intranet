@@ -1963,8 +1963,8 @@ window.GWHome = (function () {
         if (!moved) return;
         const r = fw.getBoundingClientRect();
         fw.remove();
-        // 放在哪个区块上面：那个区块；都不是 = 页面上
-        const sec = $$("[data-box]", root).find((s) => {
+        // 放在哪个区块上面：只有 My Home 收小工具；Business 区块（Plantation 等）不收 → 放在页面上
+        const sec = $$('[data-box="home"]', root).find((s) => {
           const b = s.getBoundingClientRect();
           return ev.clientX >= b.left && ev.clientX <= b.right && ev.clientY >= b.top && ev.clientY <= b.bottom;
         });
@@ -5393,6 +5393,14 @@ window.GWHome = (function () {
 
     if (sectionsOn) widgets.filter(isFloating).forEach(migratePos); // 旧版 px 位置换成格子（只在记忆中）
     draw();
+    // 以前放进 Business 区块的小工具：搬出来放在页面上（Business 区块只放 App）
+    if (sectionsOn)
+      (async () => {
+        for (const w of widgets.filter((x) => isFloating(x) && x.config.pos.box && x.config.pos.box !== "home")) {
+          const el = $(`[data-fw="${w.id}"]`, root);
+          await dropOnPage(w, el ? el.getBoundingClientRect() : { left: 0, top: innerHeight });
+        }
+      })();
     loadShared();
 
     // 公告的下架时间：首页资料没有带，另外拿；时间到了就从公告栏拿掉（不用重新整理页面）

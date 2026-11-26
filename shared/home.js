@@ -3221,6 +3221,7 @@ window.GWHome = (function () {
       if (r0.w && typeof r0.w === "object") for (const [k, v] of Object.entries(r0.w)) if (/^\d{1,2}$/.test(k)) w[k] = num(v, 40, 600, 140);
       if (r0.h && typeof r0.h === "object") for (const [k, v] of Object.entries(r0.h)) if (/^\d{1,3}$/.test(k)) h[k] = num(v, 24, 240, 32);
       const DEF_W = 140, DEF_H = 32; // 预设栏宽 / 列高
+      let q = "", qi = 0; // 搜寻：打的字、现在第几个
       let grid = r0.grid !== false; // 格线：显示 / 不显示（整页，存在这一页）
       const colW = (c) => w[c] || DEF_W;
       const rowH = (r) => h[r] || DEF_H;
@@ -3732,7 +3733,14 @@ window.GWHome = (function () {
           <div class="mb-2 flex flex-wrap items-center gap-2">
             ${canEdit ? toolsHtml() : ""}
             <span data-sheet-status class="text-xs text-slate-400"></span>
-            <div class="ml-auto flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white px-1 py-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            <div class="ml-auto flex h-8 items-center gap-1 rounded-xl border border-slate-200 bg-white pr-1 pl-2 shadow-sm focus-within:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:focus-within:border-white">
+              ${icon("search", "size-3.5 shrink-0 text-slate-400")}
+              <input data-sheet-search type="search" value="${esc(q)}" placeholder="${esc(t("home.sheetSearch"))}" aria-label="${esc(t("home.sheetSearch"))}" autocomplete="off" spellcheck="false" class="h-7 w-28 min-w-0 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 sm:w-36 dark:text-slate-200 [&::-webkit-search-cancel-button]:hidden">
+              <span data-search-count class="text-[11px] tabular-nums text-slate-400"></span>
+              <button type="button" data-search-prev title="${esc(t("home.sheetSearchPrev"))}" aria-label="${esc(t("home.sheetSearchPrev"))}" class="hidden size-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10">${icon("chevron-up", "size-3.5")}</button>
+              <button type="button" data-search-next title="${esc(t("home.sheetSearchNext"))}" aria-label="${esc(t("home.sheetSearchNext"))}" class="hidden size-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10">${icon("chevron-down", "size-3.5")}</button>
+            </div>
+            <div class="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white px-1 py-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
               ${zb("data-zoom-out", "zoom-out", t("home.sheetZoomOut"), zoom <= SHEET_ZOOMS[0])}
               <button type="button" data-zoom-reset title="${esc(t("home.sheetZoomReset"))}" class="w-12 text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">${zoom}%</button>
               ${zb("data-zoom-in", "zoom-in", t("home.sheetZoomIn"), zoom >= SHEET_ZOOMS[SHEET_ZOOMS.length - 1])}
@@ -3759,7 +3767,59 @@ window.GWHome = (function () {
         refreshIcons();
         paintMarks();
         paintTools();
+        paintSearch(false);
       }
+      // ---- 搜寻：找到的格子淡黄，现在这个深黄 + 卷到看得到
+      const HIT = ["gw-hit", "shadow-[inset_0_0_0_9999px_rgba(250,204,21,0.28)]"];
+      const HIT_ON = ["gw-hit-on", "shadow-[inset_0_0_0_9999px_rgba(245,158,11,0.55)]"];
+      function hits() {
+        const s0 = q.trim().toLowerCase();
+        if (!s0) return [];
+        return [...cells]
+          .filter(([, v]) => v.toLowerCase().includes(s0))
+          .map(([k]) => k.split(":").map(Number))
+          .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+          .map((x) => x.join(":"));
+      }
+      function paintSearch(jump) {
+        $$("td.gw-hit, td.gw-hit-on", host).forEach((x) => x.classList.remove(...HIT, ...HIT_ON));
+        const list = hits();
+        if (qi >= list.length) qi = 0;
+        list.forEach((k, i) => {
+          const td = $(`[data-td="${k}"]`, host);
+          if (td) td.classList.add(...(i === qi ? HIT_ON : HIT));
+        });
+        const cnt = $("[data-search-count]", host);
+        if (cnt) cnt.textContent = q.trim() ? (list.length ? `${qi + 1}/${list.length}` : "0") : "";
+        $$("[data-search-prev], [data-search-next]", host).forEach((b) => (b.classList.toggle("hidden", list.length < 2), b.classList.toggle("flex", list.length >= 2)));
+        if (jump && list.length) {
+          const td = $(`[data-td="${list[qi]}"]`, host);
+          const sh = $("[data-sheet]", host);
+          if (td && sh) {
+            // 只卷表格本身，外面不动
+            const tr = td.getBoundingClientRect(), sr = sh.getBoundingClientRect();
+            if (tr.top < sr.top + 28 || tr.bottom > sr.bottom) sh.scrollTop += tr.top - sr.top - sr.height / 2 + tr.height / 2;
+            if (tr.left < sr.left + 44 || tr.right > sr.right) sh.scrollLeft += tr.left - sr.left - sr.width / 2 + tr.width / 2;
+          }
+        }
+      }
+      const searchStep = (d) => {
+        const n = hits().length;
+        if (!n) return;
+        qi = (qi + d + n) % n;
+        paintSearch(true);
+      };
+      host.addEventListener("input", (e) => {
+        if (!e.target.matches || !e.target.matches("[data-sheet-search]")) return;
+        q = e.target.value.slice(0, 100);
+        qi = 0;
+        paintSearch(true);
+      });
+      host.addEventListener("keydown", (e) => {
+        if (!e.target.matches || !e.target.matches("[data-sheet-search]")) return;
+        if (e.key === "Enter") return e.preventDefault(), searchStep(e.shiftKey ? -1 : 1);
+        if (e.key === "Escape" && q) return e.preventDefault(), e.stopPropagation(), (e.target.value = ""), (q = ""), paintSearch(false);
+      });
       const cellEl = (r, c) => $(`[data-cell="${r}:${c}"]`, host);
       const go = (r, c) => {
         const el = cellEl(r, c);
@@ -4119,6 +4179,8 @@ window.GWHome = (function () {
         if ("zoomIn" in d) return setZoom(SHEET_ZOOMS[Math.min(SHEET_ZOOMS.length - 1, SHEET_ZOOMS.indexOf(zoom) + 1)]);
         if ("zoomOut" in d) return setZoom(SHEET_ZOOMS[Math.max(0, SHEET_ZOOMS.indexOf(zoom) - 1)]);
         if ("zoomReset" in d) return setZoom(100);
+        if ("searchNext" in d) return searchStep(1);
+        if ("searchPrev" in d) return searchStep(-1);
         if (d.fmt) return canEdit && applyFmt(d.fmt);
         if (d.gridlines != null && canEdit) {
           remember();
@@ -4349,6 +4411,7 @@ window.GWHome = (function () {
         if (key !== "z" && key !== "y") return;
         if (popEl || document.querySelector(".gw-modal")) return;
         const ae = document.activeElement;
+        if (ae && ae.matches && ae.matches("[data-sheet-search]")) return; // 搜寻框：照常复原打的字
         const inSheet = ae && host.contains(ae);
         const idle = !ae || ae === document.body || (!ae.matches("input, textarea, select, [contenteditable=true]") && ae.closest("[data-win]"));
         if (!inSheet && !idle) return;

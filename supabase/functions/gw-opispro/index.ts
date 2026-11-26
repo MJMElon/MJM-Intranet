@@ -22,7 +22,7 @@ const cfg: Config = {
   clientId: Deno.env.get("OPISPRO_OAUTH_CLIENT_ID") ?? "",
   clientSecret: Deno.env.get("OPISPRO_OAUTH_CLIENT_SECRET") ?? "",
   redirectUri: Deno.env.get("OPISPRO_OAUTH_REDIRECT_URI") ?? `${Deno.env.get("SUPABASE_URL")}/functions/v1/gw-opispro/callback`,
-  siteUrl: (Deno.env.get("GW_SITE_URL") ?? "https://mjmelon.github.io/MJM-Intranet/").replace(/\/?$/, "/"),
+  siteUrl: (Deno.env.get("GW_SITE_URL") ?? "https://mjm.opispro.com/").replace(/\/?$/, "/"),
   allowedOrigins: ALLOWED_ORIGINS, // a login started on any of the Intranet's addresses returns there
   scope: "openid profile email",
 };

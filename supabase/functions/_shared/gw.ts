@@ -9,7 +9,7 @@ export const TOKEN_TTL_SECONDS = 60;
 // only from them. Add a new domain here, or list them in the GW_ALLOWED_ORIGIN
 // secret, comma-separated (e.g. "https://intranet.example.com,https://mjmelon.github.io").
 // System-to-system calls (Portal, AI connectors) are not affected.
-const SITE_ORIGINS = ["https://mjmelon.github.io"];
+const SITE_ORIGINS = ["https://mjm.opispro.com", "https://mjmelon.github.io"]; // main address first
 const originOf = (u: string) => { try { return new URL(u).origin; } catch { return ""; } };
 export const ALLOWED_ORIGINS: string[] = [...new Set([
   ...(Deno.env.get("GW_ALLOWED_ORIGIN") ?? "").split(",").map((x) => originOf(x.trim()) || x.trim().replace(/\/+$/, "")).filter(Boolean),
@@ -33,7 +33,7 @@ export function withCors(handler: (req: Request) => Response | Promise<Response>
 
 export const corsHeaders = {
   // the first allowed site; withCors() answers each allowed site with its own address
-  "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0] ?? "https://mjmelon.github.io",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0] ?? "https://mjm.opispro.com",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-gw-api-key",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };

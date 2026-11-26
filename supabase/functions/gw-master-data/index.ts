@@ -54,8 +54,6 @@ Deno.serve(withCors(async (req) => {
     const byId = new Map((coLoc.data ?? []).map((r: { id: string; location_id: string | null }) => [r.id, r.location_id]));
     for (const c of companies.data as Record<string, unknown>[]) c.location_id = byId.get(c.id as string) ?? null;
   }
-  // Company 底下的 Estate（20261121110000 还没跑时就是空的）
-  const estates = await supabase.from("gw_company_estates").select("id, company_id, name, short_name, area, area_unit, sort_order, is_active").order("sort_order").order("name");
   const failed = [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles, memberCompanies].find((r) => r.error);
   if (failed?.error) return json({ error: "query_failed", detail: failed.error.message }, 500);
 
@@ -114,7 +112,7 @@ Deno.serve(withCors(async (req) => {
     // fax, email) come with each company; locations is empty until the 20261129 migration has run
     locations: locations.error ? [] : (locations.data ?? []),
     // Estates under a company (MJM Plantation 1 / 2 / 3); a company with none is itself one estate
-    estates: estates.error ? [] : (estates.data ?? []),
+    estates: [], // the old "Estates under a company" list is replaced by Locations (gw_company_locations)
     module_company_ids: (tagged.data ?? []).map((r) => r.company_id),
     module_business_ids: (taggedBiz.data ?? []).map((r) => r.group_id),
     exported_at: new Date().toISOString(),

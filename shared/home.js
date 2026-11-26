@@ -3125,8 +3125,12 @@ window.GWHome = (function () {
 
     // ------------------------------------------------------------ 表格页（像 Google Sheets）
     /* 格子直接打字（Enter 往下一格、Tab 往右）；从 Excel / Google Sheets 复制一块贴上会自动摊开；
-       拉栏位标题右边 / 列号下面的线改宽度、高度；第一列当标题（粗体）。看的人：Email、网址可以直接点。
-       打字停一下就自动存（整个 canvas 一起存，单页最多约 300KB）。 */
+       拉栏位标题右边 / 列号下面的线改宽度、高度；第一列当标题（粗体）。
+       最右边栏位标题旁的「+」加栏、最下面列号的「+」加列（可以打数字一次加好几个）；点栏位字母 / 列号可以删那一栏 / 列。
+       放大 / 缩小：缩小时画面能放更多格，空的格子自动补满（不用自己加）。
+       留言：看得到这个文件夹的人都可以对一格留言（谁、内容、日期时间），存在 gw_folder_cell_comments（要先跑 20261206 SQL）。
+       看的人：Email、网址可以直接点。打字停一下就自动存（整个 canvas 一起存，单页最多约 300KB）。 */
+    const SHEET_ZOOMS = [50, 67, 80, 90, 100, 110, 125, 150];
     function mountSheet(f, pageId, host, hooks) {
       const canEdit = !!hooks.canEdit;
       const rec = () => rawPages(f).find((p) => p.id === pageId) || {};
@@ -3151,7 +3155,30 @@ window.GWHome = (function () {
         for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
         return s;
       };
-      let focus = null; // [列, 栏]：最后点的格子（删列 / 删栏用）
+      const cellName = (k) => {
+        const [r, c] = k.split(":").map(Number);
+        return colName(c) + (r + 1);
+      };
+      // 放大 / 缩小：每个人自己记（这台电脑）
+      let zoom = 100;
+      try { zoom = SHEET_ZOOMS.includes(Number(localStorage.getItem("gw-sheet-zoom"))) ? Number(localStorage.getItem("gw-sheet-zoom")) : 100; } catch (e) {}
+      const z = () => zoom / 100;
+      // 画面上显示几栏 / 几列：存的数目，不够填满看得到的范围就自动补空格子
+      let showC = cols, showR = rows;
+      function measure() {
+        const availW = Math.max(300, host.clientWidth || 900) / z() - 44 - 34;
+        let c = 0, sum = 0;
+        while (c < MAXC && (sum < availW || c < cols)) sum += colW(c++);
+        showC = Math.max(cols, c);
+        const availH = (innerHeight * 0.62) / z() - 24 - 34;
+        let r = 0, hs = 0;
+        while (r < MAXR && (hs < availH || r < rows)) hs += rowH(r++);
+        showR = Math.max(rows, r);
+      }
+      // 打到补出来的格子里：那一格就算进正式的范围
+      const grow = (r, c) => ((rows = Math.max(rows, r + 1)), (cols = Math.max(cols, c + 1)));
+
+      let focus = null; // [列, 栏]：最后点的格子
       let timer = null;
       const status = (txt) => {
         const el = $("[data-sheet-status]", host);
@@ -3171,80 +3198,300 @@ window.GWHome = (function () {
         clearTimeout(timer);
         timer = setTimeout(save, 700);
       };
+
+      // ---- 留言
+      let notes = []; // { id, cell, user_id, author_name, body, created_at }
+      let notesOn = true;
+      const notesOf = (k) => notes.filter((n) => n.cell === k).sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+      async function loadNotes() {
+        const { data: rows0, error } = await sb.from("gw_folder_cell_comments").select("id, cell, user_id, author_name, body, created_at").eq("folder_id", f.id).eq("page_id", pageId);
+        if (error) return void (notesOn = false);
+        notes = rows0 || [];
+        paintMarks();
+      }
+      // 有留言的格子：右上角一个橘色小角
+      function paintMarks() {
+        $$("[data-mark]", host).forEach((x) => x.remove());
+        const have = new Set(notes.map((n) => n.cell));
+        have.forEach((k) => {
+          const td = $(`[data-td="${k}"]`, host);
+          if (td) td.insertAdjacentHTML("beforeend", `<button type="button" data-mark data-cmt="${k}" title="${esc(t("home.sheetComments"))}" aria-label="${esc(t("home.sheetComments"))}" class="absolute top-0 right-0 z-[1] size-0 border-t-[9px] border-l-[9px] border-t-orange-500 border-l-transparent"></button>`);
+        });
+      }
+
+      // ---- 小浮窗（加几栏 / 几列、删栏 / 列、留言）：点外面或 Esc 关掉
+      let popEl = null;
+      function closePop() {
+        if (!popEl) return;
+        popEl.remove();
+        popEl = null;
+        document.removeEventListener("pointerdown", outside, true);
+        document.removeEventListener("keydown", popKey, true);
+      }
+      const outside = (e) => popEl && !popEl.contains(e.target) && !e.target.closest("[data-pop-anchor]") && closePop();
+      const popKey = (e) => {
+        if (e.key !== "Escape" || !popEl) return;
+        e.stopPropagation();
+        closePop();
+      };
+      function pop(anchor, html, width = 260) {
+        closePop();
+        popEl = document.createElement("div");
+        popEl.className = "fixed z-[60] rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-2xl dark:border-slate-700 dark:bg-slate-900";
+        popEl.style.width = width + "px";
+        popEl.innerHTML = html;
+        document.body.appendChild(popEl);
+        const a = anchor.getBoundingClientRect();
+        const pw = popEl.offsetWidth, ph = popEl.offsetHeight;
+        let left = Math.min(innerWidth - pw - 8, Math.max(8, a.left));
+        let top = a.bottom + 6;
+        if (top + ph > innerHeight - 8) top = Math.max(8, a.top - ph - 6);
+        popEl.style.left = left + "px";
+        popEl.style.top = top + "px";
+        refreshIcons();
+        document.addEventListener("pointerdown", outside, true);
+        document.addEventListener("keydown", popKey, true);
+        return popEl;
+      }
+      const when = (d) => new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(d));
+      function openNotes(k, anchor) {
+        if (!notesOn) return toast(t("home.sheetCommentsNeedDb"));
+        const isOwner = !f.shared_by;
+        const list = () => {
+          const items = notesOf(k);
+          return items.length
+            ? items
+                .map(
+                  (n) => `<div class="rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/5">
+                    <div class="flex items-center gap-2"><span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold dark:bg-slate-700">${esc((n.author_name || "?").slice(0, 1))}</span>
+                      <span class="min-w-0 flex-1"><span class="block truncate text-xs font-semibold">${esc(n.author_name || "—")}</span><span class="block text-[11px] text-slate-400">${esc(when(n.created_at))}</span></span>
+                      ${n.user_id === data.profile.id || isOwner ? `<button type="button" data-note-del="${n.id}" aria-label="${esc(t("home.delete"))}" title="${esc(t("home.delete"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("trash-2", "size-3.5")}</button>` : ""}
+                    </div>
+                    <p class="mt-1.5 text-sm break-words whitespace-pre-line">${esc(n.body)}</p>
+                  </div>`,
+                )
+                .join("")
+            : `<p class="py-2 text-center text-xs text-slate-400">${esc(t("home.sheetNoComments"))}</p>`;
+        };
+        const el = pop(
+          anchor,
+          `<div class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">${icon("message-square", "size-4")}${esc(t("home.sheetCommentsOn", { cell: cellName(k) }))}</div>
+          <div data-note-list class="max-h-64 space-y-2 overflow-y-auto">${list()}</div>
+          <form data-note-form class="mt-2 space-y-2">
+            <textarea name="body" rows="2" maxlength="1000" required placeholder="${esc(t("home.sheetCommentPh"))}" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:focus:border-white"></textarea>
+            <div class="flex justify-end"><button type="submit" class="${btn("primary", "sm")}">${esc(t("home.sheetComment"))}</button></div>
+          </form>`,
+          300,
+        );
+        const repaint = () => {
+          $("[data-note-list]", el).innerHTML = list();
+          refreshIcons();
+          paintMarks();
+        };
+        $("textarea", el).focus();
+        $("[data-note-form]", el).addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const body = e.target.body.value.trim();
+          if (!body) return;
+          const sub = $("button[type=submit]", el);
+          sub.disabled = true;
+          const { data: row, error } = await sb.from("gw_folder_cell_comments").insert({ folder_id: f.id, page_id: pageId, cell: k, body }).select("id, cell, user_id, author_name, body, created_at").single();
+          sub.disabled = false;
+          if (error) return toast(/gw_folder_cell_comments|PGRST205|42P01/.test(`${error.code} ${error.message}`) ? t("home.sheetCommentsNeedDb") : t("home.saveFailed"));
+          notes.push(row);
+          e.target.body.value = "";
+          repaint();
+        });
+        el.addEventListener("click", async (e) => {
+          const b = e.target.closest("[data-note-del]");
+          if (!b) return;
+          const { error } = await sb.from("gw_folder_cell_comments").delete().eq("id", b.dataset.noteDel);
+          if (error) return toast(t("home.saveFailed"));
+          notes = notes.filter((n) => n.id !== b.dataset.noteDel);
+          repaint();
+        });
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && e.target.name === "body") (e.preventDefault(), $("[data-note-form]", el).requestSubmit());
+        });
+      }
+
       // 看的人：Email → mailto、网址 → 新分页
       const show = (v) => {
         if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return `<a href="mailto:${esc(v)}" class="text-sky-700 hover:underline dark:text-sky-300">${esc(v)}</a>`;
         if (/^https?:\/\/\S+$/i.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener noreferrer" class="text-sky-700 hover:underline dark:text-sky-300">${esc(v)}</a>`;
         return esc(v);
       };
+      const plusCls = "flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:hover:border-white dark:hover:text-white";
       function render() {
+        measure();
         const head = `<tr><th class="sticky top-0 left-0 z-30 w-11 min-w-11 border-r border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></th>${Array.from(
-          { length: cols },
+          { length: showC },
           (_, c) => `<th class="sticky top-0 z-20 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-semibold text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
-            <div class="relative h-6 leading-6">${colName(c)}${canEdit ? `<span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : ""}</div></th>`,
-        ).join("")}</tr>`;
-        const body = Array.from({ length: rows }, (_, r) => {
-          const tds = Array.from({ length: cols }, (_, c) => {
-            const v = cells.get(r + ":" + c) || "";
+            <div class="relative h-6 leading-6">${canEdit ? `<button type="button" data-col-menu="${c}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${colName(c)}</button><span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : colName(c)}</div></th>`,
+        ).join("")}${canEdit ? `<th class="sticky top-0 z-20 w-[34px] min-w-[34px] border-b border-slate-200 bg-slate-100 p-0 dark:border-slate-700 dark:bg-slate-800"><div class="flex h-6 items-center justify-center"><button type="button" data-add-cols data-pop-anchor title="${esc(t("home.sheetAddCols"))}" aria-label="${esc(t("home.sheetAddCols"))}" class="${plusCls} size-5">${icon("plus", "size-3.5")}</button></div></th>` : ""}</tr>`;
+        const body = Array.from({ length: showR }, (_, r) => {
+          const tds = Array.from({ length: showC }, (_, c) => {
+            const k = r + ":" + c;
+            const v = cells.get(k) || "";
             const bold = r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
+            const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
-              ? `<td class="border-r border-b border-slate-200 p-0 dark:border-slate-700 ${bold}"><input data-cell="${r}:${c}" value="${esc(v)}" maxlength="1000" spellcheck="false" class="block h-full w-full min-w-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-sky-500 focus:ring-inset dark:text-slate-100 dark:focus:bg-slate-900 ${r === 0 ? "font-semibold" : ""}"></td>`
-              : `<td class="overflow-hidden border-r border-b border-slate-200 px-2 text-sm text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${bold}" title="${esc(v)}">${show(v)}</td>`;
+              ? `<td data-td="${k}" class="group relative border-r border-b border-slate-200 p-0 dark:border-slate-700 ${bold}"><input data-cell="${k}" value="${esc(v)}" maxlength="1000" spellcheck="false" class="block h-full w-full min-w-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-white focus:pr-8 focus:ring-2 focus:ring-sky-500 focus:ring-inset dark:text-slate-100 dark:focus:bg-slate-900 ${r === 0 ? "font-semibold" : ""}">${cmt}</td>`
+              : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} class="relative overflow-hidden border-r border-b border-slate-200 px-2 text-sm text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
           return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-medium text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
-            <div class="relative flex h-full items-center justify-center">${r + 1}${canEdit ? `<span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute -bottom-1 left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : ""}</div></th>${tds}</tr>`;
+            <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute -bottom-1 left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}${canEdit ? "<td></td>" : ""}</tr>`;
         }).join("");
-        const tb = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">${icon(ic, "size-4")}${esc(label)}</button>`;
+        const addRow = canEdit
+          ? `<tr style="height:34px"><th class="sticky left-0 z-10 bg-slate-100 p-0 dark:bg-slate-800"><div class="flex h-full items-center justify-center"><button type="button" data-add-rows data-pop-anchor title="${esc(t("home.sheetAddRows"))}" aria-label="${esc(t("home.sheetAddRows"))}" class="${plusCls} size-5">${icon("plus", "size-3.5")}</button></div></th><td colspan="${showC + 1}"></td></tr>`
+          : "";
+        const tableW = 44 + Array.from({ length: showC }, (_, c) => colW(c)).reduce((a, b) => a + b, 0) + (canEdit ? 34 : 0);
+        const zb = (attr, ic, label, dis) => `<button type="button" ${attr} ${dis ? "disabled" : ""} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
         host.innerHTML = `
-          ${
-            canEdit
-              ? `<div class="mb-2 flex flex-wrap items-center gap-2">
-                  ${tb("data-sheet-add-row", "rows-3", t("home.sheetAddRow"))}
-                  ${tb("data-sheet-add-col", "columns-3", t("home.sheetAddCol"))}
-                  ${tb(`data-sheet-del-row ${focus ? "" : "disabled"}`, "trash-2", t("home.sheetDelRow"))}
-                  ${tb(`data-sheet-del-col ${focus ? "" : "disabled"}`, "trash-2", t("home.sheetDelCol"))}
-                  <span data-sheet-status class="ml-auto text-xs text-slate-400"></span>
-                </div>`
-              : ""
-          }
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <span data-sheet-status class="text-xs text-slate-400"></span>
+            <div class="ml-auto flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white px-1 py-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+              ${zb("data-zoom-out", "zoom-out", t("home.sheetZoomOut"), zoom <= SHEET_ZOOMS[0])}
+              <button type="button" data-zoom-reset title="${esc(t("home.sheetZoomReset"))}" class="w-12 text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">${zoom}%</button>
+              ${zb("data-zoom-in", "zoom-in", t("home.sheetZoomIn"), zoom >= SHEET_ZOOMS[SHEET_ZOOMS.length - 1])}
+            </div>
+          </div>
           <div data-sheet class="gw-noscroll max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-            <table class="border-separate border-spacing-0 text-left" style="table-layout:fixed;width:${44 + Array.from({ length: cols }, (_, c) => colW(c)).reduce((a, b) => a + b, 0)}px">
-              <colgroup><col style="width:44px">${Array.from({ length: cols }, (_, c) => `<col data-col="${c}" style="width:${colW(c)}px">`).join("")}</colgroup>
-              <thead>${head}</thead><tbody>${body}</tbody>
+            <table class="border-separate border-spacing-0 text-left" style="table-layout:fixed;width:${tableW}px;zoom:${z()}">
+              <colgroup><col style="width:44px">${Array.from({ length: showC }, (_, c) => `<col data-col="${c}" style="width:${colW(c)}px">`).join("")}${canEdit ? `<col style="width:34px">` : ""}</colgroup>
+              <thead>${head}</thead><tbody>${body}${addRow}</tbody>
             </table>
           </div>
-          ${canEdit ? `<p class="mt-2 text-[11px] text-slate-400">${esc(t("home.sheetHint"))}</p>` : ""}`;
+          <p class="mt-2 text-[11px] text-slate-400">${esc(t(canEdit ? "home.sheetHint" : "home.sheetHintView"))}</p>`;
         refreshIcons();
+        paintMarks();
       }
       const cellEl = (r, c) => $(`[data-cell="${r}:${c}"]`, host);
       const go = (r, c) => {
         const el = cellEl(r, c);
         if (el) (el.focus(), el.select());
       };
+      function setZoom(nz) {
+        zoom = nz;
+        try { localStorage.setItem("gw-sheet-zoom", String(zoom)); } catch (e) {}
+        render();
+      }
+      // 加几栏 / 几列：一个小浮窗打数字
+      function addMany(kind, anchor) {
+        const max = kind === "rows" ? MAXR - showR : MAXC - showC;
+        if (max <= 0) return toast(t("home.sheetMax"));
+        const el = pop(
+          anchor,
+          `<form class="flex items-center gap-2"><span class="text-sm">${esc(t("home.sheetAdd"))}</span>
+            <input name="n" type="number" min="1" max="${max}" value="${kind === "rows" ? Math.min(10, max) : 1}" class="h-9 w-20 rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-900">
+            <span class="text-sm">${esc(t(kind === "rows" ? "home.sheetRowsWord" : "home.sheetColsWord"))}</span>
+            <button type="submit" class="${btn("primary", "sm")} ml-auto">${esc(t("home.sheetAddBtn"))}</button></form>`,
+          280,
+        );
+        const inp = $("input", el);
+        inp.focus();
+        inp.select();
+        $("form", el).addEventListener("submit", (e) => {
+          e.preventDefault();
+          const n = num(inp.value, 1, max, 1);
+          if (kind === "rows") rows = showR + n;
+          else cols = showC + n;
+          closePop();
+          render();
+          later();
+          const sh = $("[data-sheet]", host);
+          if (kind === "rows") sh.scrollTop = sh.scrollHeight;
+          else sh.scrollLeft = sh.scrollWidth;
+        });
+      }
+      // 点栏位字母 / 列号：删那一栏 / 列（后面的往前移；留言也跟着移）
+      const shift = (m, fn) => {
+        const out = new Map();
+        for (const [k, v] of m) {
+          const nk = fn(k);
+          if (nk != null) out.set(nk, v);
+        }
+        return out;
+      };
+      function delMenu(kind, idx, anchor) {
+        const label = kind === "row" ? t("home.sheetDelRowN", { n: idx + 1 }) : t("home.sheetDelColN", { c: colName(idx) });
+        const el = pop(anchor, `<button type="button" data-do-del class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}${esc(label)}</button>`, 220);
+        $("[data-do-del]", el).onclick = async () => {
+          closePop();
+          if (kind === "row") {
+            cells = shift(cells, (k) => {
+              const [r, c] = k.split(":").map(Number);
+              return r === idx ? null : (r > idx ? r - 1 : r) + ":" + c;
+            });
+            const nh = {};
+            for (const [k, v] of Object.entries(h)) if (+k !== idx) nh[+k > idx ? +k - 1 : +k] = v;
+            h = nh;
+            rows = Math.max(1, (idx < rows ? rows : showR) - 1);
+          } else {
+            cells = shift(cells, (k) => {
+              const [r, c] = k.split(":").map(Number);
+              return c === idx ? null : r + ":" + (c > idx ? c - 1 : c);
+            });
+            const nw = {};
+            for (const [k, v] of Object.entries(w)) if (+k !== idx) nw[+k > idx ? +k - 1 : +k] = v;
+            w = nw;
+            cols = Math.max(1, (idx < cols ? cols : showC) - 1);
+          }
+          // 留言跟着移（那一列 / 栏的留言删掉）
+          if (notesOn && notes.length) {
+            const pos = kind === "row" ? 0 : 1;
+            notes = notes
+              .filter((n) => Number(n.cell.split(":")[pos]) !== idx)
+              .map((n) => {
+                const p2 = n.cell.split(":").map(Number);
+                if (p2[pos] > idx) p2[pos]--;
+                return { ...n, cell: p2.join(":") };
+              });
+            sb.rpc("gw_shift_cell_comments", { p_folder: f.id, p_page: pageId, p_kind: kind, p_index: idx }).then(() => {}, () => {});
+          }
+          focus = null;
+          render();
+          later();
+        };
+      }
+      host.addEventListener("click", (e) => {
+        const b = e.target.closest("button, [data-cmt]");
+        if (!b || b.disabled || !host.contains(b)) return;
+        if (e.target.closest("a")) return; // 看的人点 Email / 网址：照常打开
+        const d = b.dataset;
+        if ("zoomIn" in d) return setZoom(SHEET_ZOOMS[Math.min(SHEET_ZOOMS.length - 1, SHEET_ZOOMS.indexOf(zoom) + 1)]);
+        if ("zoomOut" in d) return setZoom(SHEET_ZOOMS[Math.max(0, SHEET_ZOOMS.indexOf(zoom) - 1)]);
+        if ("zoomReset" in d) return setZoom(100);
+        if (d.cmt) return openNotes(d.cmt, b.closest("td") || b);
+        if (!canEdit) return;
+        if ("addRows" in d) return addMany("rows", b);
+        if ("addCols" in d) return addMany("cols", b);
+        if (d.colMenu) return delMenu("col", Number(d.colMenu), b);
+        if (d.rowMenu) return delMenu("row", Number(d.rowMenu), b);
+      });
       if (canEdit) {
         host.addEventListener("input", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
           if (!k) return;
           const v = e.target.value.slice(0, 1000);
           v ? cells.set(k, v) : cells.delete(k);
+          const [r, c] = k.split(":").map(Number);
+          if (v) grow(r, c);
           later();
         });
         host.addEventListener("focusin", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
-          if (!k) return;
-          const first = !focus;
-          focus = k.split(":").map(Number);
-          if (first) $$("[data-sheet-del-row], [data-sheet-del-col]", host).forEach((b) => (b.disabled = false));
+          if (k) focus = k.split(":").map(Number);
         });
         host.addEventListener("keydown", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
           if (!k) return;
           const [r, c] = k.split(":").map(Number);
           const el = e.target;
-          if (e.key === "Enter") return e.preventDefault(), go(e.shiftKey ? Math.max(0, r - 1) : Math.min(rows - 1, r + 1), c);
-          if (e.key === "ArrowDown") return e.preventDefault(), go(Math.min(rows - 1, r + 1), c);
+          if (e.key === "Enter") return e.preventDefault(), go(e.shiftKey ? Math.max(0, r - 1) : Math.min(showR - 1, r + 1), c);
+          if (e.key === "ArrowDown") return e.preventDefault(), go(Math.min(showR - 1, r + 1), c);
           if (e.key === "ArrowUp") return e.preventDefault(), go(Math.max(0, r - 1), c);
-          if (e.key === "ArrowRight" && el.selectionStart === el.value.length && el.selectionEnd === el.value.length && c < cols - 1) return e.preventDefault(), go(r, c + 1);
+          if (e.key === "ArrowRight" && el.selectionStart === el.value.length && el.selectionEnd === el.value.length && c < showC - 1) return e.preventDefault(), go(r, c + 1);
           if (e.key === "ArrowLeft" && el.selectionStart === 0 && el.selectionEnd === 0 && c > 0) return e.preventDefault(), go(r, c - 1);
         });
         // 贴上一块（有 Tab / 换行）：从这一格开始摊开，不够就加列 / 栏
@@ -3264,15 +3511,14 @@ window.GWHome = (function () {
                 const key = r0c + i + ":" + (c0c + j);
                 v = v.trim().slice(0, 1000);
                 v ? cells.set(key, v) : cells.delete(key);
-                cols = Math.max(cols, c0c + j + 1);
+                if (v) grow(r0c + i, c0c + j);
               }),
           );
-          rows = Math.max(rows, r0c + lines.length);
           render();
           later();
           go(r0c, c0c);
         });
-        // 拉线改栏宽 / 列高（放开才存）
+        // 拉线改栏宽 / 列高（放开才存；有放大缩小时换算回 100%）
         host.addEventListener("pointerdown", (e) => {
           const cr = e.target.closest("[data-col-resize]");
           const rr = e.target.closest("[data-row-resize]");
@@ -3282,15 +3528,15 @@ window.GWHome = (function () {
           const table = $("table", host);
           if (cr) {
             const c = Number(cr.dataset.colResize);
-            const w0 = colW(c), t0 = table.offsetWidth;
+            const w0 = colW(c), t0 = parseFloat(table.style.width);
             const colEl = $(`col[data-col="${c}"]`, host);
             const move = (ev) => {
-              const nw = Math.min(600, Math.max(40, Math.round(w0 + ev.clientX - startX)));
+              const nw = Math.min(600, Math.max(40, Math.round(w0 + (ev.clientX - startX) / z())));
               w[c] = nw;
               colEl.style.width = nw + "px";
               table.style.width = t0 - w0 + nw + "px";
             };
-            const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), later());
+            const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), grow(0, c), later());
             addEventListener("pointermove", move);
             addEventListener("pointerup", up);
           } else {
@@ -3298,56 +3544,31 @@ window.GWHome = (function () {
             const h0 = rowH(r);
             const tr = rr.closest("tr");
             const move = (ev) => {
-              const nh = Math.min(240, Math.max(24, Math.round(h0 + ev.clientY - startY)));
+              const nh = Math.min(240, Math.max(24, Math.round(h0 + (ev.clientY - startY) / z())));
               h[r] = nh;
               tr.style.height = nh + "px";
             };
-            const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), later());
+            const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), grow(r, 0), later());
             addEventListener("pointermove", move);
             addEventListener("pointerup", up);
           }
         });
-        // 删一列 / 一栏：后面的往前移（格子、宽度、高度一起）
-        const shift = (m, fn) => {
-          const out = new Map();
-          for (const [k, v] of m) {
-            const nk = fn(k);
-            if (nk != null) out.set(nk, v);
-          }
-          return out;
-        };
-        host.addEventListener("click", (e) => {
-          const b = e.target.closest("button");
-          if (!b || b.disabled) return;
-          if ("sheetAddRow" in b.dataset && rows < MAXR) return (rows++, render(), later(), go(rows - 1, focus ? focus[1] : 0));
-          if ("sheetAddCol" in b.dataset && cols < MAXC) return (cols++, render(), later(), go(focus ? focus[0] : 0, cols - 1));
-          if (!focus) return;
-          const [fr, fc] = focus;
-          if ("sheetDelRow" in b.dataset && rows > 1) {
-            cells = shift(cells, (k) => {
-              const [r, c] = k.split(":").map(Number);
-              return r === fr ? null : (r > fr ? r - 1 : r) + ":" + c;
-            });
-            const nh = {};
-            for (const [k, v] of Object.entries(h)) if (+k !== fr) nh[+k > fr ? +k - 1 : +k] = v;
-            h = nh;
-            rows--;
-          } else if ("sheetDelCol" in b.dataset && cols > 1) {
-            cells = shift(cells, (k) => {
-              const [r, c] = k.split(":").map(Number);
-              return c === fc ? null : r + ":" + (c > fc ? c - 1 : c);
-            });
-            const nw = {};
-            for (const [k, v] of Object.entries(w)) if (+k !== fc) nw[+k > fc ? +k - 1 : +k] = v;
-            w = nw;
-            cols--;
-          } else return;
-          focus = null;
-          render();
-          later();
-        });
       }
+      // 视窗大小变了：重新补满格子（打字中不重画）
+      let rz = null;
+      const onResize = () => {
+        if (!document.body.contains(host)) return removeEventListener("resize", onResize);
+        clearTimeout(rz);
+        rz = setTimeout(() => {
+          if (host.contains(document.activeElement)) return;
+          const before = [showR, showC];
+          measure();
+          if (before[0] !== showR || before[1] !== showC) render();
+        }, 200);
+      };
+      addEventListener("resize", onResize);
       render();
+      loadNotes();
     }
 
     // ------------------------------------------------------------ 文件夹「柜子」看法

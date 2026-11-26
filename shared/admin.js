@@ -1902,7 +1902,25 @@
       m.el.addEventListener("change", (e) => {
         if (e.target.name === "has_locations") {
           $$("[data-single-loc]", m.el).forEach((x) => x.classList.toggle("hidden", e.target.checked));
+          // One location until now → it becomes the FIRST of the multiple locations, named
+          // after the company and keeping its Location ID (and area), so what is already
+          // linked to it (e.g. in Plantation Operation) stays right.
+          if (e.target.checked && !$("[data-loc-row]", m.el)) {
+            const gid = groups.map((g) => g.id).find((x) => bizSel.has(x));
+            const blk = gid && $(`[data-loc-biz="${gid}"]`, m.el);
+            if (blk) {
+              const coLoc = ($$("[data-co-loc]", m.el).map((x) => x.value.trim()).find(Boolean)) || "";
+              const coName = (($("[name=name]", m.el) || {}).value || (c ? c.name : "")).trim();
+              const areaEl = $(`[data-area="${gid}"]`, m.el);
+              const area = areaEl && areaEl.value !== "" ? Number(areaEl.value) : null;
+              $("[data-loc-rows]", blk).insertAdjacentHTML("beforeend", locRow({ id: "", location_id: coLoc, name: coName, short_name: "", area }));
+              $("[data-loc-head]", blk).classList.replace("hidden", "grid");
+              refreshIcons();
+              m.touch();
+            }
+          }
           if (e.target.checked) bizSel.forEach((gid) => !$(`[data-loc-biz="${gid}"] [data-loc-row]`, m.el) && openLoc.add(gid));
+          if (e.target.checked) { const gid = groups.map((g) => g.id).find((x) => bizSel.has(x)); if (gid) openLoc.add(gid); }
           syncLoc();
         }
       });

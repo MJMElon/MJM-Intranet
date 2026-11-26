@@ -13,7 +13,7 @@
 //      显示「等待管理员批准」；管理员在 Users 按 Approve（启用）之后就能进来
 //   停用中 → 「帐号已停用」；等待批准中 → 「等待管理员批准」
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@5";
-import { generatePassword, logEvent, serviceClient } from "../_shared/gw.ts";
+import { ALLOWED_ORIGINS, generatePassword, logEvent, serviceClient, withCors } from "../_shared/gw.ts";
 import { type Claims, type Config, callback, clearCookie, start, toLogin } from "./flow.ts";
 
 const issuer = (Deno.env.get("OPISPRO_ISSUER") ?? "https://opispro.com").replace(/\/+$/, "");
@@ -23,6 +23,7 @@ const cfg: Config = {
   clientSecret: Deno.env.get("OPISPRO_OAUTH_CLIENT_SECRET") ?? "",
   redirectUri: Deno.env.get("OPISPRO_OAUTH_REDIRECT_URI") ?? `${Deno.env.get("SUPABASE_URL")}/functions/v1/gw-opispro/callback`,
   siteUrl: (Deno.env.get("GW_SITE_URL") ?? "https://mjmelon.github.io/MJM-Intranet/").replace(/\/?$/, "/"),
+  allowedOrigins: ALLOWED_ORIGINS, // a login started on any of the Intranet's addresses returns there
   scope: "openid profile email",
 };
 const keys = createRemoteJWKSet(new URL(`${issuer}/oauth/jwks`)); // 钥匙从 JWKS 读，不抄进程式
@@ -136,7 +137,7 @@ async function signIn(claims: Claims): Promise<{ tokenHash: string } | { error: 
   return { tokenHash };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
   const path = new URL(req.url).pathname;
   if (!cfg.clientId || !cfg.clientSecret) return toLogin(cfg, "sso_not_ready");
@@ -154,4 +155,4 @@ Deno.serve(async (req) => {
     return toLogin(cfg, "sso_failed", clearCookie());
   }
   return new Response("not found", { status: 404 });
-});
+}));

@@ -1,6 +1,6 @@
 // 后台管理动作（需要 service_role 的部分）：建立用户、批量导入、停用/启用、重设密码、产生模块 API Key
 // 只有 super_admin 可以用；写入 gw_profiles / gw_group_members 时用调用者身份，RLS 再检查一次
-import { corsHeaders, generatePassword, getCaller, json, logEvent, serviceClient, sha256Hex } from "../_shared/gw.ts";
+import { corsHeaders, generatePassword, getCaller, json, logEvent, serviceClient, sha256Hex, withCors } from "../_shared/gw.ts";
 
 type Role = "super_admin" | "user";
 type Caller = NonNullable<Awaited<ReturnType<typeof getCaller>>>;
@@ -57,7 +57,7 @@ async function createUser(caller: Caller, input: CreateInput): Promise<CreateRes
   return { ok: true, email, password, linked };
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -171,4 +171,4 @@ Deno.serve(async (req) => {
     }
   }
   return json({ ok: false, error: "unknown_action" }, 400);
-});
+}));

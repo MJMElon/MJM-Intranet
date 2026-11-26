@@ -4,7 +4,7 @@
 //   （也接受 Authorization: Bearer gwm_xxxx）。数据库只存杂凑值；撤销、用户停用、全站开关关闭都立刻失效。
 // - 查询一律用「链接主人自己的身份」（RLS 照常生效），资料集同 AI 聊天小工具的白名单，全部只读。
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { corsHeaders as baseCors, serviceClient, sha256Hex, userClient } from "../_shared/gw.ts";
+import { corsHeaders as baseCors, serviceClient, sha256Hex, userClient, withCors } from "../_shared/gw.ts";
 import { byName, DATASETS } from "../_shared/ai-datasets.ts";
 import { runQuery, type Spec } from "../_shared/ai-query.ts";
 import { specProps } from "../_shared/ai-spec.ts";
@@ -116,7 +116,7 @@ async function handle(userId: string, msg: any): Promise<unknown | null> {
   }
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   // 链接：路径里的 gwm_xxx、Authorization: Bearer，或 ?key=
@@ -140,4 +140,4 @@ Deno.serve(async (req) => {
   }
   const out = await handle(userId, body);
   return out === null ? reply(null, 202) : reply(out);
-});
+}));

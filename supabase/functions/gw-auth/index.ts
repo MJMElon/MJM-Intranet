@@ -4,10 +4,10 @@
 //   连续输错 5 次锁 15 分钟；帐号必须有启用中的 Gateway 资料
 // POST { action: "change_password", password }（带用户 Token）→ 在伺服器改密码，成功才清除「必须改密码」标记并记录
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { corsHeaders, getCaller, json, logEvent, serviceClient } from "../_shared/gw.ts";
+import { corsHeaders, getCaller, json, logEvent, serviceClient, withCors } from "../_shared/gw.ts";
 
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const body = await req.json().catch(() => ({}));
@@ -74,4 +74,4 @@ Deno.serve(async (req) => {
   }
 
   return json({ error: "unknown_action" }, 400);
-});
+}));

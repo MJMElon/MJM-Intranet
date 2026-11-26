@@ -2,7 +2,7 @@
 // - 只能查 datasets.ts 白名单里的资料集，而且用「调用者自己的身份」查 → 数据库权限（RLS）照常生效
 // - 工具：list_datasets / query_data / aggregate_data / create_report；报表的资料直接回给网页（不经过 AI），网页再产生 Excel / CSV 下载
 // - 需要 Edge Function secret：ANTHROPIC_API_KEY（可选：AI_MODEL、AI_DAILY_LIMIT、ANTHROPIC_BASE_URL）
-import { corsHeaders, getCaller, json, serviceClient } from "../_shared/gw.ts";
+import { corsHeaders, getCaller, json, serviceClient, withCors } from "../_shared/gw.ts";
 import { byName, DATASETS } from "../_shared/ai-datasets.ts";
 import { runQuery, type Spec } from "../_shared/ai-query.ts";
 import { specProps } from "../_shared/ai-spec.ts";
@@ -58,7 +58,7 @@ async function callClaude(apiKey: string, system: string, messages: unknown[]) {
   return await res.json();
 }
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
 
@@ -143,4 +143,4 @@ Deno.serve(async (req) => {
     if (code === "failed") console.error("ai chat failed", e);
     return json({ ok: false, error: code });
   }
-});
+}));

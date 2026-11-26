@@ -2,11 +2,11 @@
 // 请求：POST { module_code }，Header 带用户的 Supabase Access Token
 // 回应：{ token, expires_in, redirect_url }
 import { SignJWT } from "npm:jose@5";
-import { corsHeaders, json, signingKey, TOKEN_ISSUER, TOKEN_TTL_SECONDS, userClient } from "../_shared/gw.ts";
+import { corsHeaders, json, signingKey, TOKEN_ISSUER, TOKEN_TTL_SECONDS, userClient, withCors } from "../_shared/gw.ts";
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -49,4 +49,4 @@ Deno.serve(async (req) => {
   const redirect = new URL(module.url);
   redirect.searchParams.set("gw_token", token);
   return json({ token, expires_in: TOKEN_TTL_SECONDS, redirect_url: redirect.toString() });
-});
+}));

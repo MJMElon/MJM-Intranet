@@ -6,9 +6,9 @@
 // company_ids = 这个人在这个 Icon 可以看的 Company：他有这个 Icon 的 Business 里，HR 分配给他的 Company
 //               （在 Business 里但还没分 Company = 空的 = 看不到任何 Company）；super_admin = 有这个 Icon 的全部 Company
 // 只读；资料库一律用 service_role 读取（API Key 已经证明来源）。
-import { corsHeaders, json, serviceClient, sha256Hex } from "../_shared/gw.ts";
+import { corsHeaders, json, serviceClient, sha256Hex, withCors } from "../_shared/gw.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -113,4 +113,4 @@ Deno.serve(async (req) => {
     module_business_ids: (taggedBiz.data ?? []).map((r) => r.group_id),
     exported_at: new Date().toISOString(),
   });
-});
+}));

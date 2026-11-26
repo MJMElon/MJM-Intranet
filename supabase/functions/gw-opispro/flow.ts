@@ -12,7 +12,8 @@ export type Config = {
   clientId: string;
   clientSecret: string;
   redirectUri: string; // 这个 function 的 /callback（要跟 OPIS PRO 登记的一模一样）
-  siteUrl: string; // Intranet 网站，结尾有 /
+  siteUrl: string; // Intranet 网站，结尾有 / (default)
+  allowedOrigins?: string[]; // the Intranet's own web addresses; a login started on one of them returns there
   scope: string;
 };
 
@@ -67,7 +68,7 @@ async function cookieKey(cfg: Config) {
   return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
 }
 // popup：电脑上用小视窗登入时，登录页给的一个随机代号（回来时带回去，让原本的页面认得是自己的视窗）
-type Saved = { state: string; nonce: string; verifier: string; next: string; exp: number; popup?: string };
+type Saved = { state: string; nonce: string; verifier: string; next: string; exp: number; popup?: string; site?: string };
 export const safePopup = (v: string | null | undefined) => (/^[A-Za-z0-9_-]{8,64}$/.test(String(v ?? "")) ? String(v) : "");
 const popupQ = (p?: string) => (p ? `&popup=${p}` : "");
 export async function sealCookie(cfg: Config, data: Saved): Promise<string> {
@@ -105,13 +106,25 @@ function redirect(to: string, cookie?: string): Response {
   if (cookie) h.append("Set-Cookie", cookie);
   return new Response(null, { status: 302, headers: h });
 }
+/** The Intranet site (folder of login.html, ending in /) a login started from —
+ *  only one of the Intranet's own addresses; otherwise the default site. */
+export function safeSite(cfg: Config, v: string | null | undefined): string {
+  try {
+    const u = new URL(String(v ?? ""));
+    if (u.protocol !== "https:" || u.username || u.password) return cfg.siteUrl;
+    if (!(cfg.allowedOrigins ?? []).includes(u.origin) && u.origin !== new URL(cfg.siteUrl).origin) return cfg.siteUrl;
+    return u.origin + u.pathname.replace(/[^/]*$/, "");
+  } catch { return cfg.siteUrl; }
+}
 // 失败一律回登录页并带原因（登录页显示对应讯息 + 可以再试）
-export const toLogin = (cfg: Config, error: string, cookie?: string, popup?: string) =>
-  redirect(`${cfg.siteUrl}login.html?error=${encodeURIComponent(error)}${popupQ(popup)}`, cookie);
+export const toLogin = (cfg: Config, error: string, cookie?: string, popup?: string, site?: string) =>
+  redirect(`${site || cfg.siteUrl}login.html?error=${encodeURIComponent(error)}${popupQ(popup)}`, cookie);
 
 export async function start(cfg: Config, req: Request, now = Date.now()): Promise<Response> {
   const url = new URL(req.url);
-  const saved: Saved = { state: randomValue(), nonce: randomValue(), verifier: randomValue(), next: safeNext(url.searchParams.get("next")), exp: now + TTL_MS, popup: safePopup(url.searchParams.get("popup")) };
+  // Where to come back: the Intranet site the login page is on (?site=, else the page that linked here)
+  const site = safeSite(cfg, url.searchParams.get("site") || req.headers.get("referer"));
+  const saved: Saved = { state: randomValue(), nonce: randomValue(), verifier: randomValue(), next: safeNext(url.searchParams.get("next")), exp: now + TTL_MS, popup: safePopup(url.searchParams.get("popup")), site };
   const q = new URLSearchParams({
     response_type: "code",
     client_id: cfg.clientId,
@@ -131,7 +144,8 @@ export async function callback(cfg: Config, req: Request, deps: Deps): Promise<R
   // 1) 取出这次登入存的资料
   const saved = await openCookie(cfg, readCookie(req), (deps.now ?? Date.now)());
   const popup = saved ? safePopup(saved.popup) : "";
-  const fail = (code: string) => toLogin(cfg, code, clear, popup);
+  const site = safeSite(cfg, saved?.site);
+  const fail = (code: string) => toLogin(cfg, code, clear, popup, site);
   // 2) OPIS PRO 回传错误（按了 Cancel 等）
   const err = url.searchParams.get("error");
   if (err) {
@@ -198,5 +212,5 @@ export async function callback(cfg: Config, req: Request, deps: Deps): Promise<R
   // 6) 找 Intranet 用户 → 一次性登录码（放在 # 后面，不会送到任何伺服器的记录）
   const r = await deps.signIn({ ...claims, sub: String(claims.sub) });
   if ("error" in r) return fail(r.error);
-  return redirect(`${cfg.siteUrl}login.html?mode=sso${popupQ(popup)}#th=${encodeURIComponent(r.tokenHash)}&next=${encodeURIComponent(saved.next)}`, clear);
+  return redirect(`${site}login.html?mode=sso${popupQ(popup)}#th=${encodeURIComponent(r.tokenHash)}&next=${encodeURIComponent(saved.next)}`, clear);
 }

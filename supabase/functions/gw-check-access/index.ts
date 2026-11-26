@@ -4,9 +4,9 @@
 //      POST { user_id } 或 { email } → 直接查询某人目前是否有权限
 // 回应：{ allowed, module_code, user? }
 import { jwtVerify, importJWK } from "npm:jose@5";
-import { corsHeaders, json, publicJwk, serviceClient, sha256Hex, TOKEN_ISSUER } from "../_shared/gw.ts";
+import { corsHeaders, json, publicJwk, serviceClient, sha256Hex, TOKEN_ISSUER, withCors } from "../_shared/gw.ts";
 
-Deno.serve(async (req) => {
+Deno.serve(withCors(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -55,4 +55,4 @@ Deno.serve(async (req) => {
   if (!allowed || !profile) return json({ allowed: false, module_code: module.code });
   // is_super_admin：Intranet 的 Super Admin 在每个接进来的模块也是 Super Admin（模块自己照这个设定）
   return json({ allowed: true, module_code: module.code, user: { id: profile.id, email: profile.email, full_name: profile.full_name, avatar_url: profile.avatar_url || null, is_super_admin: profile.role === "super_admin" } });
-});
+}));

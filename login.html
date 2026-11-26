@@ -342,7 +342,7 @@ const message = (text, ok) =>
 // 登录页只有「用 OPIS PRO 登录」。Email + 密码只在 login.html?mode=password（备用：OPIS PRO 连不上时给管理员用）
 const PASSWORD_MODE = params.get("mode") === "password";
 function showLogin(errorText, tone) {
-  const sso = `<a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()))}">${esc(t("login.sso"))}</a>`;
+  const sso = `<a class="sso" id="sso" href="${esc(GW_CONFIG.supabaseUrl + "/functions/v1/gw-opispro/start?next=" + encodeURIComponent(nextPage()) + "&site=" + encodeURIComponent(location.origin + location.pathname))}">${esc(t("login.sso"))}</a>`;
   if (!PASSWORD_MODE) {
     card.innerHTML = `<div class="space-y-4"><div id="msg"${errorText ? "" : " hidden"}>${message(errorText, tone)}</div>${sso}</div>`;
     $("#sso").addEventListener("click", ssoGo);

@@ -5,9 +5,35 @@ import { importJWK, type JWK } from "npm:jose@5";
 export const TOKEN_ISSUER = "mjm-gateway";
 export const TOKEN_TTL_SECONDS = 60;
 
+// The Intranet's own web addresses (origins). Browsers may call these functions
+// only from them. Add a new domain here, or list them in the GW_ALLOWED_ORIGIN
+// secret, comma-separated (e.g. "https://intranet.example.com,https://mjmelon.github.io").
+// System-to-system calls (Portal, AI connectors) are not affected.
+const SITE_ORIGINS = ["https://mjmelon.github.io"];
+const originOf = (u: string) => { try { return new URL(u).origin; } catch { return ""; } };
+export const ALLOWED_ORIGINS: string[] = [...new Set([
+  ...(Deno.env.get("GW_ALLOWED_ORIGIN") ?? "").split(",").map((x) => originOf(x.trim()) || x.trim().replace(/\/+$/, "")).filter(Boolean),
+  ...SITE_ORIGINS,
+  originOf(Deno.env.get("GW_SITE_URL") ?? ""),
+].filter(Boolean))];
+export const isAllowedOrigin = (o: string | null | undefined) => !!o && ALLOWED_ORIGINS.includes(o.replace(/\/+$/, ""));
+
+/** Wraps a function's handler: a browser call from one of the Intranet's sites gets that site as Access-Control-Allow-Origin. */
+export function withCors(handler: (req: Request) => Response | Promise<Response>) {
+  return async (req: Request): Promise<Response> => {
+    const res = await handler(req);
+    const origin = req.headers.get("Origin");
+    if (!origin || !isAllowedOrigin(origin) || res.status === 101) return res;
+    const h = new Headers(res.headers);
+    h.set("Access-Control-Allow-Origin", origin);
+    h.append("Vary", "Origin");
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  };
+}
+
 export const corsHeaders = {
-  // 只有自己的网站可以从浏览器呼叫（可以用 GW_ALLOWED_ORIGIN 改）；系统对系统的呼叫（Portal、AI 连接器）不受影响
-  "Access-Control-Allow-Origin": Deno.env.get("GW_ALLOWED_ORIGIN") ?? "https://mjmelon.github.io",
+  // the first allowed site; withCors() answers each allowed site with its own address
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS[0] ?? "https://mjmelon.github.io",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-gw-api-key",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };

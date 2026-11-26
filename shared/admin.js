@@ -1293,7 +1293,7 @@
                     <button type="button" ${can ? `data-exp="${l.group_id}" aria-expanded="false"` : "disabled"} class="flex w-full items-center gap-2.5 px-3 py-2.5 text-left ${can ? "hover:bg-slate-50 dark:hover:bg-white/5" : "cursor-default"}">
                       <span data-chev class="shrink-0 text-slate-400 transition-transform ${can ? "" : "invisible"}">${icon("chevron-right", "size-4")}</span>
                       ${icon("briefcase-business", "size-4 shrink-0 text-brand-600")}
-                      <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(l.g.name)}</span><span class="block text-xs text-slate-500">${esc(tc("members", { count: people(l.group_id) }))}${c.has_locations ? " · " + esc(ls.length === 1 ? tc("oneLocation") : ls.length ? tc("locationCount", { count: ls.length }) : tc("noLocationYet")) : ""}</span></span>
+                      <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">${esc(l.g.name)}</span><span class="block text-xs text-slate-500">${esc(tc("members", { count: people(l.group_id) }))}${c.has_locations ? " · " + esc(ls.length === 1 ? tc("oneLocation") : ls.length ? tc("locationCount", { count: ls.length }) : tc("noLocationYet")) : c.location_id ? " · " + esc(tc("opisproLocationId")) + " " + esc(c.location_id) : ""}</span></span>
                       <span class="text-sm"><span class="text-xs text-slate-500">${esc(tc("area"))} </span><span class="font-medium">${area(l)}</span></span>
                     </button>
                     ${
@@ -1685,7 +1685,7 @@
          Location ID / 名称的输入框不放范例字
        全部先记在画面上，按 Save 一次写入 */
     function companyDialog(c, presetGroupId) {
-      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", has_locations: false, billing_address: "", phone: "", fax: "" };
+      const v = c || { code: "", name: "", short_name: "", registration_no: "", description: "", opispro_id: "", location_id: "", has_locations: false, billing_address: "", phone: "", fax: "" };
       const mine = c ? linksOf(c.id) : [];
       const link = (gid) => mine.find((l) => l.group_id === gid);
       const bizSel = new Set(c ? mine.map((l) => l.group_id) : presetGroupId ? [presetGroupId] : []); // 这家公司在哪些 Business（按 Save 才存）
@@ -1752,6 +1752,11 @@
           <div data-pane="biz" class="hidden min-h-[22rem] space-y-2">
             <div class="flex flex-wrap items-center gap-2">
               <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
+            </div>
+            <div data-single-loc class="${v.has_locations ? "hidden" : ""} flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+              <span class="text-sm font-medium">${esc(tc("opisproLocationId"))}</span>
+              <input name="location_id" maxlength="40" value="${esc(v.location_id || "")}" aria-label="${esc(tc("opisproLocationId"))}" class="${cls.input} h-8 w-44 font-mono">
+              <span class="text-xs text-slate-500">${esc(tc("singleLocationHint"))}</span>
             </div>
             <div class="space-y-2">${groups.map(bizRow).join("")}</div>
             <p data-biz-none class="${bizSel.size ? "hidden" : ""} rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700">${esc(tc("noBusinessYet"))}</p>
@@ -1899,6 +1904,7 @@
       // 勾了「有多个 Location」：每个 Business 前面出现箭头；还没有 Location 的 Business 先点开，方便加
       m.el.addEventListener("change", (e) => {
         if (e.target.name === "has_locations") {
+          $("[data-single-loc]", m.el).classList.toggle("hidden", e.target.checked);
           if (e.target.checked) bizSel.forEach((gid) => !$(`[data-loc-biz="${gid}"] [data-loc-row]`, m.el) && openLoc.add(gid));
           syncLoc();
         }
@@ -1966,12 +1972,20 @@
           registration_no: f.registration_no.value.trim() || null,
           description: f.description.value.trim() || null,
           opispro_id: f.opispro_id.value.trim() || null,
+          location_id: hasLoc ? null : f.location_id.value.trim() || null, // the company itself is its one location
           has_locations: hasLoc,
           billing_address: f.billing_address.value.trim() || null,
           phone: f.phone.value.trim() || null,
           fax: f.fax.value.trim() || null,
         };
-        const saved = c ? await sb.from("gw_companies").update(row).eq("id", c.id).select().single() : await sb.from("gw_companies").insert({ ...row, sort_order: companies.length }).select().single();
+        const save = (r) => (c ? sb.from("gw_companies").update(r).eq("id", c.id).select().single() : sb.from("gw_companies").insert({ ...r, sort_order: companies.length }).select().single());
+        let saved = await save(row);
+        // 资料库还没加 location_id 这一栏：先不存（提示要跑 SQL）
+        if (saved.error && ["42703", "PGRST204"].includes(saved.error.code) && /location_id/.test(saved.error.message || "")) {
+          const { location_id: _x, ...rest } = row;
+          saved = await save(rest);
+          if (!saved.error && row.location_id) toast(tc("locationIdNeedsDb"));
+        }
         if (saved.error) return fail(saved.error);
         const id = saved.data.id;
         // Business 连结 + 面积：加进来的新增 / 更新，拿掉的删除（拿掉前先确认有没有人放在里面）

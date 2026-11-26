@@ -48,6 +48,12 @@ Deno.serve(withCors(async (req) => {
   const companies = companies1.error && /opispro_id|has_locations/.test(companies1.error.message ?? "")
     ? await supabase.from("gw_companies").select("id, code, name, short_name, registration_no, description, is_active, sort_order").order("sort_order").order("name")
     : companies1;
+  // Location ID of a company without multiple locations (20261209100000; empty before it is run)
+  const coLoc = await supabase.from("gw_companies").select("id, location_id");
+  if (!coLoc.error && companies.data) {
+    const byId = new Map((coLoc.data ?? []).map((r: { id: string; location_id: string | null }) => [r.id, r.location_id]));
+    for (const c of companies.data as Record<string, unknown>[]) c.location_id = byId.get(c.id as string) ?? null;
+  }
   // Company 底下的 Estate（20261121110000 还没跑时就是空的）
   const estates = await supabase.from("gw_company_estates").select("id, company_id, name, short_name, area, area_unit, sort_order, is_active").order("sort_order").order("name");
   const failed = [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles, memberCompanies].find((r) => r.error);

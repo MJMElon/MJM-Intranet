@@ -3314,7 +3314,7 @@ window.GWHome = (function () {
         later();
         if (keep) {
           const el = cellEl(keep[0], keep[1]);
-          if (el) el.focus();
+          if (el) el.focus({ preventScroll: true });
         }
       }
       function undo() {
@@ -3550,7 +3550,7 @@ window.GWHome = (function () {
         later();
         if (keep) {
           const el = cellEl(keep[0], keep[1]);
-          if (el) el.focus();
+          if (el) el.focus({ preventScroll: true });
         }
       }
       // ---- 框线
@@ -3600,7 +3600,7 @@ window.GWHome = (function () {
         later();
         if (keep) {
           const el = cellEl(keep[0], keep[1]);
-          if (el) el.focus();
+          if (el) el.focus({ preventScroll: true });
         }
       }
       // 选项的小图（像 Google Sheets）：淡色格子，深色 = 会画的线
@@ -3727,6 +3727,12 @@ window.GWHome = (function () {
             <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
         }).join("");
         const tableW = 44 + Array.from({ length: showC }, (_, c) => colW(c)).reduce((a, b) => a + b, 0);
+        // 重画前记住卷到哪里（表格本身 + 外面会卷的框），画完放回去：加框线 / 底色等不会跳回第一列
+        const oldSh = $("[data-sheet]", host);
+        const keepSh = oldSh ? [oldSh.scrollTop, oldSh.scrollLeft] : null;
+        const outer = [];
+        for (let el = host.parentElement; el; el = el.parentElement) if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) outer.push([el, el.scrollTop, el.scrollLeft]);
+        const keepWin = [scrollX, scrollY];
         const zb = (attr, ic, label, dis) => `<button type="button" ${attr} ${dis ? "disabled" : ""} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
         host.innerHTML = `
           <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -3750,6 +3756,12 @@ window.GWHome = (function () {
           </div>
           ${canEdit ? `<button type="button" data-add-rows title="${esc(t("home.sheetAddRows"))}" aria-label="${esc(t("home.sheetAddRows"))}" class="mt-2 flex h-8 w-[calc(100%-2.5rem)] items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
           </div>`;
+        if (keepSh) {
+          const sh = $("[data-sheet]", host);
+          if (sh) ((sh.scrollTop = keepSh[0]), (sh.scrollLeft = keepSh[1]));
+        }
+        outer.forEach(([el, t0, l0]) => ((el.scrollTop = t0), (el.scrollLeft = l0)));
+        if (scrollX !== keepWin[0] || scrollY !== keepWin[1]) scrollTo(keepWin[0], keepWin[1]);
         refreshIcons();
         paintMarks();
         paintTools();

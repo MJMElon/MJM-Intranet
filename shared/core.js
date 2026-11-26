@@ -60,6 +60,17 @@ window.GW = (function () {
 
   // ---------------------------------------------------------------- 登录状态
   async function loadProfile() {
+    // ?gw_logout=1: a module (e.g. Plantation Operation) asked to sign out of the Intranet too
+    try {
+      const u = new URL(location.href);
+      if (u.searchParams.get("gw_logout")) {
+        u.searchParams.delete("gw_logout");
+        history.replaceState(null, "", u.pathname + u.search + u.hash);
+        await sb.auth.signOut();
+        go("login.html");
+        return { session: null, profile: null };
+      }
+    } catch (e) { /* ignore */ }
     const { data } = await sb.auth.getSession();
     const session = data.session;
     if (!session) return { session: null, profile: null };

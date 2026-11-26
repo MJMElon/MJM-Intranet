@@ -651,6 +651,7 @@ window.GW_LANG["en"] = {
       "locationName": "Location name",
       "locationShortName": "Short name",
       "singleLocationHint": "The company itself is its one location",
+      "locationIdShort": "Location ID",
       "locationIdNeedsDb": "Saved, but the company Location ID needs the database update first (run 20261209100000_gw_company_location_id.sql).",
       "locationShortNeedsDb": "Saved, but location short names need the database update first (run 20261208100000_gw_company_location_short_name.sql).",
       "locationDuplicate": "That Location ID or name already exists for this company.",

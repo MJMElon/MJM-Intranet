@@ -1715,6 +1715,7 @@
               <span data-loc-count class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-white/10 dark:text-slate-300"></span>
             </button>
             <span data-area-sum="${g.id}" class="hidden text-[11px] font-medium text-emerald-700 dark:text-emerald-300">${esc(tc("sumOfLocations"))}</span>
+            <span data-single-loc class="${v.has_locations ? "hidden" : ""} flex shrink-0 items-center gap-1"><span class="text-xs text-slate-500">${esc(tc("locationIdShort"))}</span><span class="w-24 shrink-0"><input data-co-loc maxlength="40" value="${esc(v.location_id || "")}" aria-label="${esc(tc("opisproLocationId"))}" title="${esc(tc("opisproLocationId"))}" class="${cls.input} h-8 px-2 font-mono text-xs"></span></span>
             <span class="text-xs text-slate-500">${esc(tc("area"))}</span>
             <span class="w-28 shrink-0"><input data-area="${g.id}" type="number" min="0" step="0.01" placeholder="0" aria-label="${esc(g.name + " " + tc("area"))}" value="${l ? numVal(l.area) : ""}" class="${cls.input} h-8"></span>${ha}
             <input data-unit="${g.id}" type="hidden" value="${esc(l ? l.area_unit || "ha" : "ha")}">
@@ -1752,11 +1753,6 @@
           <div data-pane="biz" class="hidden min-h-[22rem] space-y-2">
             <div class="flex flex-wrap items-center gap-2">
               <label class="flex cursor-pointer items-center gap-2 text-sm font-medium"><input type="checkbox" name="has_locations" ${v.has_locations ? "checked" : ""} class="size-4 accent-slate-900 dark:accent-white">${esc(tc("hasLocations"))}</label>
-            </div>
-            <div data-single-loc class="${v.has_locations ? "hidden" : ""} flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
-              <span class="text-sm font-medium">${esc(tc("opisproLocationId"))}</span>
-              <input name="location_id" maxlength="40" value="${esc(v.location_id || "")}" aria-label="${esc(tc("opisproLocationId"))}" class="${cls.input} h-8 w-44 font-mono">
-              <span class="text-xs text-slate-500">${esc(tc("singleLocationHint"))}</span>
             </div>
             <div class="space-y-2">${groups.map(bizRow).join("")}</div>
             <p data-biz-none class="${bizSel.size ? "hidden" : ""} rounded-xl border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700">${esc(tc("noBusinessYet"))}</p>
@@ -1841,6 +1837,7 @@
       };
       syncLoc(); // only after it is defined (called earlier it threw, and Cancel / Save never got wired)
       m.el.addEventListener("input", (e) => e.target.matches("[data-loc-area]") && syncAreas());
+      m.el.addEventListener("input", (e) => { if (e.target.matches("[data-co-loc]")) $$("[data-co-loc]", m.el).forEach((x) => { if (x !== e.target) x.value = e.target.value; }); });
       // Business 加入 / 拿掉：那一行出现 / 收起
       const syncBiz = () => {
         $("[data-biz-none]", m.el).classList.toggle("hidden", bizSel.size > 0);
@@ -1904,7 +1901,7 @@
       // 勾了「有多个 Location」：每个 Business 前面出现箭头；还没有 Location 的 Business 先点开，方便加
       m.el.addEventListener("change", (e) => {
         if (e.target.name === "has_locations") {
-          $("[data-single-loc]", m.el).classList.toggle("hidden", e.target.checked);
+          $$("[data-single-loc]", m.el).forEach((x) => x.classList.toggle("hidden", e.target.checked));
           if (e.target.checked) bizSel.forEach((gid) => !$(`[data-loc-biz="${gid}"] [data-loc-row]`, m.el) && openLoc.add(gid));
           syncLoc();
         }
@@ -1972,7 +1969,7 @@
           registration_no: f.registration_no.value.trim() || null,
           description: f.description.value.trim() || null,
           opispro_id: f.opispro_id.value.trim() || null,
-          location_id: hasLoc ? null : f.location_id.value.trim() || null, // the company itself is its one location
+          location_id: hasLoc ? null : ($$("[data-co-loc]", m.el).map((x) => x.value.trim()).find(Boolean) || null), // the company itself is its one location
           has_locations: hasLoc,
           billing_address: f.billing_address.value.trim() || null,
           phone: f.phone.value.trim() || null,

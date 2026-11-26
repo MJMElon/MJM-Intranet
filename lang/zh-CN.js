@@ -244,6 +244,7 @@ window.GW_LANG["zh-CN"] = {
     "sheetFill": "底色",
     "sheetFillNone": "不要底色",
     "sheetBorders": "框线",
+    "sheetGridlines": "显示 / 隐藏格线",
     "sheetBorderColor": "框线颜色",
     "sheetBorderStyle": "框线样式",
     "sheetBorder_all": "全部框线",

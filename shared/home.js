@@ -3221,6 +3221,7 @@ window.GWHome = (function () {
       if (r0.w && typeof r0.w === "object") for (const [k, v] of Object.entries(r0.w)) if (/^\d{1,2}$/.test(k)) w[k] = num(v, 40, 600, 140);
       if (r0.h && typeof r0.h === "object") for (const [k, v] of Object.entries(r0.h)) if (/^\d{1,3}$/.test(k)) h[k] = num(v, 24, 240, 32);
       const DEF_W = 140, DEF_H = 32; // 预设栏宽 / 列高
+      let grid = r0.grid !== false; // 格线：显示 / 不显示（整页，存在这一页）
       const colW = (c) => w[c] || DEF_W;
       const rowH = (r) => h[r] || DEF_H;
       const colName = (c) => {
@@ -3270,7 +3271,7 @@ window.GWHome = (function () {
       async function save() {
         clearTimeout(timer);
         timer = null;
-        const list = rawPages(f).map((p) => (p.id === pageId ? { ...p, rows, cols, cells: toObj(cells), fmt: Object.fromEntries(fmt), w, h } : p));
+        const list = rawPages(f).map((p) => (p.id === pageId ? { ...p, rows, cols, cells: toObj(cells), fmt: Object.fromEntries(fmt), w, h, grid } : p));
         status(t("home.mapUnsaved"));
         const ok = await saveFolderCanvas(f, { pages: list });
         status(ok ? t("home.mapSaved") : "");
@@ -3285,7 +3286,7 @@ window.GWHome = (function () {
       // ---- 复原 / 重做：每次要改之前先记一份（同一格连续打字只记一次）
       const hist = [], fut = [];
       let typingKey = null;
-      const snap = () => ({ ver, rows, cols, cells: new Map(cells), fmt: new Map([...fmt].map(([k, v]) => [k, { ...v }])), w: { ...w }, h: { ...h } });
+      const snap = () => ({ ver, rows, cols, cells: new Map(cells), fmt: new Map([...fmt].map(([k, v]) => [k, { ...v }])), w: { ...w }, h: { ...h }, grid });
       function remember() {
         if (hist.length && hist[hist.length - 1].ver === ver) return; // 上一份之后还没改过：不用再记
         hist.push(snap());
@@ -3300,6 +3301,7 @@ window.GWHome = (function () {
         fmt = new Map([...x.fmt].map(([k, v]) => [k, { ...v }]));
         w = { ...x.w };
         h = { ...x.h };
+        grid = x.grid !== false;
         typingKey = null;
         const keep = focus && !range ? focus.slice() : null;
         render();
@@ -3462,6 +3464,7 @@ window.GWHome = (function () {
           ${tb('data-fmt="b"', "bold", t("home.sheetBold"))}
           ${tb('data-fill data-pop-anchor', "paint-bucket", t("home.sheetFill"))}
           ${tb('data-borders data-pop-anchor', "grid-2x2", t("home.sheetBorders"))}
+          ${tb("data-gridlines", "grid-3x3", t("home.sheetGridlines"))}
           ${sep}
           ${tb('data-fmt="a:l"', "align-left", t("home.sheetAlignLeft"))}
           ${tb('data-fmt="a:c"', "align-center", t("home.sheetAlignCenter"))}
@@ -3489,6 +3492,8 @@ window.GWHome = (function () {
         const bar = $("[data-fmt-bar]", host);
         if (!bar) return;
         paintUndo();
+        const gb = $("[data-gridlines]", bar);
+        if (gb) gb.setAttribute("aria-pressed", String(grid));
         const k = targets()[0];
         const fm = k ? fmtOf(k) : {};
         const fsBox = $("[data-fmt-size]", bar);
@@ -3656,6 +3661,7 @@ window.GWHome = (function () {
           (_, c) => `<th class="sticky top-0 z-20 border-r border-b border-slate-200 p-0 text-center text-[11px] font-semibold select-none dark:border-slate-700 ${hs(inSel("col", c))}">
             <div class="relative h-6 leading-6">${canEdit ? `<button type="button" data-col-menu="${c}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${colName(c)}</button><span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-1"} z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : colName(c)}</div></th>`,
         ).join("")}</tr>`;
+        const gl = grid ? "border-slate-200 dark:border-slate-700" : "border-transparent"; // 格线关掉：只剩自己设的框线
         const body = Array.from({ length: showR }, (_, r) => {
           const tds = Array.from({ length: showC }, (_, c) => {
             const k = r + ":" + c;
@@ -3678,8 +3684,8 @@ window.GWHome = (function () {
             const bold = inSel("col", c) || inSel("row", r) ? "bg-sky-50 dark:bg-sky-900/20" + (r === 0 ? " font-semibold" : "") : r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
             const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
-              ? `<td data-td="${k}" style="vertical-align:${va};${bs}" class="group relative border-r border-b border-slate-200 p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:border-slate-700 dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" readonly maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta};${fm.bg ? "color:#0f172a;" : ""}font-weight:${isBold ? 600 : 400}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 read-only:cursor-default read-only:caret-transparent read-only:select-none dark:text-slate-100">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
-              : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} style="vertical-align:${va};text-align:${ta};font-size:${fsz}px;font-weight:${isBold ? 600 : 400};${bs}" class="relative overflow-hidden border-r border-b border-slate-200 px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
+              ? `<td data-td="${k}" style="vertical-align:${va};${bs}" class="group relative border-r border-b ${gl} p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" readonly maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta};${fm.bg ? "color:#0f172a;" : ""}font-weight:${isBold ? 600 : 400}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 read-only:cursor-default read-only:caret-transparent read-only:select-none dark:text-slate-100">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
+              : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} style="vertical-align:${va};text-align:${ta};font-size:${fsz}px;font-weight:${isBold ? 600 : 400};${bs}" class="relative overflow-hidden border-r border-b ${gl} px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
           return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 p-0 text-center text-[11px] font-medium select-none dark:border-slate-700 ${hs(inSel("row", r))}">
             <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
@@ -4069,6 +4075,13 @@ window.GWHome = (function () {
         if ("zoomOut" in d) return setZoom(SHEET_ZOOMS[Math.max(0, SHEET_ZOOMS.indexOf(zoom) - 1)]);
         if ("zoomReset" in d) return setZoom(100);
         if (d.fmt) return canEdit && applyFmt(d.fmt);
+        if (d.gridlines != null && canEdit) {
+          remember();
+          grid = !grid;
+          render();
+          later();
+          return;
+        }
         if ("fill" in d) return canEdit && fillMenu(b);
         if ("borders" in d) return canEdit && borderMenu(b);
         if ("undo" in d) return canEdit && undo();

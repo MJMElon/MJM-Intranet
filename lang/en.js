@@ -236,6 +236,8 @@ window.GW_LANG["en"] = {
     "sheetAlignMiddle": "Middle",
     "sheetAlignBottom": "Bottom",
     "sheetPickCells": "Click a cell or drag across cells first.",
+    "sheetUndo": "Undo (Ctrl+Z)",
+    "sheetRedo": "Redo (Ctrl+Y)",
     "mindMap": "Mind map",
     "mapAddBox": "Box",
     "mapAddRound": "Round",

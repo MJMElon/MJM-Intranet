@@ -236,6 +236,8 @@ window.GW_LANG["zh-CN"] = {
     "sheetAlignMiddle": "上下置中",
     "sheetAlignBottom": "靠下",
     "sheetPickCells": "请先点一格，或拖选几格。",
+    "sheetUndo": "复原（Ctrl+Z）",
+    "sheetRedo": "重做（Ctrl+Y）",
     "mindMap": "心智图",
     "mapAddBox": "方块",
     "mapAddRound": "圆角",

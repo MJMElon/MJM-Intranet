@@ -3144,7 +3144,8 @@ window.GWHome = (function () {
        按右键（或再点一次选好的）出现选单：插入几栏 / 几列（左右 / 上下）、设宽度 / 高度、删除——选几栏就一起改；
        拉线改大小时，选好的几栏 / 几列也一起变。
        上面一排格式工具：字变大 / 变小、靠左 / 置中 / 靠右、靠上 / 置中 / 靠下——用在拉选的一块格子（按住拖，或 Shift 再点），
-       或选好的整栏 / 整列，不然就是现在这一格。存在 fmt { "列:栏": { s: 字大小, a: "l"|"c"|"r", v: "t"|"m"|"b" } }。
+       或选好的整栏 / 整列，不然就是现在这一格。
+       复原 / 重做：Ctrl+Z（Mac：⌘Z）复原，Ctrl+Y 或 Ctrl+Shift+Z 重做；工具列也有两个钮。打字、贴上、格式、大小、加 / 删栏列都可以复原（留言不算）。存在 fmt { "列:栏": { s: 字大小, a: "l"|"c"|"r", v: "t"|"m"|"b" } }。
        放大 / 缩小：缩小时画面能放更多格，空的格子自动补满（不用自己加）。
        留言：看得到这个文件夹的人都可以对一格留言（谁、内容、日期时间），存在 gw_folder_cell_comments（要先跑 20261206 SQL）。
        看的人：Email、网址可以直接点。打字停一下就自动存（整个 canvas 一起存，单页最多约 300KB）。 */
@@ -3235,11 +3236,55 @@ window.GWHome = (function () {
         const ok = await saveFolderCanvas(f, { pages: list });
         status(ok ? t("home.mapSaved") : "");
       }
+      let ver = 0; // 每改一次就加一（复原纪录用来分辨「有没有改过」）
       const later = () => {
+        ver++;
         status(t("home.mapUnsaved"));
         clearTimeout(timer);
         timer = setTimeout(save, 700);
       };
+      // ---- 复原 / 重做：每次要改之前先记一份（同一格连续打字只记一次）
+      const hist = [], fut = [];
+      let typingKey = null;
+      const snap = () => ({ ver, rows, cols, cells: new Map(cells), fmt: new Map([...fmt].map(([k, v]) => [k, { ...v }])), w: { ...w }, h: { ...h } });
+      function remember() {
+        if (hist.length && hist[hist.length - 1].ver === ver) return; // 上一份之后还没改过：不用再记
+        hist.push(snap());
+        if (hist.length > 100) hist.shift();
+        fut.length = 0;
+        paintUndo();
+      }
+      function restore(x) {
+        rows = x.rows;
+        cols = x.cols;
+        cells = new Map(x.cells);
+        fmt = new Map([...x.fmt].map(([k, v]) => [k, { ...v }]));
+        w = { ...x.w };
+        h = { ...x.h };
+        typingKey = null;
+        const keep = focus && !range ? focus.slice() : null;
+        render();
+        later();
+        if (keep) {
+          const el = cellEl(keep[0], keep[1]);
+          if (el) el.focus();
+        }
+      }
+      function undo() {
+        if (!hist.length) return;
+        fut.push(snap());
+        restore(hist.pop());
+      }
+      function redo() {
+        if (!fut.length) return;
+        hist.push(snap());
+        restore(fut.pop());
+      }
+      function paintUndo() {
+        const u = $("[data-undo]", host), rd = $("[data-redo]", host);
+        if (u) u.disabled = !hist.length;
+        if (rd) rd.disabled = !fut.length;
+      }
 
       // ---- 留言
       let notes = []; // { id, cell, user_id, author_name, body, created_at }
@@ -3365,9 +3410,12 @@ window.GWHome = (function () {
       };
       // 格式工具列：字变小 / 大小 / 字变大 | 靠左 置中 靠右 | 靠上 置中 靠下
       function toolsHtml() {
-        const tb = (attr, ic, label) => `<button type="button" ${attr} title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="false" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 aria-pressed:bg-slate-900 aria-pressed:text-white dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900">${icon(ic, "size-4")}</button>`;
+        const tb = (attr, ic, label) => `<button type="button" ${attr} title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="false" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent aria-pressed:bg-slate-900 aria-pressed:text-white dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900">${icon(ic, "size-4")}</button>`;
         const sep = `<span class="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700"></span>`;
         return `<div data-fmt-bar class="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white px-1 py-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          ${tb("data-undo", "undo-2", t("home.sheetUndo"))}
+          ${tb("data-redo", "redo-2", t("home.sheetRedo"))}
+          ${sep}
           ${tb('data-fmt="smaller"', "a-arrow-down", t("home.sheetFontSmaller"))}
           <span data-fmt-size title="${esc(t("home.sheetFontSize"))}" class="w-7 text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">${DEF_FS}</span>
           ${tb('data-fmt="bigger"', "a-arrow-up", t("home.sheetFontBigger"))}
@@ -3397,6 +3445,7 @@ window.GWHome = (function () {
       function paintTools() {
         const bar = $("[data-fmt-bar]", host);
         if (!bar) return;
+        paintUndo();
         const k = targets()[0];
         const fm = k ? fmtOf(k) : {};
         $("[data-fmt-size]", bar).textContent = fm.s || DEF_FS;
@@ -3409,6 +3458,7 @@ window.GWHome = (function () {
       function applyFmt(what) {
         const list = targets();
         if (!list.length) return toast(t("home.sheetPickCells"));
+        remember();
         const [key, val] = what.split(":");
         list.forEach((k) => {
           const x = { ...fmtOf(k) };
@@ -3509,6 +3559,7 @@ window.GWHome = (function () {
       // 「+」：直接加一栏 / 一列（加在最后面，卷到看得到）
       function addOne(kind) {
         if (kind === "rows" ? showR >= MAXR : showC >= MAXC) return toast(t("home.sheetMax"));
+        remember();
         if (kind === "rows") rows = showR + 1;
         else cols = showC + 1;
         render();
@@ -3607,6 +3658,7 @@ window.GWHome = (function () {
             const total = isRow ? Math.max(rows, at) : Math.max(cols, at);
             const k = Math.min(want, (isRow ? MAXR : MAXC) - total);
             if (k <= 0) return toast(t("home.sheetMax"));
+            remember();
             moveLines(kind, at, k);
             if (isRow) rows = total + k;
             else cols = total + k;
@@ -3616,6 +3668,7 @@ window.GWHome = (function () {
             return later();
           }
           if ("doDel" in bt.dataset) {
+            remember();
             const total = isRow ? rows : cols;
             if (a < total) {
               const gone = Math.min(b, total - 1) - a + 1;
@@ -3633,6 +3686,7 @@ window.GWHome = (function () {
         $("[data-size-form]", el).addEventListener("submit", (e) => {
           e.preventDefault();
           const px = isRow ? num($("[data-size-px]", el).value, 24, 240, 32) : num($("[data-size-px]", el).value, 40, 600, 140);
+          remember();
           for (let i = a; i <= b; i++) (isRow ? h : w)[i] = px;
           closePop();
           render();
@@ -3640,6 +3694,7 @@ window.GWHome = (function () {
         });
         // 回到预设大小：拿掉自订的宽度 / 高度
         $("[data-size-default]", el).onclick = () => {
+          remember();
           for (let i = a; i <= b; i++) delete (isRow ? h : w)[i];
           closePop();
           render();
@@ -3666,6 +3721,7 @@ window.GWHome = (function () {
         const kind = cr ? "col" : "row";
         const i = Number(cr ? cr.dataset.colResize : rr.dataset.rowResize);
         const list = inSel(kind, i) ? Array.from({ length: sel.b - sel.a + 1 }, (_, x) => sel.a + x) : [i];
+        remember();
         list.forEach((x) => delete (kind === "col" ? w : h)[x]);
         render();
         later();
@@ -3691,6 +3747,8 @@ window.GWHome = (function () {
         if ("zoomOut" in d) return setZoom(SHEET_ZOOMS[Math.max(0, SHEET_ZOOMS.indexOf(zoom) - 1)]);
         if ("zoomReset" in d) return setZoom(100);
         if (d.fmt) return canEdit && applyFmt(d.fmt);
+        if ("undo" in d) return canEdit && undo();
+        if ("redo" in d) return canEdit && redo();
         if (d.cmt) return openNotes(d.cmt, b.closest("td") || b);
         if (!canEdit) return;
         if ("addRows" in d) return addOne("rows");
@@ -3703,6 +3761,7 @@ window.GWHome = (function () {
           const k = e.target.dataset && e.target.dataset.cell;
           if (!k) return;
           const v = e.target.value.slice(0, 1000);
+          if (typingKey !== k) ((typingKey = null), remember(), (typingKey = k)); // 同一格连续打字 = 一步
           v ? cells.set(k, v) : cells.delete(k);
           const [r, c] = k.split(":").map(Number);
           if (v) grow(r, c);
@@ -3711,6 +3770,7 @@ window.GWHome = (function () {
         host.addEventListener("focusin", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
           if (!k) return;
+          if (typingKey !== k) typingKey = null;
           focus = k.split(":").map(Number);
           if (range && !dragging && !inRange(focus[0], focus[1])) ((range = null), paintRange());
           paintTools();
@@ -3738,6 +3798,8 @@ window.GWHome = (function () {
           const text = (e.clipboardData || window.clipboardData).getData("text");
           if (!/[\t\n]/.test(text)) return;
           e.preventDefault();
+          remember();
+          typingKey = null;
           const [r0c, c0c] = k.split(":").map(Number);
           const lines = text.replace(/\r/g, "").replace(/\n+$/, "").split("\n").slice(0, MAXR - r0c);
           lines.forEach((line, i) =>
@@ -3806,6 +3868,7 @@ window.GWHome = (function () {
           const rr = e.target.closest("[data-row-resize]");
           if (!cr && !rr) return;
           e.preventDefault();
+          remember();
           const startX = e.clientX, startY = e.clientY;
           const table = $("table", host);
           if (cr) {
@@ -3855,6 +3918,22 @@ window.GWHome = (function () {
         }, 200);
       };
       addEventListener("resize", onResize);
+      const onUndoKey = (e) => {
+        if (!document.body.contains(host)) return document.removeEventListener("keydown", onUndoKey, true);
+        if (!canEdit || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+        const key = e.key.toLowerCase();
+        if (key !== "z" && key !== "y") return;
+        if (popEl || document.querySelector(".gw-modal")) return;
+        const ae = document.activeElement;
+        const inSheet = ae && host.contains(ae);
+        const idle = !ae || ae === document.body || (!ae.matches("input, textarea, select, [contenteditable=true]") && ae.closest("[data-win]"));
+        if (!inSheet && !idle) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (key === "y" || e.shiftKey) redo();
+        else undo();
+      };
+      document.addEventListener("keydown", onUndoKey, true);
       render();
       loadNotes();
     }

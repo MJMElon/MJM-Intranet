@@ -2417,7 +2417,7 @@ window.GWHome = (function () {
         </div>`
         : "";
       // My Home 只在有东西、或从「Add widget」加了才出现（编辑时不再突然冒出来，把区块挤开）
-      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || !!sheet || homeOn() || widgets.some((w) => isFloating(w) && w.config.pos.box === "home")) : "";
+      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || homeOn() || widgets.some((w) => isFloating(w) && w.config.pos.box === "home")) : "";
       root.innerHTML = `
         ${uninitialized ? `<div class="mb-4 rounded-2xl bg-white/70 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">${esc(t("home.previewUninitialized"))}</div>` : ""}
         ${sectionsOn ? stackHtml : boardHtml()}

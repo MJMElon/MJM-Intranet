@@ -1614,9 +1614,9 @@ window.GWHome = (function () {
       return `<div data-fw="${w.id}" data-key="fw:${w.id}" class="gw-fw relative ${editing ? "touch-none" : ""}" style="${cellCss(p)};padding:${inset}px">${fwInner(w, { w: p.w, h: p.h }, inset)}</div>`;
     }
     // 页面上的小工具（位置之后由 settlePage 摆好）
-    function pageWidget(w, g) {
+    function pageWidget(w, g, T) {
       const p = w.config.pos;
-      return `<div data-fw="${w.id}" class="gw-fw absolute p-2 ${editing ? "touch-none" : ""}" style="left:${p.x * g.hw}px;top:${p.y * g.rh}px;width:${p.w * g.cw}px;height:${p.h * g.rh}px">${fwInner(w, p, 8)}</div>`;
+      return `<div data-fw="${w.id}" class="gw-fw absolute p-2 ${editing ? "touch-none" : ""}" style="left:${p.x * g.hw}px;top:${(p.y + (T || 0)) * g.rh}px;width:${p.w * g.cw}px;height:${p.h * g.rh}px">${fwInner(w, p, 8)}</div>`;
     }
 
     // ---- 页面上的摆放（单位：横 = 半格，竖 = 行）
@@ -1624,6 +1624,18 @@ window.GWHome = (function () {
     const wRect = (p) => ({ x: p.x, y: p.y, w: p.w * 2, h: p.h });
     const shown = new Map(); // 页面小工具现在显示的位置（被区块盖到时会暂时挪开）
     const shownOf = (w) => shown.get(w.id) || w.config.pos;
+    // 放在所有区块上面的小工具：y 是负数（区块从第 0 行开始）；区块整排往下推这么多行
+    const topRowsOf = (list) => Math.max(0, ...list.map((p) => -p.y));
+    const topRows = () => topRowsOf(pageWidgets().map(shownOf));
+    // 上面那排小工具跟区块之间不要留空行
+    function compactTop() {
+      const negs = pageWidgets().filter((w) => shownOf(w).y < 0);
+      if (!negs.length) return [];
+      const gap = -Math.max(...negs.map((w) => shownOf(w).y + shownOf(w).h));
+      if (gap <= 0) return [];
+      negs.forEach((w) => shown.set(w.id, { ...shownOf(w), y: shownOf(w).y + gap }));
+      return negs.map((w) => w.id);
+    }
     // 每个区块的高度补到「整数行」（页面格子 rh 的倍数）：区块底边才会和旁边的小工具底边对齐、下一个区块也从格线开始
     function alignBoxes() {
       const page = $("#gw-page", root);
@@ -1644,7 +1656,7 @@ window.GWHome = (function () {
       if (!page) return [];
       alignBoxes();
       const g = pageGeo();
-      const pr = page.getBoundingClientRect();
+      const pr = ($("#gw-stack", page) || page).getBoundingClientRect();
       return $$("[data-sec-wrap]", page).map((el) => {
         const r = el.getBoundingClientRect();
         return { x: Math.round((r.left - pr.left) / g.hw), y: Math.round((r.top - pr.top) / g.rh), w: Math.max(1, Math.round(r.width / g.hw)), h: Math.max(1, Math.ceil(r.height / g.rh - 0.05)) };
@@ -1660,7 +1672,8 @@ window.GWHome = (function () {
     // 离 (x, y) 最近的空位
     function pageNear(x, y, w, h, blocks) {
       const g = pageGeo();
-      const ok = (cx, cy) => cx >= 0 && cy >= 0 && cx + 2 * w <= g.halves && !blocks.some((b) => hit({ x: cx, y: cy, w: 2 * w, h }, b));
+      const minY = -(topRows() + h); // 最多比现在最上面再高一个小工具
+      const ok = (cx, cy) => cx >= 0 && cy >= minY && cx + 2 * w <= g.halves && !blocks.some((b) => hit({ x: cx, y: cy, w: 2 * w, h }, b));
       for (let k = 0; k <= 40; k++)
         for (let dy = -k; dy <= k; dy++)
           for (let dx = -2 * k; dx <= 2 * k; dx++) {
@@ -1718,14 +1731,17 @@ window.GWHome = (function () {
       const page = $("#gw-page", root);
       if (!page) return;
       const g = pageGeo();
+      const T = topRows();
+      const stack = $("#gw-stack", page);
+      if (stack) stack.style.marginTop = T * g.rh + "px";
       let bottom = 0;
       pageWidgets().forEach((w) => {
         const p = shownOf(w);
         bottom = Math.max(bottom, p.y + p.h);
         const el = $(`#gw-float [data-fw="${w.id}"]`, root);
-        if (el) Object.assign(el.style, { left: p.x * g.hw + "px", top: p.y * g.rh + "px", width: p.w * g.cw + "px", height: p.h * g.rh + "px" });
+        if (el) Object.assign(el.style, { left: p.x * g.hw + "px", top: (p.y + T) * g.rh + "px", width: p.w * g.cw + "px", height: p.h * g.rh + "px" });
       });
-      page.style.minHeight = bottom * g.rh + "px";
+      page.style.minHeight = (bottom + T) * g.rh + "px";
     }
     // 显示的位置存起来（只存有变的）
     function commitShown(ids) {
@@ -1773,13 +1789,15 @@ window.GWHome = (function () {
       if (!list.length) return toast(t("home.nothingToTidy"));
       const boxes = boxRectsPage();
       const placed = [];
+      const T = topRows();
       list.forEach((w) => {
         const p = shownOf(w);
-        const s = pageFree(p.w, p.h, [...boxes, ...placed], 0);
+        const s = pageFree(p.w, p.h, [...boxes, ...placed], p.y < 0 ? -T : 0);
         shown.set(w.id, { ...p, ...s });
         placed.push(wRect(shown.get(w.id)));
       });
       alignBand(null, "all");
+      compactTop();
       applyShown();
       const results = await Promise.all(commitShown());
       if (results.some((r) => r && r.error)) toast(t("home.saveFailed"));
@@ -1794,16 +1812,17 @@ window.GWHome = (function () {
     // ---- 拖小工具（编辑时）：放在页面上 = 最近的空位、跟同一排对齐；放在区块上 = 那个区块里最近的空格
     async function dropOnPage(w, r) {
       const g = pageGeo();
-      const pr = $("#gw-page", root).getBoundingClientRect();
       const pw = Math.max(1, Math.min(w.config.pos.w, Math.floor(g.halves / 2)));
       const ph = w.config.pos.h;
       w.config = { ...w.config, pos: { ...w.config.pos, box: null, w: pw, h: ph, x: 0, y: 9999 } }; // 先移出原来的地方
       draw();
+      // 从第一个区块的上缘算第几行；放在区块上面（Notice Board 那边）= 负数，区块会往下推
+      const pr = $("#gw-stack", root).getBoundingClientRect();
       const x = Math.max(0, Math.min(g.halves - 2 * pw, Math.round((r.left - pr.left) / g.hw)));
-      const y = Math.max(0, Math.round((r.top - pr.top) / g.rh));
+      const y = Math.max(-(topRows() + ph), Math.round((r.top - pr.top) / g.rh));
       const spot = pageNear(x, y, pw, ph, blocksExcept(w.id));
       shown.set(w.id, { x: spot.x, y: spot.y, w: pw, h: ph });
-      const changed = alignBand(w.id, "drop");
+      const changed = [...alignBand(w.id, "drop"), ...compactTop()];
       applyShown();
       await Promise.all(commitShown([w.id, ...changed]));
     }
@@ -1869,7 +1888,7 @@ window.GWHome = (function () {
       let spot = { x: Math.min(cur.x, g.halves - 2 * W), y: cur.y };
       if (blocks.some((b) => hit({ x: spot.x, y: spot.y, w: 2 * W, h: nh }, b))) spot = pageNear(spot.x, spot.y, W, nh, blocks);
       shown.set(w.id, { x: spot.x, y: spot.y, w: W, h: nh });
-      const changed = alignBand(w.id, "resize");
+      const changed = [...alignBand(w.id, "resize"), ...compactTop()];
       const saves = commitShown([w.id, ...changed]); // 先存（会改记忆中的位置），再重画
       draw();
       await Promise.all(saves);
@@ -2336,6 +2355,7 @@ window.GWHome = (function () {
     // 区块版整页：Notice Board、区块（Business 和 My Home，顺序可以拖拉调整）、页面上的小工具，全部在同一个格线上
     function pageHtml(showHome) {
       const g = pageGeo();
+      const T0 = topRowsOf(pageWidgets().map((w) => w.config.pos));
       const parts = [];
       S.groups.forEach((grp) => {
         // 一般人：Business 里有 App 才出现；super admin：新开的 Business 还没有模块也显示（空的区块）
@@ -2354,8 +2374,8 @@ window.GWHome = (function () {
         ${boardHtml()}
         ${editing ? `<p class="mx-2 mb-2 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
         <div id="gw-page" class="relative mb-6">
-          <div id="gw-stack" class="flex flex-wrap items-start">${parts.map((x) => x[1]).join("")}</div>
-          <div id="gw-float" class="pointer-events-none absolute inset-0 z-10 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g)).join("")}</div>
+          <div id="gw-stack" class="flex flex-wrap items-start" style="margin-top:${T0 * g.rh}px">${parts.map((x) => x[1]).join("")}</div>
+          <div id="gw-float" class="pointer-events-none absolute inset-0 z-10 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g, T0)).join("")}</div>
         </div>
       </div>`;
     }
@@ -2393,7 +2413,8 @@ window.GWHome = (function () {
           <div data-drop-hint class="pointer-events-none hidden rounded-2xl border-2 border-dashed"></div>
         </div>`
         : "";
-      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || editing || !!sheet || homeOn()) : "";
+      // My Home 只在有东西、或从「Add widget」加了才出现（编辑时不再突然冒出来，把区块挤开）
+      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || !!sheet || homeOn() || widgets.some((w) => isFloating(w) && w.config.pos.box === "home")) : "";
       root.innerHTML = `
         ${uninitialized ? `<div class="mb-4 rounded-2xl bg-white/70 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">${esc(t("home.previewUninitialized"))}</div>` : ""}
         ${sectionsOn ? stackHtml : boardHtml()}

@@ -577,15 +577,19 @@ window.GWHome = (function () {
           // Notice Board：公告；管理员可以直接在这里发布
           const when = (d) => (d ? new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short" }).format(new Date(d)) : "");
           const until = (d) => (d ? t("widgets.postUntil", { time: new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(d)) }) : "");
-          return `<div class="${data.announcements.length ? "mb-2" : ""} flex items-center justify-between gap-2">
+          // 排好时间、还没到的公告：只有能发公告的人看得到（虚线框、写「Scheduled · 时间」），放在最后面
+          const schedIds = new Set((data.scheduled || []).map((a) => a.id));
+          const when2 = (d) => new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(d));
+          const meta = (a) => (schedIds.has(a.id) ? [t("widgets.postScheduledBadge", { time: when2(a.starts_at) }), until(a.ends_at)] : [when(a.starts_at), a.author, until(a.ends_at)]).filter(Boolean).join(" · ");
+          return `<div class="${allNotices().length ? "mb-2" : ""} flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-100">${icon("megaphone", "size-4 text-brand-600 dark:text-brand-400")}${esc(t("widgets.types.announcements"))}</div>
               ${canPost && !readOnly && !editing ? `<button type="button" data-post class="no-drag flex items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900">${icon("plus", "size-3.5")}${esc(t("widgets.post"))}</button>` : ""}
             </div>
             ${
-              data.announcements.length
-                ? `<ul class="no-drag -mr-2 space-y-2 overflow-y-auto pr-2 h-[calc(100%-2.25rem)]">${data.announcements
+              allNotices().length
+                ? `<ul class="no-drag -mr-2 space-y-2 overflow-y-auto pr-2 h-[calc(100%-2.25rem)]">${allNotices()
                     .map(
-                      (a) => `<li class="flex gap-2.5 rounded-xl px-3 py-2 text-sm ${a.level === "warning" ? "bg-amber-100/60 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-white/50 dark:bg-white/5"}">${icon(a.level === "warning" ? "triangle-alert" : "info", `mt-0.5 size-4 shrink-0 ${a.level === "warning" ? "text-amber-500" : "text-sky-500"}`)}<div class="min-w-0 flex-1"><p class="whitespace-pre-line break-words"><span class="font-bold text-slate-900 dark:text-white">${esc(noticeBiz(a))} :</span> ${esc(a.message)}</p><p class="mt-0.5 text-[11px] text-slate-400">${esc([when(a.starts_at), a.author, until(a.ends_at)].filter(Boolean).join(" · "))}</p>${reactionBar(a)}</div>${
+                      (a) => `<li class="flex gap-2.5 rounded-xl px-3 py-2 text-sm ${schedIds.has(a.id) ? "border border-dashed border-slate-300 opacity-80 dark:border-slate-600" : ""} ${a.level === "warning" ? "bg-amber-100/60 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200" : "bg-white/50 dark:bg-white/5"}">${icon(a.level === "warning" ? "triangle-alert" : "info", `mt-0.5 size-4 shrink-0 ${a.level === "warning" ? "text-amber-500" : "text-sky-500"}`)}<div class="min-w-0 flex-1"><p class="whitespace-pre-line break-words"><span class="font-bold text-slate-900 dark:text-white">${esc(noticeBiz(a))} :</span> ${esc(a.message)}</p><p class="mt-0.5 text-[11px] text-slate-400">${schedIds.has(a.id) ? icon("calendar-clock", "mr-1 inline size-3 -translate-y-px") : ""}${esc(meta(a))}</p>${schedIds.has(a.id) ? "" : reactionBar(a)}</div>${
                         !editing && (canEditNotice(a) || canDeleteNotice(a))
                           ? `<span class="flex shrink-0 items-start gap-0.5">${canEditNotice(a) ? `<button type="button" data-edit-notice="${a.id}" aria-label="${esc(t("widgets.editNotice"))}" title="${esc(t("widgets.editNotice"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-white/10">${icon("pencil", "size-3.5")}</button>` : ""}${canDeleteNotice(a) ? `<button type="button" data-del-notice="${a.id}" aria-label="${esc(t("widgets.deleteNotice"))}" title="${esc(t("widgets.deleteNotice"))}" class="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-white/10">${icon("trash-2", "size-3.5")}</button>` : ""}</span>`
                           : ""
@@ -664,11 +668,13 @@ window.GWHome = (function () {
     }
 
     // Notice Board：固定在最上面、占满整行；区块版拖拉下缘调高度（高度记在这个小工具的 config.height）
+    // 公告栏上的全部公告：现在看得到的 + 排好时间还没到的（只有能发公告的人有）
+    const allNotices = () => [...data.announcements, ...(data.scheduled || [])];
     // 没有公告：一般人不显示整个 Notice Board；能发公告的人只显示标题列 +「+ Post」（不占高度）
     function boardHtml() {
       const w = board();
       if (!w) return "";
-      const empty = !data.announcements.length;
+      const empty = !allNotices().length;
       if (empty && !(canPost && !readOnly)) return "";
       const h = Number(w.config && w.config.height);
       const sized = sectionsOn && h > 0 && !empty;
@@ -4789,63 +4795,86 @@ window.GWHome = (function () {
         ...(groups || []).filter((g) => isSuper || bizCan(g.id, "can_post_notice")).map((g) => [g.id, g.name]),
       ];
       if (!targets.length) return toast(t("widgets.postFailed"));
-      const cur = notice || { message: "", group_id: "", level: "info", ends_at: null };
-      // datetime-local 要本地时间 YYYY-MM-DDTHH:MM
+      const cur = notice || { message: "", group_id: "", level: "info", ends_at: null, starts_at: null };
+      // datetime-local 要本地时间 YYYY-MM-DDTHH:MM；时间一律 5 分钟一格
       const localInput = (d) => {
         const x = new Date(d);
         const z = (n) => String(n).padStart(2, "0");
         return `${x.getFullYear()}-${z(x.getMonth() + 1)}-${z(x.getDate())}T${z(x.getHours())}:${z(x.getMinutes())}`;
       };
+      const FIVE = 5 * 60000;
+      const floor5 = (ms) => Math.floor(ms / FIVE) * FIVE;
+      const ceil5 = (ms) => Math.ceil(ms / FIVE) * FIVE;
+      const startsInit = localInput(floor5(cur.starts_at ? new Date(cur.starts_at).getTime() : Date.now()));
+      const endsInit = cur.ends_at ? localInput(ceil5(new Date(cur.ends_at).getTime())) : "";
+      const dt = `h-9 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900`;
       const dlg = modal(
         notice ? t("widgets.editNotice") : t("widgets.postTitle"),
-        `<form class="space-y-4">
+        `<form class="space-y-3">
           <div data-err></div>
           <textarea name="message" required maxlength="500" rows="4" placeholder="${esc(t("widgets.postPlaceholder"))}" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-900">${esc(cur.message)}</textarea>
-          <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("widgets.postAudience"))}</span>
+          <label class="block space-y-1"><span class="${cls.label}">${esc(t("widgets.postAudience"))}</span>
             <select name="group_id" class="${cls.input}">${targets.map(([v, l]) => `<option value="${esc(v)}" ${v === (cur.group_id || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
           </label>
-          <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="important" ${cur.level === "warning" ? "checked" : ""} class="size-4 accent-amber-500"> ${esc(t("widgets.postImportant"))}</label>
-          <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("widgets.postEnds"))}</span>
-            <span class="flex items-center gap-2">
-              <input type="datetime-local" name="ends_at" min="${localInput(Date.now())}" value="${cur.ends_at ? localInput(cur.ends_at) : ""}" class="${cls.input}">
-              <button type="button" data-clear-ends class="${btn("ghost", "sm")} shrink-0">${esc(t("widgets.postEndsClear"))}</button>
-            </span>
-            <span class="block text-xs text-slate-500">${esc(t("widgets.postEndsHint"))}</span>
-          </label>
-          <div class="flex justify-end gap-2">
+          <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+            <p class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">${icon("calendar-clock", "size-4 text-brand-600 dark:text-brand-400")}${esc(t("widgets.postSchedule"))}</p>
+            <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+              <label for="gw-post-on" class="text-xs font-medium text-slate-500">${esc(t("widgets.postOn"))}</label>
+              <span class="flex items-center gap-1"><input id="gw-post-on" type="datetime-local" name="starts_at" step="300" ${notice ? "" : `min="${localInput(floor5(Date.now()))}"`} value="${startsInit}" required class="${dt} min-w-0 flex-1"><span class="size-9 shrink-0"></span></span>
+              <label for="gw-post-ends" class="text-xs font-medium text-slate-500">${esc(t("widgets.postEnds"))}</label>
+              <span class="flex items-center gap-1"><input id="gw-post-ends" type="datetime-local" name="ends_at" step="300" min="${localInput(ceil5(Date.now()))}" value="${endsInit}" class="${dt} min-w-0 flex-1">
+                <button type="button" data-clear-ends title="${esc(t("widgets.postEndsClear"))}" aria-label="${esc(t("widgets.postEndsClear"))}" class="flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10">${icon("x", "size-4")}</button></span>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">${esc(t("widgets.postScheduleHint"))}</p>
+          </div>
+          <div class="flex justify-end gap-2 pt-1">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(t("settings.cancel"))}</button>
             <button type="submit" class="${btn("primary")}">${esc(notice ? t("widgets.save") : t("widgets.post"))}</button>
           </div>
         </form>`,
       );
+      // 「重要」放在标题旁边
+      if (dlg.head) dlg.head.innerHTML = `<label class="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200"><input type="checkbox" name="important" ${cur.level === "warning" ? "checked" : ""} class="size-3.5 accent-amber-500">${esc(t("widgets.postImportant"))}</label>`;
+      refreshIcons();
       $("[data-cancel]", dlg.el).onclick = dlg.close;
       $("[data-clear-ends]", dlg.el).onclick = () => ($("[name=ends_at]", dlg.el).value = "");
       $("form", dlg.el).addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
         const groupId = f.group_id.value || null;
-        // 下架时间：空白 = 一直显示；要在现在之后
-        const ends = f.ends_at.value ? new Date(f.ends_at.value) : null;
-        if (ends && (isNaN(ends) || ends <= new Date())) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("widgets.postEndsPast")));
-        const fields = { message: f.message.value.trim(), level: f.important.checked ? "warning" : "info", group_id: groupId, ends_at: ends ? ends.toISOString() : null };
+        const now = Date.now();
+        const imp = dlg.head ? $("[name=important]", dlg.head) : null;
+        // 什么时候贴出来：没改就照旧（新的 = 现在）；改到以后 = 排程
+        const startsChanged = f.starts_at.value !== startsInit;
+        const starts = f.starts_at.value ? new Date(f.starts_at.value).getTime() : now;
+        // 下架时间：空白 = 一直显示；没改就照旧；要比贴出来的时间晚
+        const endsChanged = f.ends_at.value !== endsInit;
+        const ends = f.ends_at.value ? new Date(f.ends_at.value).getTime() : null;
+        if (endsChanged && ends != null && (isNaN(ends) || ends <= Math.max(now, starts))) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("widgets.postEndsPast")));
+        const fields = { message: f.message.value.trim(), level: imp && imp.checked ? "warning" : "info", group_id: groupId };
+        if (endsChanged) fields.ends_at = ends != null ? new Date(ends).toISOString() : null;
+        else if (!notice) fields.ends_at = null;
+        if (!notice ? starts > now + 60000 : startsChanged) fields.starts_at = new Date(Math.max(starts, now)).toISOString();
         const cols = "id, message, level, starts_at, ends_at, group_id, created_by";
         const { data: row, error } = notice
           ? await sb.from("gw_announcements").update(fields).eq("id", notice.id).select(cols).single()
           : await sb.from("gw_announcements").insert({ ...fields, created_by: profile.id }).select(cols).single();
         if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("widgets.postFailed")));
         dlg.close();
-        if (notice) {
-          Object.assign(notice, row);
-          draw();
-          return toast(t("widgets.saved"));
-        }
-        row.author = profile.full_name;
+        row.author = notice ? notice.author : profile.full_name;
+        const sched = new Date(row.starts_at).getTime() > Date.now();
+        const at = data.announcements.findIndex((a) => a.id === row.id);
+        data.announcements = data.announcements.filter((a) => a.id !== row.id);
+        data.scheduled = (data.scheduled || []).filter((a) => a.id !== row.id);
+        if (sched) data.scheduled = [...data.scheduled, row].sort((x, y) => new Date(x.starts_at) - new Date(y.starts_at));
         // 发给自己不在的 Business 时，自己的公告栏不会显示，只提示已发布
-        if (!groupId || (opts && opts.memberOf && opts.memberOf.includes(groupId))) {
-          data.announcements = [row, ...data.announcements];
-          draw();
+        else if (!groupId || (opts && opts.memberOf && opts.memberOf.includes(groupId))) {
+          if (at >= 0) data.announcements.splice(at, 0, row);
+          else data.announcements = [row, ...data.announcements];
         }
-        toast(t("widgets.posted"));
+        draw();
+        const fmtT = new Intl.DateTimeFormat(GW.LOCALE, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(row.starts_at));
+        toast(sched ? t("widgets.postScheduledFor", { time: fmtT }) : notice ? t("widgets.saved") : t("widgets.posted"));
       });
     }
 
@@ -4854,6 +4883,7 @@ window.GWHome = (function () {
       const { error } = await sb.from("gw_announcements").delete().eq("id", id);
       if (error) return toast(t("widgets.postFailed"));
       data.announcements = data.announcements.filter((a) => a.id !== id);
+      data.scheduled = (data.scheduled || []).filter((a) => a.id !== id);
       draw();
     }
 
@@ -5229,7 +5259,7 @@ window.GWHome = (function () {
       if ("aiClear" in d) return ((aiMsgs = []), aiSave(), draw());
       if (d.react) return toggleReaction(...d.react.split(":"));
       if (d.who) return whoReacted(...d.who.split(":"));
-      if (d.editNotice) return postNotice(data.announcements.find((a) => a.id === d.editNotice));
+      if (d.editNotice) return postNotice(allNotices().find((a) => a.id === d.editNotice));
       if (d.delNotice) return deleteNotice(d.delNotice);
       if ("fabToggle" in d) return ((fabOpen = !fabOpen), draw());
       if (d.fab) {
@@ -5370,12 +5400,31 @@ window.GWHome = (function () {
     // 公告的下架时间：首页资料没有带，另外拿；时间到了就从公告栏拿掉（不用重新整理页面）
     const expireNotices = () => {
       const now = Date.now();
-      const left = data.announcements.filter((a) => !a.ends_at || new Date(a.ends_at).getTime() > now);
-      if (left.length !== data.announcements.length) {
-        data.announcements = left;
-        draw();
+      let changed = false;
+      // 排好时间的：时间到了就贴出来（自己是那个 Business 的人才会在自己的公告栏看到）
+      const due = (data.scheduled || []).filter((a) => new Date(a.starts_at).getTime() <= now);
+      if (due.length) {
+        data.scheduled = data.scheduled.filter((a) => !due.includes(a));
+        const mine = due.filter((a) => !a.group_id || (opts && opts.memberOf && opts.memberOf.includes(a.group_id)));
+        data.announcements = [...mine.reverse(), ...data.announcements];
+        changed = true;
       }
+      const left = data.announcements.filter((a) => !a.ends_at || new Date(a.ends_at).getTime() > now);
+      if (left.length !== data.announcements.length) ((data.announcements = left), (changed = true));
+      if (changed) draw();
     };
+    if (!readOnly && canPost) {
+      sb.from("gw_announcements")
+        .select("id, message, level, starts_at, ends_at, group_id, created_by")
+        .eq("is_active", true)
+        .gt("starts_at", new Date().toISOString())
+        .order("starts_at")
+        .then(({ data: rows, error }) => {
+          if (error || !rows || !rows.length) return;
+          data.scheduled = rows.map((r) => ({ ...r, author: r.created_by === profile.id ? profile.full_name : "" }));
+          draw();
+        });
+    }
     if (!readOnly && data.announcements && data.announcements.length) {
       sb.from("gw_announcements")
         .select("id, ends_at")

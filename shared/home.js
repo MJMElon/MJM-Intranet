@@ -3043,9 +3043,9 @@ window.GWHome = (function () {
               <button type="button" data-page-ok aria-label="${esc(t("home.save"))}" title="${esc(t("home.save"))}" class="flex size-7 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900">${icon("check", "size-4")}</button>
               ${p.id !== "main" ? `<button type="button" data-page-del aria-label="${esc(t("home.pageDelete"))}" title="${esc(t("home.pageDelete"))}" class="flex size-7 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
             </span>`;
-          return `<button type="button" data-page="${esc(p.id)}" ${on && canEdit ? `title="${esc(t("home.pageRenameHint"))}"` : ""} class="inline-flex max-w-[14rem] items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
+          return `<button type="button" data-page="${esc(p.id)}" ${on && canEdit ? `title="${esc(t("home.pageRenameHint"))}"` : ""} class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
             on ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900" : "bg-white/70 text-slate-600 ring-1 ring-slate-200 hover:bg-white dark:bg-white/5 dark:text-slate-300 dark:ring-white/10"
-          }">${icon(p.type === "sheet" ? "table-2" : "layout-list", "size-4 shrink-0")}<span class="truncate">${esc(pageName(p))}</span></button>`;
+          }">${icon(p.type === "sheet" ? "table-2" : "layout-list", "size-4 shrink-0")}<span class="whitespace-nowrap">${esc(pageName(p))}</span></button>`;
         };
         bar.innerHTML = `<div class="mb-3 flex flex-wrap items-center gap-1.5 border-b border-slate-200/70 pb-3 dark:border-white/10 ${sharedIcon ? "pr-10" : ""}">
           ${pages.map(tab).join("")}
@@ -3653,6 +3653,36 @@ window.GWHome = (function () {
             }
         paintTools();
       }
+      // 看的人：点一格 → 框起来，出现「复制」（和留言）按钮
+      function viewPick(td) {
+        $$("[data-vtools]", host).forEach((x) => x.remove());
+        $$("td.gw-vsel", host).forEach((x) => x.classList.remove("gw-vsel", "ring-2", "ring-sky-500", "ring-inset"));
+        const k = td.dataset.vcell;
+        td.classList.add("gw-vsel", "ring-2", "ring-sky-500", "ring-inset");
+        const ib = "flex size-6 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700 dark:hover:text-white";
+        td.insertAdjacentHTML(
+          "beforeend",
+          `<span data-vtools class="absolute top-1/2 right-1 z-[2] flex -translate-y-1/2 gap-1">${
+            cells.get(k) ? `<button type="button" data-vcopy="${k}" title="${esc(t("home.sheetCopy"))}" aria-label="${esc(t("home.sheetCopy"))}" class="${ib}">${icon("copy", "size-3.5")}</button>` : ""
+          }${notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="${ib}">${icon("message-square-plus", "size-3.5")}</button>` : ""}</span>`,
+        );
+        refreshIcons();
+      }
+      async function viewCopy(k) {
+        const v = cells.get(k) || "";
+        try {
+          await navigator.clipboard.writeText(v);
+        } catch (e) {
+          const ta = document.createElement("textarea");
+          ta.value = v;
+          ta.style.cssText = "position:fixed;opacity:0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+        toast(t("home.sheetCopied"));
+      }
       function render() {
         measure();
         const hs = (on) => (on ? "bg-sky-200 text-sky-800 dark:bg-sky-800 dark:text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-800");
@@ -3685,7 +3715,7 @@ window.GWHome = (function () {
             const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
               ? `<td data-td="${k}" style="vertical-align:${va};${bs}" class="group relative border-r border-b ${gl} p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" readonly maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta};${fm.bg ? "color:#0f172a;" : ""}font-weight:${isBold ? 600 : 400}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 read-only:cursor-default read-only:caret-transparent read-only:select-none dark:text-slate-100">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
-              : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} style="vertical-align:${va};text-align:${ta};font-size:${fsz}px;font-weight:${isBold ? 600 : 400};${bs}" class="relative overflow-hidden border-r border-b ${gl} px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
+              : `<td data-td="${k}" data-vcell="${k}" style="vertical-align:${va};text-align:${ta};font-size:${fsz}px;font-weight:${isBold ? 600 : 400};${bs}" class="relative overflow-hidden border-r border-b ${gl} px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:text-slate-100 cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5 ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
           return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 p-0 text-center text-[11px] font-medium select-none dark:border-slate-700 ${hs(inSel("row", r))}">
             <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
@@ -4067,9 +4097,12 @@ window.GWHome = (function () {
       host.addEventListener("change", (e) => e.target.matches && e.target.matches("[data-fmt-size]") && applyTypedSize(e.target));
       host.addEventListener("click", (e) => {
         if (skipClick) return void (skipClick = false); // 刚刚是拖选栏位 / 列号，不是点一下
+        if (e.target.closest("a")) return; // 看的人点 Email / 网址：照常打开
+        const vc = !canEdit && !e.target.closest("button") && e.target.closest("[data-vcell]");
+        if (vc && host.contains(vc)) return viewPick(vc);
         const b = e.target.closest("button, [data-cmt]");
         if (!b || b.disabled || !host.contains(b)) return;
-        if (e.target.closest("a")) return; // 看的人点 Email / 网址：照常打开
+        if (b.dataset.vcopy) return viewCopy(b.dataset.vcopy);
         const d = b.dataset;
         if ("zoomIn" in d) return setZoom(SHEET_ZOOMS[Math.min(SHEET_ZOOMS.length - 1, SHEET_ZOOMS.indexOf(zoom) + 1)]);
         if ("zoomOut" in d) return setZoom(SHEET_ZOOMS[Math.max(0, SHEET_ZOOMS.indexOf(zoom) - 1)]);

@@ -244,6 +244,8 @@ window.GW_LANG["en"] = {
     "sheetFill": "Fill colour",
     "sheetFillNone": "No fill",
     "sheetBorders": "Borders",
+    "sheetCopy": "Copy",
+    "sheetCopied": "Copied",
     "sheetGridlines": "Show / hide gridlines",
     "sheetBorderColor": "Border colour",
     "sheetBorderStyle": "Border style",

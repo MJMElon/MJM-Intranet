@@ -168,7 +168,8 @@ window.GW = (function () {
   }
 
   /* 刚登入（登录页留了 gw-welcome 记号）：画面中间浮出「Welcome back」，后面的主页模糊，
-     约两秒后字和模糊一起退掉，就可以开始用。只播一次。 */
+     约两秒后字和模糊一起退掉，就可以开始用。只播一次。
+     不想等：点一下滑鼠（或按任何键、滑动）马上消失（那一下不会点到后面的东西）。 */
   function welcomeBack(profile) {
     try {
       if (!sessionStorage.getItem("gw-welcome")) return;
@@ -179,7 +180,7 @@ window.GW = (function () {
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const css = document.createElement("style");
     css.textContent = `
-      .gw-welcome { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none;
+      .gw-welcome { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer;
         background-color: rgba(255, 255, 255, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0);
         transition: opacity .7s ease, -webkit-backdrop-filter .7s ease, backdrop-filter .7s ease, background-color .7s ease; }
       .gw-welcome.on { background-color: rgba(255, 255, 255, .5); -webkit-backdrop-filter: blur(16px) saturate(130%); backdrop-filter: blur(16px) saturate(130%); }
@@ -195,6 +196,7 @@ window.GW = (function () {
       .gw-welcome.on.out { opacity: 0; background-color: rgba(255, 255, 255, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); }
       .gw-welcome.out .gw-welcome-hi, .gw-welcome.out .gw-welcome-name { animation: gw-welcome-out .6s ease-in forwards; }
       @keyframes gw-welcome-out { from { opacity: 1; transform: none; filter: blur(0); } to { opacity: 0; transform: scale(1.18); filter: blur(6px); } }
+      .gw-welcome.fast, .gw-welcome.fast .gw-welcome-hi, .gw-welcome.fast .gw-welcome-name { transition-duration: .2s; animation-duration: .2s; }
       @media (prefers-reduced-motion: reduce) { .gw-welcome-hi, .gw-welcome-name, .gw-welcome.out .gw-welcome-hi, .gw-welcome.out .gw-welcome-name { animation: none; } }`;
     const el = document.createElement("div");
     el.className = "gw-welcome";
@@ -203,9 +205,31 @@ window.GW = (function () {
     el.innerHTML = `<div class="gw-welcome-hi">${esc(t("app.welcomeBack"))}</div>${first ? `<div class="gw-welcome-name">${esc(first)}</div>` : ""}`;
     document.head.appendChild(css);
     document.body.appendChild(el);
-    setTimeout(() => el.classList.add("on"), reduce ? 0 : 220); // 字先出来，接着后面的主页变模糊
-    setTimeout(() => el.classList.add("out"), reduce ? 1300 : 2000);
-    setTimeout(() => (el.remove(), css.remove()), reduce ? 2100 : 2800);
+    const timers = [];
+    let gone = false;
+    const end = () => {
+      if (gone) return;
+      gone = true;
+      timers.forEach(clearTimeout);
+      ["keydown", "wheel", "touchmove"].forEach((ev) => removeEventListener(ev, skip, true));
+      el.remove();
+      css.remove();
+    };
+    // 点一下 / 按键 / 滑动：0.2 秒退掉
+    const skip = (e) => {
+      if (gone) return;
+      if (e && e.type === "pointerdown") (e.preventDefault(), e.stopPropagation());
+      timers.forEach(clearTimeout);
+      el.style.pointerEvents = "none"; // 退掉的这 0.2 秒里，下一下就可以点到主页了
+      el.classList.add("on", "out", "fast");
+      timers.push(setTimeout(end, 220));
+    };
+    el.addEventListener("pointerdown", skip);
+    el.addEventListener("click", (e) => (e.preventDefault(), e.stopPropagation()));
+    ["keydown", "wheel", "touchmove"].forEach((ev) => addEventListener(ev, skip, true));
+    timers.push(setTimeout(() => el.classList.add("on"), reduce ? 0 : 220)); // 字先出来，接着后面的主页变模糊
+    timers.push(setTimeout(() => (el.style.pointerEvents = "none", el.classList.add("out")), reduce ? 1300 : 2000));
+    timers.push(setTimeout(end, reduce ? 2100 : 2800));
   }
 
   async function logout() {

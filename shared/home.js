@@ -3165,14 +3165,15 @@ window.GWHome = (function () {
       if (r0.cells && typeof r0.cells === "object")
         for (const [k, v] of Object.entries(r0.cells)) if (/^\d{1,3}:\d{1,2}$/.test(k) && typeof v === "string" && v) cells.set(k, v.slice(0, 1000));
       // 格式：字大小（s）、左右（a）、上下（v）
-      const FONT_SIZES = [9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36];
+      const FONT_SIZES = [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72]; // − / + 一格一格跳
+      const FS_MIN = 6, FS_MAX = 72; // 自己打的可以是 6–72 任何整数
       const DEF_FS = 14;
       let fmt = new Map();
       if (r0.fmt && typeof r0.fmt === "object")
         for (const [k, v] of Object.entries(r0.fmt)) {
           if (!/^\d{1,3}:\d{1,2}$/.test(k) || !v || typeof v !== "object") continue;
           const x = {};
-          if (FONT_SIZES.includes(Number(v.s))) x.s = Number(v.s);
+          if (Number.isInteger(Number(v.s)) && Number(v.s) >= FS_MIN && Number(v.s) <= FS_MAX) x.s = Number(v.s);
           if (["l", "c", "r"].includes(v.a)) x.a = v.a;
           if (["t", "m", "b"].includes(v.v)) x.v = v.v;
           if (Object.keys(x).length) fmt.set(k, x);
@@ -3416,9 +3417,9 @@ window.GWHome = (function () {
           ${tb("data-undo", "undo-2", t("home.sheetUndo"))}
           ${tb("data-redo", "redo-2", t("home.sheetRedo"))}
           ${sep}
-          ${tb('data-fmt="smaller"', "a-arrow-down", t("home.sheetFontSmaller"))}
-          <span data-fmt-size title="${esc(t("home.sheetFontSize"))}" class="w-7 text-center text-xs font-semibold tabular-nums text-slate-600 dark:text-slate-300">${DEF_FS}</span>
-          ${tb('data-fmt="bigger"', "a-arrow-up", t("home.sheetFontBigger"))}
+          <button type="button" data-fmt="smaller" title="${esc(t("home.sheetFontSmaller"))}" aria-label="${esc(t("home.sheetFontSmaller"))}" class="flex size-7 items-center justify-center rounded-lg text-base font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10">−</button>
+          <input data-fmt-size type="number" min="${FS_MIN}" max="${FS_MAX}" step="1" value="${DEF_FS}" title="${esc(t("home.sheetFontSize"))}" aria-label="${esc(t("home.sheetFontSize"))}" class="h-7 w-11 rounded-md border border-slate-200 bg-white text-center text-xs font-semibold tabular-nums text-slate-700 outline-none [appearance:textfield] focus:border-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-white [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none">
+          <button type="button" data-fmt="bigger" title="${esc(t("home.sheetFontBigger"))}" aria-label="${esc(t("home.sheetFontBigger"))}" class="flex size-7 items-center justify-center rounded-lg text-base font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10">+</button>
           ${sep}
           ${tb('data-fmt="a:l"', "align-left", t("home.sheetAlignLeft"))}
           ${tb('data-fmt="a:c"', "align-center", t("home.sheetAlignCenter"))}
@@ -3448,7 +3449,8 @@ window.GWHome = (function () {
         paintUndo();
         const k = targets()[0];
         const fm = k ? fmtOf(k) : {};
-        $("[data-fmt-size]", bar).textContent = fm.s || DEF_FS;
+        const fsBox = $("[data-fmt-size]", bar);
+        if (document.activeElement !== fsBox) fsBox.value = fm.s || DEF_FS; // 正在打的时候不要盖掉
         $$("[data-fmt]", bar).forEach((b) => {
           const [key, val] = b.dataset.fmt.split(":");
           if (!val) return;
@@ -3463,9 +3465,13 @@ window.GWHome = (function () {
         list.forEach((k) => {
           const x = { ...fmtOf(k) };
           if (what === "bigger" || what === "smaller") {
-            const cur = FONT_SIZES.indexOf(x.s || DEF_FS);
-            const ni = Math.min(FONT_SIZES.length - 1, Math.max(0, cur + (what === "bigger" ? 1 : -1)));
-            x.s = FONT_SIZES[ni];
+            // 下一个常用大小（自己打过奇怪的大小也可以接着跳）
+            const cur = x.s || DEF_FS;
+            const next = what === "bigger" ? FONT_SIZES.find((n) => n > cur) : [...FONT_SIZES].reverse().find((n) => n < cur);
+            x.s = next || cur;
+            if (x.s === DEF_FS) delete x.s;
+          } else if (key === "s") {
+            x.s = Number(val);
             if (x.s === DEF_FS) delete x.s;
           } else {
             x[key] = val;
@@ -3704,6 +3710,37 @@ window.GWHome = (function () {
         ni.focus();
         ni.select();
       }
+      // 按住栏位字母 / 列号往旁边拖 = 选好几栏 / 列
+      let skipClick = false;
+      host.addEventListener("pointerdown", (e) => {
+        if (!canEdit || e.button !== 0 || e.shiftKey) return;
+        const hb = e.target.closest("[data-col-menu], [data-row-menu]");
+        if (!hb) return;
+        const kind = hb.dataset.colMenu != null ? "col" : "row";
+        const start = Number(kind === "col" ? hb.dataset.colMenu : hb.dataset.rowMenu);
+        let moved = false;
+        const move = (ev) => {
+          const el = document.elementFromPoint(ev.clientX, ev.clientY);
+          const over = el && el.closest && el.closest(kind === "col" ? "[data-col-menu]" : "[data-row-menu]");
+          if (!over || !host.contains(over)) return;
+          const i = Number(kind === "col" ? over.dataset.colMenu : over.dataset.rowMenu);
+          if (!moved && i === start) return;
+          moved = true;
+          const ns = { kind, a: Math.min(start, i), b: Math.max(start, i), anchor: start };
+          if (sel && sel.kind === kind && sel.a === ns.a && sel.b === ns.b) return;
+          sel = ns;
+          range = null;
+          render();
+        };
+        const up = () => {
+          removeEventListener("pointermove", move);
+          removeEventListener("pointerup", up);
+          if (moved) skipClick = true; // 放开时的 click 不要再当成「点一下」
+          setTimeout(() => (skipClick = false), 0);
+        };
+        addEventListener("pointermove", move);
+        addEventListener("pointerup", up);
+      });
       // 点栏位字母 / 列号：选那一栏 / 列；Shift 再点 = 选一整段；再点一次选好的那一个 = 开选单（手机没有右键）
       function pick(kind, i, e, anchor) {
         if (e.shiftKey && sel && sel.kind === kind) sel = { kind, a: Math.min(sel.anchor, i), b: Math.max(sel.anchor, i), anchor: sel.anchor };
@@ -3738,7 +3775,27 @@ window.GWHome = (function () {
         }
         lineMenu(kind, { left: e.clientX, top: e.clientY, bottom: e.clientY });
       });
+      // 字大小的框：打数字，按 Enter（或点别的地方）就套用
+      const applyTypedSize = (el) => {
+        const n = Math.round(Number(el.value));
+        if (!Number.isFinite(n) || n < FS_MIN || n > FS_MAX) {
+          // 不合理就变回原来的大小
+          const k0 = targets()[0];
+          el.value = (k0 && fmtOf(k0).s) || DEF_FS;
+          return toast(t("home.sheetFontRange", { min: FS_MIN, max: FS_MAX }));
+        }
+        const k0 = targets()[0];
+        if (k0 && (fmtOf(k0).s || DEF_FS) === n && targets().every((k) => (fmtOf(k).s || DEF_FS) === n)) return;
+        applyFmt("s:" + n);
+      };
+      host.addEventListener("keydown", (e) => {
+        if (!e.target.matches || !e.target.matches("[data-fmt-size]")) return;
+        if (e.key === "Enter") (e.preventDefault(), applyTypedSize(e.target));
+        if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), paintTools(), e.target.blur());
+      });
+      host.addEventListener("change", (e) => e.target.matches && e.target.matches("[data-fmt-size]") && applyTypedSize(e.target));
       host.addEventListener("click", (e) => {
+        if (skipClick) return void (skipClick = false); // 刚刚是拖选栏位 / 列号，不是点一下
         const b = e.target.closest("button, [data-cmt]");
         if (!b || b.disabled || !host.contains(b)) return;
         if (e.target.closest("a")) return; // 看的人点 Email / 网址：照常打开

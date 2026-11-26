@@ -238,6 +238,7 @@ window.GW_LANG["en"] = {
     "sheetPickCells": "Click a cell or drag across cells first.",
     "sheetUndo": "Undo (Ctrl+Z)",
     "sheetRedo": "Redo (Ctrl+Y)",
+    "sheetFontRange": "Text size can be {min} to {max}.",
     "mindMap": "Mind map",
     "mapAddBox": "Box",
     "mapAddRound": "Round",

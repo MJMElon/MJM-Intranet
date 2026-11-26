@@ -3164,8 +3164,9 @@ window.GWHome = (function () {
       let w = {}, h = {};
       if (r0.w && typeof r0.w === "object") for (const [k, v] of Object.entries(r0.w)) if (/^\d{1,2}$/.test(k)) w[k] = num(v, 40, 600, 140);
       if (r0.h && typeof r0.h === "object") for (const [k, v] of Object.entries(r0.h)) if (/^\d{1,3}$/.test(k)) h[k] = num(v, 24, 240, 32);
-      const colW = (c) => w[c] || 140;
-      const rowH = (r) => h[r] || 32;
+      const DEF_W = 140, DEF_H = 32; // 预设栏宽 / 列高
+      const colW = (c) => w[c] || DEF_W;
+      const rowH = (r) => h[r] || DEF_H;
       const colName = (c) => {
         let s = "";
         for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
@@ -3475,9 +3476,13 @@ window.GWHome = (function () {
               <button type="button" data-ins-at="after" class="${sbtn}">${esc(t(isRow ? "home.sheetBelow" : "home.sheetRight"))} ${icon(isRow ? "arrow-down" : "arrow-right", "inline size-3.5")}</button>
             </div>
           </div>
-          <form data-size-form class="flex items-center gap-2 border-b border-slate-100 py-3 dark:border-slate-800"><span class="w-14 text-xs text-slate-500">${esc(t(isRow ? "home.sheetHeight" : "home.sheetWidth"))}</span>
-            <input data-size-px type="number" min="${isRow ? 24 : 40}" max="${isRow ? 240 : 600}" value="${size0}" class="${inp}"><span class="text-xs text-slate-500">px</span>
-            <button type="submit" class="${btn("secondary", "sm")} ml-auto">${esc(t("home.sheetApply"))}</button></form>
+          <form data-size-form class="border-b border-slate-100 py-3 dark:border-slate-800">
+            <div class="flex items-center gap-2"><span class="w-14 text-xs text-slate-500">${esc(t(isRow ? "home.sheetHeight" : "home.sheetWidth"))}</span>
+              <input data-size-px type="number" min="${isRow ? 24 : 40}" max="${isRow ? 240 : 600}" value="${size0}" class="${inp}"><span class="text-xs text-slate-500">px</span>
+              <button type="submit" class="${btn("secondary", "sm")} ml-auto">${esc(t("home.sheetApply"))}</button></div>
+            <div class="mt-1.5 flex items-center gap-2 pl-16"><span class="text-[11px] text-slate-400">${esc(t("home.sheetDefaultIs", { px: isRow ? DEF_H : DEF_W }))}</span>
+              <button type="button" data-size-default class="ml-auto rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 hover:bg-slate-100 dark:text-brand-100 dark:hover:bg-white/10">${esc(t("home.sheetUseDefault"))}</button></div>
+          </form>
           <button type="button" data-do-del class="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}${esc(n === 1 ? t(isRow ? "home.sheetDelRowN" : "home.sheetDelColN", isRow ? { n: a + 1 } : { c: nm(a) }) : t(isRow ? "home.sheetDelRows" : "home.sheetDelCols", { a: nm(a), b: nm(b) }))}</button>`,
           290,
         );
@@ -3521,6 +3526,13 @@ window.GWHome = (function () {
           render();
           later();
         });
+        // 回到预设大小：拿掉自订的宽度 / 高度
+        $("[data-size-default]", el).onclick = () => {
+          for (let i = a; i <= b; i++) delete (isRow ? h : w)[i];
+          closePop();
+          render();
+          later();
+        };
         const ni = $("[data-ins-n]", el);
         ni.focus();
         ni.select();
@@ -3532,6 +3544,19 @@ window.GWHome = (function () {
         else sel = { kind, a: i, b: i, anchor: i };
         render();
       }
+      // 在边线上按两下：那一栏 / 列（或选好的全部）回到预设大小
+      host.addEventListener("dblclick", (e) => {
+        const cr = canEdit && e.target.closest("[data-col-resize]");
+        const rr = canEdit && e.target.closest("[data-row-resize]");
+        if (!cr && !rr) return;
+        e.preventDefault();
+        const kind = cr ? "col" : "row";
+        const i = Number(cr ? cr.dataset.colResize : rr.dataset.rowResize);
+        const list = inSel(kind, i) ? Array.from({ length: sel.b - sel.a + 1 }, (_, x) => sel.a + x) : [i];
+        list.forEach((x) => delete (kind === "col" ? w : h)[x]);
+        render();
+        later();
+      });
       host.addEventListener("contextmenu", (e) => {
         const hb = canEdit && e.target.closest("[data-col-menu], [data-row-menu]");
         if (!hb) return;

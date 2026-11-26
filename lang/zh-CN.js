@@ -239,6 +239,7 @@ window.GW_LANG["zh-CN"] = {
     "sheetUndo": "复原（Ctrl+Z）",
     "sheetRedo": "重做（Ctrl+Y）",
     "sheetFontRange": "字大小可以是 {min} 到 {max}。",
+    "sheetClearText": "清除文字",
     "mindMap": "心智图",
     "mapAddBox": "方块",
     "mapAddRound": "圆角",

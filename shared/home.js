@@ -3151,6 +3151,8 @@ window.GWHome = (function () {
        拉线改大小时，选好的几栏 / 几列也一起变。
        上面一排格式工具：字变大 / 变小、靠左 / 置中 / 靠右、靠上 / 置中 / 靠下——用在拉选的一块格子（按住拖，或 Shift 再点），
        或选好的整栏 / 整列，不然就是现在这一格。
+       点一下 = 选这一格（不进去打字）；按两下、Enter、F2 = 进去改字；选好直接打字 = 换掉内容。方向键换格子；
+       Delete / Backspace 清掉选好的格子（一格、一块、或整栏 / 整列）。格子上按右键：在选好的栏 / 列里 → 栏 / 列选单；不然 → 宽度 / 高度 / 清除。
        复原 / 重做：Ctrl+Z（Mac：⌘Z）复原，Ctrl+Y 或 Ctrl+Shift+Z 重做；工具列也有两个钮。打字、贴上、格式、大小、加 / 删栏列都可以复原（留言不算）。存在 fmt { "列:栏": { s: 字大小, a: "l"|"c"|"r", v: "t"|"m"|"b" } }。
        放大 / 缩小：缩小时画面能放更多格，空的格子自动补满（不用自己加）。
        留言：看得到这个文件夹的人都可以对一格留言（谁、内容、日期时间），存在 gw_folder_cell_comments（要先跑 20261206 SQL）。
@@ -3524,7 +3526,7 @@ window.GWHome = (function () {
             const bold = inSel("col", c) || inSel("row", r) ? "bg-sky-50 dark:bg-sky-900/20" + (r === 0 ? " font-semibold" : "") : r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
             const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
-              ? `<td data-td="${k}" style="vertical-align:${va}" class="group relative border-r border-b border-slate-200 p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:border-slate-700 dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 dark:text-slate-100 ${r === 0 ? "font-semibold" : ""}">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
+              ? `<td data-td="${k}" style="vertical-align:${va}" class="group relative border-r border-b border-slate-200 p-0 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-500 focus-within:ring-inset dark:border-slate-700 dark:focus-within:bg-slate-900 ${bold}${rangeCls}"><input data-cell="${k}" value="${esc(v)}" readonly maxlength="1000" spellcheck="false" style="font-size:${fsz}px;text-align:${ta}" class="block w-full min-w-0 bg-transparent px-2 py-1 leading-tight text-slate-800 outline-none focus:pr-8 read-only:cursor-default read-only:caret-transparent read-only:select-none dark:text-slate-100 ${r === 0 ? "font-semibold" : ""}">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
               : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} style="vertical-align:${va};text-align:${ta};font-size:${fsz}px" class="relative overflow-hidden border-r border-b border-slate-200 px-2 py-1 leading-tight text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
           return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 p-0 text-center text-[11px] font-medium select-none dark:border-slate-700 ${hs(inSel("row", r))}">
@@ -3561,8 +3563,43 @@ window.GWHome = (function () {
       const cellEl = (r, c) => $(`[data-cell="${r}:${c}"]`, host);
       const go = (r, c) => {
         const el = cellEl(r, c);
-        if (el) (el.focus(), el.select());
+        if (el) el.focus(); // 只选这一格（不进去改字）
       };
+      // 进去改字：replace = 直接打字换掉内容；不然游标放最后面
+      let editOrig = null;
+      function startEdit(el, replace) {
+        if (!el || !el.readOnly) return;
+        el.readOnly = false;
+        editOrig = el.value;
+        if (replace) el.value = "";
+        else {
+          const n = el.value.length;
+          el.setSelectionRange(n, n);
+        }
+      }
+      // 不改了：回到「只选」
+      function stopEdit(el, cancel) {
+        if (!el || el.readOnly) return;
+        if (cancel && editOrig != null && el.value !== editOrig) {
+          el.value = editOrig;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        el.readOnly = true;
+        editOrig = null;
+      }
+      // 清掉选好的格子的字（一格 / 一块 / 整栏整列）
+      function clearCells() {
+        const list = targets().filter((k) => cells.has(k));
+        if (!list.length) return;
+        remember();
+        typingKey = null;
+        list.forEach((k) => {
+          cells.delete(k);
+          const el = $(`[data-cell="${k}"]`, host);
+          if (el) el.value = "";
+        });
+        later();
+      }
       function setZoom(nz) {
         zoom = nz;
         try { localStorage.setItem("gw-sheet-zoom", String(zoom)); } catch (e) {}
@@ -3716,6 +3753,60 @@ window.GWHome = (function () {
         ni.focus();
         ni.select();
       }
+      // 右键按下去时不要把游标移进那一格（不然选好的栏 / 列、一块格子会被取消）
+      host.addEventListener("mousedown", (e) => {
+        if (e.button !== 2 || !canEdit) return;
+        const td = e.target.closest("[data-td]");
+        if (!td) return;
+        const [r, c] = td.dataset.td.split(":").map(Number);
+        if (inSel("col", c) || inSel("row", r) || inRange(r, c)) e.preventDefault();
+      });
+      // 格子的右键选单：这一块格子的栏宽、列高（含预设）、清除字
+      function cellMenu(anchor) {
+        const { r1, c1, r2, c2 } = range;
+        const inp = "h-8 w-16 rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:focus:border-white";
+        const label = r1 === r2 && c1 === c2 ? colName(c1) + (r1 + 1) : colName(c1) + (r1 + 1) + ":" + colName(c2) + (r2 + 1);
+        const row = (kind, val, min, max, def) => `<form data-cell-size="${kind}" class="border-b border-slate-100 py-2.5 dark:border-slate-800">
+            <div class="flex items-center gap-2"><span class="w-14 text-xs text-slate-500">${esc(t(kind === "w" ? "home.sheetWidth" : "home.sheetHeight"))}</span>
+              <input type="number" min="${min}" max="${max}" value="${val}" class="${inp}"><span class="text-xs text-slate-500">px</span>
+              <button type="submit" class="${btn("secondary", "sm")} ml-auto">${esc(t("home.sheetApply"))}</button></div>
+            <div class="mt-1.5 flex items-center gap-2 pl-16"><span class="text-[11px] text-slate-400">${esc(t("home.sheetDefaultIs", { px: def }))}</span>
+              <button type="button" data-cell-default="${kind}" class="ml-auto rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 hover:bg-slate-100 dark:text-brand-100 dark:hover:bg-white/10">${esc(t("home.sheetUseDefault"))}</button></div>
+          </form>`;
+        const el = pop(
+          anchor,
+          `<p class="mb-1 text-xs font-bold text-slate-500">${esc(label)}</p>
+          ${row("w", colW(c1), 40, 600, DEF_W)}
+          ${row("h", rowH(r1), 24, 240, DEF_H)}
+          <button type="button" data-cell-clear class="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">${icon("eraser", "size-4")}${esc(t("home.sheetClearText"))}</button>`,
+          290,
+        );
+        const setSizes = (kind, px) => {
+          remember();
+          if (kind === "w") for (let c = c1; c <= c2; c++) px == null ? delete w[c] : (w[c] = px);
+          else for (let r = r1; r <= r2; r++) px == null ? delete h[r] : (h[r] = px);
+          closePop();
+          render();
+          later();
+        };
+        $$("[data-cell-size]", el).forEach((fm) =>
+          fm.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const kind = fm.dataset.cellSize;
+            const v = $("input", fm).value;
+            setSizes(kind, kind === "w" ? num(v, 40, 600, DEF_W) : num(v, 24, 240, DEF_H));
+          }),
+        );
+        el.addEventListener("click", (e) => {
+          const b = e.target.closest("button");
+          if (!b) return;
+          if (b.dataset.cellDefault) return setSizes(b.dataset.cellDefault, null);
+          if ("cellClear" in b.dataset) {
+            closePop();
+            clearCells();
+          }
+        });
+      }
       // 按住栏位字母 / 列号往旁边拖 = 选好几栏 / 列
       let skipClick = false;
       host.addEventListener("pointerdown", (e) => {
@@ -3757,6 +3848,8 @@ window.GWHome = (function () {
       }
       // 在边线上按两下：那一栏 / 列（或选好的全部）回到预设大小
       host.addEventListener("dblclick", (e) => {
+        // 格子按两下 = 进去改字
+        if (canEdit && e.target.matches && e.target.matches("[data-cell]")) return startEdit(e.target, false);
         const cr = canEdit && e.target.closest("[data-col-resize]");
         const rr = canEdit && e.target.closest("[data-row-resize]");
         if (!cr && !rr) return;
@@ -3770,6 +3863,20 @@ window.GWHome = (function () {
         later();
       });
       host.addEventListener("contextmenu", (e) => {
+        const td = canEdit && e.target.closest("[data-td]");
+        if (td) {
+          e.preventDefault();
+          const [r, c] = td.dataset.td.split(":").map(Number);
+          const at = { left: e.clientX, top: e.clientY, bottom: e.clientY };
+          if (inSel("col", c) || inSel("row", r)) return lineMenu(sel.kind, at);
+          if (!inRange(r, c)) {
+            range = { r1: r, c1: c, r2: r, c2: c };
+            sel = null;
+            focus = [r, c];
+            paintRange();
+          }
+          return cellMenu(at);
+        }
         const hb = canEdit && e.target.closest("[data-col-menu], [data-row-menu]");
         if (!hb) return;
         e.preventDefault();
@@ -3830,6 +3937,9 @@ window.GWHome = (function () {
           if (v) grow(r, c);
           later();
         });
+        host.addEventListener("focusout", (e) => {
+          if (e.target.matches && e.target.matches("[data-cell]")) stopEdit(e.target);
+        });
         host.addEventListener("focusin", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
           if (!k) return;
@@ -3848,18 +3958,47 @@ window.GWHome = (function () {
           if (!k) return;
           const [r, c] = k.split(":").map(Number);
           const el = e.target;
-          if (e.key === "Enter") return e.preventDefault(), go(e.shiftKey ? Math.max(0, r - 1) : Math.min(showR - 1, r + 1), c);
-          if (e.key === "ArrowDown") return e.preventDefault(), go(Math.min(showR - 1, r + 1), c);
-          if (e.key === "ArrowUp") return e.preventDefault(), go(Math.max(0, r - 1), c);
-          if (e.key === "ArrowRight" && el.selectionStart === el.value.length && el.selectionEnd === el.value.length && c < showC - 1) return e.preventDefault(), go(r, c + 1);
-          if (e.key === "ArrowLeft" && el.selectionStart === 0 && el.selectionEnd === 0 && c > 0) return e.preventDefault(), go(r, c - 1);
+          const down = () => go(Math.min(showR - 1, r + 1), c);
+          if (e.ctrlKey || e.metaKey || e.altKey) return; // 复原、复制、贴上等交给别的地方
+          if (el.readOnly) {
+            // 只选着这一格
+            if (e.key === "Enter" || e.key === "F2") return e.preventDefault(), startEdit(el, false);
+            if (e.key === "Delete" || e.key === "Backspace") return e.preventDefault(), clearCells();
+            if (e.key === "ArrowDown") return e.preventDefault(), down();
+            if (e.key === "ArrowUp") return e.preventDefault(), go(Math.max(0, r - 1), c);
+            if (e.key === "ArrowRight") return e.preventDefault(), go(r, Math.min(showC - 1, c + 1));
+            if (e.key === "ArrowLeft") return e.preventDefault(), go(r, Math.max(0, c - 1));
+            if (e.key === "Tab") return e.preventDefault(), go(r, e.shiftKey ? Math.max(0, c - 1) : Math.min(showC - 1, c + 1));
+            if (e.key.length === 1 && !e.isComposing) {
+              // 直接打字：换掉这一格的内容（这个字照常打进去）
+              if (range && (range.r1 !== range.r2 || range.c1 !== range.c2)) ((range = null), paintRange());
+              return startEdit(el, true);
+            }
+            return;
+          }
+          // 正在改字
+          if (e.key === "Escape") return e.preventDefault(), e.stopPropagation(), stopEdit(el, true);
+          if (e.key === "Enter") return e.preventDefault(), stopEdit(el), go(e.shiftKey ? Math.max(0, r - 1) : Math.min(showR - 1, r + 1), c);
+          if (e.key === "Tab") return e.preventDefault(), stopEdit(el), go(r, e.shiftKey ? Math.max(0, c - 1) : Math.min(showC - 1, c + 1));
+          if (e.key === "ArrowDown") return e.preventDefault(), stopEdit(el), down();
+          if (e.key === "ArrowUp") return e.preventDefault(), stopEdit(el), go(Math.max(0, r - 1), c);
         });
         // 贴上一块（有 Tab / 换行）：从这一格开始摊开，不够就加列 / 栏
         host.addEventListener("paste", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
           if (!k) return;
           const text = (e.clipboardData || window.clipboardData).getData("text");
-          if (!/[\t\n]/.test(text)) return;
+          if (!/[\t\n]/.test(text)) {
+            if (!e.target.readOnly) return; // 正在改字：照常贴进去
+            e.preventDefault();
+            remember();
+            typingKey = null;
+            const v = text.trim().slice(0, 1000);
+            v ? cells.set(k, v) : cells.delete(k);
+            e.target.value = v;
+            if (v) grow(...k.split(":").map(Number));
+            return later();
+          }
           e.preventDefault();
           remember();
           typingKey = null;
@@ -3910,7 +4049,10 @@ window.GWHome = (function () {
             if (!dragging) {
               dragging = true;
               table.classList.add("select-none");
-              if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+              const ae = document.activeElement;
+              if (ae && ae.matches && ae.matches("[data-cell]")) stopEdit(ae);
+              const startEl = cellEl(r0d, c0d);
+              if (startEl && document.activeElement !== startEl) startEl.focus({ preventScroll: true });
               focus = [r0d, c0d];
               sel = null;
             }
@@ -3983,6 +4125,13 @@ window.GWHome = (function () {
       addEventListener("resize", onResize);
       const onUndoKey = (e) => {
         if (!document.body.contains(host)) return document.removeEventListener("keydown", onUndoKey, true);
+        if (canEdit && (e.key === "Delete" || e.key === "Backspace") && sel && !popEl && !document.querySelector(".gw-modal")) {
+          const ae = document.activeElement;
+          if (!ae || ae === document.body || (host.contains(ae) && !ae.matches("input:not([readonly]), textarea"))) {
+            e.preventDefault();
+            return clearCells();
+          }
+        }
         if (!canEdit || !(e.ctrlKey || e.metaKey) || e.altKey) return;
         const key = e.key.toLowerCase();
         if (key !== "z" && key !== "y") return;

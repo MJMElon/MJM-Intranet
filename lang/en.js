@@ -239,6 +239,7 @@ window.GW_LANG["en"] = {
     "sheetUndo": "Undo (Ctrl+Z)",
     "sheetRedo": "Redo (Ctrl+Y)",
     "sheetFontRange": "Text size can be {min} to {max}.",
+    "sheetClearText": "Clear text",
     "mindMap": "Mind map",
     "mapAddBox": "Box",
     "mapAddRound": "Round",

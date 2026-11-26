@@ -43,8 +43,10 @@ window.GW = (function () {
     );
   }
 
+  // 页面网址不带 .html：index.html → 首页（…/）、admin.html#x → admin#x
+  const pretty = (path) => String(path).replace(/^index\.html(?=[?#]|$)/, "").replace(/^([a-z0-9-]+)\.html(?=[?#]|$)/, "$1");
   function go(path) {
-    location.href = BASE + path;
+    location.href = BASE + pretty(path);
   }
 
   // ---------------------------------------------------------------- 主题
@@ -255,9 +257,9 @@ window.GW = (function () {
     header.innerHTML = `
       <header class="sticky top-0 z-30 border-b border-white/50 bg-white/55 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-slate-950/55">
         <div class="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-          <a href="${BASE}index.html" class="text-lg font-bold tracking-tight whitespace-nowrap">${esc(t("app.name"))}</a>
+          <a href="${BASE}" class="text-lg font-bold tracking-tight whitespace-nowrap">${esc(t("app.name"))}</a>
           <div class="ml-auto flex items-center gap-3">
-            <a href="${BASE}settings.html" title="${esc(t("nav.settings"))}" class="flex items-center gap-3">
+            <a href="${BASE}settings" title="${esc(t("nav.settings"))}" class="flex items-center gap-3">
               <div class="hidden text-right leading-tight md:block">
                 <div class="text-sm font-medium">${esc(profile.full_name)}</div>
                 <div class="text-xs text-slate-500">${esc(profile.email)}</div>
@@ -271,7 +273,7 @@ window.GW = (function () {
               }
             </a>
             <button type="button" id="gw-theme" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"></button>
-            <a href="${BASE}${isAdmin ? "admin.html" : "settings.html"}" title="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" aria-label="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" class="rounded-lg p-2 ${
+            <a href="${BASE}${isAdmin ? "admin" : "settings"}" title="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" aria-label="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" class="rounded-lg p-2 ${
               active === (isAdmin ? "admin" : "settings") ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
             }">${icon("settings", "size-5")}</a>
             <button id="gw-logout" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="${esc(

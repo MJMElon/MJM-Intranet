@@ -36,7 +36,7 @@
 
   main.innerHTML = `<div class="space-y-5">
     <div class="relative flex min-h-10 flex-col items-center gap-2 sm:flex-row sm:justify-center">
-      <a href="index.html" class="inline-flex self-start sm:absolute sm:left-0 sm:self-auto items-center gap-1 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">${icon("arrow-left")} ${esc(t("admin.backToPortal"))}</a>
+      <a href="./" class="inline-flex self-start sm:absolute sm:left-0 sm:self-auto items-center gap-1 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">${icon("arrow-left")} ${esc(t("admin.backToPortal"))}</a>
       <h1 class="text-xl font-semibold sm:text-2xl">${esc(t("admin.pageTitle"))}</h1>
     </div>
     <div id="sections" class="mx-auto w-full max-w-3xl"></div>

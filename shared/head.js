@@ -1,6 +1,15 @@
 /* 每个页面 <head> 第一个载入：主题（避免闪烁）、Tailwind、共用函式库。
    函式库版本固定，升级时一次改这里。 */
 (function () {
+  // 网址列不要显示 .html：…/index.html → …/、…/admin.html → …/admin（? 和 # 后面的照留）。
+  // 只改显示，不重新载入；GitHub Pages 打 …/admin 会给 admin.html（万一没有，404.html 会接手）
+  try {
+    const p = location.pathname;
+    const clean = p.replace(/\/index\.html$/, "/").replace(/\.html$/, "");
+    if (clean !== p && !/\/404$/.test(clean)) history.replaceState(history.state, "", clean + location.search + location.hash);
+  } catch (e) {
+    /* 忽略 */
+  }
   try {
     const theme = localStorage.getItem("gw_theme") || "system";
     const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);

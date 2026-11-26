@@ -3,13 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="/MJM-Intranet/assets/favicon.ico" sizes="any">
-  <link rel="icon" type="image/svg+xml" href="/MJM-Intranet/assets/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/MJM-Intranet/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/MJM-Intranet/assets/icon-192.png">
-  <link rel="apple-touch-icon" href="/MJM-Intranet/assets/apple-touch-icon.png">
 <title>MJM Intranet</title>
-<meta http-equiv="refresh" content="0; url=/MJM-Intranet/">
+<script>
+/* 找不到的网址：…/admin、…/login 这种不带 .html 的 → 那一页（? 和 # 照留）；其他 → 首页。
+   首页：github.io 旧网址在 /MJM-Intranet/ 底下，自己的网域在最上层 */
+(function () {
+  var root = /github\.io$/.test(location.hostname) ? "/MJM-Intranet/" : "/";
+  var path = location.pathname.replace(/\/+$/, "");
+  var name = path.split("/").pop();
+  if (["admin", "login", "settings", "library", "index"].indexOf(name) >= 0) {
+    location.replace(path + ".html" + location.search + location.hash);
+  } else {
+    location.replace(root);
+  }
+})();
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=/"></noscript>
 </head>
 <body></body>
 </html>

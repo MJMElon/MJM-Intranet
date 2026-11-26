@@ -4815,16 +4815,15 @@ window.GWHome = (function () {
           <label class="block space-y-1"><span class="${cls.label}">${esc(t("widgets.postAudience"))}</span>
             <select name="group_id" class="${cls.input}">${targets.map(([v, l]) => `<option value="${esc(v)}" ${v === (cur.group_id || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
           </label>
-          <div class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+          <div class="!mt-6 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
             <p class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">${icon("calendar-clock", "size-4 text-brand-600 dark:text-brand-400")}${esc(t("widgets.postSchedule"))}</p>
             <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
-              <label for="gw-post-on" class="text-xs font-medium text-slate-500">${esc(t("widgets.postOn"))}</label>
-              <span class="flex items-center gap-1"><input id="gw-post-on" type="datetime-local" name="starts_at" step="300" ${notice ? "" : `min="${localInput(floor5(Date.now()))}"`} value="${startsInit}" required class="${dt} min-w-0 flex-1"><span class="size-9 shrink-0"></span></span>
-              <label for="gw-post-ends" class="text-xs font-medium text-slate-500">${esc(t("widgets.postEnds"))}</label>
+              <label for="gw-post-on" class="max-w-[6.5rem] text-xs leading-tight font-medium text-slate-500">${esc(t("widgets.postOn"))}</label>
+              <span class="flex items-center gap-1"><input id="gw-post-on" type="datetime-local" name="starts_at" step="300" ${notice ? "" : `min="${localInput(floor5(Date.now()))}"`} value="${startsInit}" required class="${dt} min-w-0 flex-1"><span aria-hidden="true" class="invisible h-9 shrink-0 px-2.5 text-xs font-semibold">${esc(t("widgets.postEndsClear"))}</span></span>
+              <label for="gw-post-ends" class="max-w-[6.5rem] text-xs leading-tight font-medium text-slate-500">${esc(t("widgets.postEnds"))}</label>
               <span class="flex items-center gap-1"><input id="gw-post-ends" type="datetime-local" name="ends_at" step="300" min="${localInput(ceil5(Date.now()))}" value="${endsInit}" class="${dt} min-w-0 flex-1">
-                <button type="button" data-clear-ends title="${esc(t("widgets.postEndsClear"))}" aria-label="${esc(t("widgets.postEndsClear"))}" class="flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/10">${icon("x", "size-4")}</button></span>
+                <button type="button" data-clear-ends title="${esc(t("widgets.postEndsClear"))}" aria-label="${esc(t("widgets.postEndsClear"))}" class="h-9 shrink-0 rounded-lg px-2.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/10 dark:hover:text-white">${esc(t("widgets.postEndsClear"))}</button></span>
             </div>
-            <p class="mt-2 text-xs text-slate-500">${esc(t("widgets.postScheduleHint"))}</p>
           </div>
           <div class="flex justify-end gap-2 pt-1">
             <button type="button" data-cancel class="${btn("secondary")}">${esc(t("settings.cancel"))}</button>

@@ -1131,9 +1131,9 @@ window.GWHome = (function () {
         <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(t("home.hqShowCompanies"))}" class="inline-flex max-w-[14rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(t("home.hqAllCompanies", { count: list.length }))}</span>${icon(open ? "chevron-up" : "chevron-down", "size-3.5 shrink-0")}</button>
         ${
           open
-            ? `<div class="absolute top-full left-0 z-30 mt-1 max-h-80 w-[30rem] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">
+            ? `<div data-hq-list class="absolute top-full left-0 z-30 mt-1 max-h-80 w-max max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">
             <p class="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">${esc(t("home.hqCompaniesIncluded", { count: list.length }))}</p>
-            <div class="grid grid-cols-1 gap-x-1 sm:grid-cols-2">${list.map((c) => `<div title="${esc(c.name)}" class="flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">${icon("building-2", "size-3.5 shrink-0 text-slate-400")}<span class="min-w-0 flex-1 truncate">${esc(c.name)}</span>${c.short_name || c.code ? `<span class="shrink-0 font-mono text-[11px] text-slate-400">${esc(c.short_name || c.code)}</span>` : ""}</div>`).join("")}</div>
+            <div class="grid grid-cols-1 gap-x-3 sm:grid-cols-[auto_auto]">${list.map((c) => `<div class="flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">${icon("building-2", "size-3.5 shrink-0 text-slate-400")}<span class="min-w-0 flex-1 break-words">${esc(c.name)}</span>${c.short_name || c.code ? `<span class="shrink-0 font-mono text-[11px] text-slate-400">${esc(c.short_name || c.code)}</span>` : ""}</div>`).join("")}</div>
           </div>`
             : ""
         }
@@ -2412,6 +2412,12 @@ window.GWHome = (function () {
         lastGeo = geoSig();
         fitBoard();
         settlePage(false);
+      }
+      // 「All companies」清单：宽到看得见完整的公司名；右边超出画面就往左移
+      const hqList = $("[data-hq-list]", root);
+      if (hqList) {
+        const over = hqList.getBoundingClientRect().right - (document.documentElement.clientWidth - 12);
+        if (over > 0) hqList.style.left = -Math.min(over, Math.max(0, hqList.getBoundingClientRect().left - 12)) + "px";
       }
       const coList = $("[data-co-list]", root);
       if (coList && window.Sortable) {

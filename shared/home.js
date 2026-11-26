@@ -2682,22 +2682,24 @@ window.GWHome = (function () {
         const f = e.target;
         const row = { name: f.name.value.trim(), url: f.url.value.trim(), icon: chosen, color: color || null, image_url: photo };
         if (!/^https?:\/\//i.test(row.url)) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.badUrl")));
+        let created = null;
         if (link) {
           const { error } = await sb.from("gw_user_links").update(row).eq("id", link.id);
           if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.saveFailed")));
           Object.assign(link, row);
         } else {
-          const { data: created, error } = await sb
+          const ins = await sb
             .from("gw_user_links")
             .insert({ ...row, user_id: (o && o.ownerId) || data.profile.id, sort_order: nextSlot(1, 1), ...(o && o.folderId ? { folder_id: o.folderId } : {}) })
             .select()
             .single();
-          if (error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.saveFailed")));
+          if (ins.error) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(t("home.saveFailed")));
+          created = ins.data;
           links.push(created);
         }
         dlg.close();
         draw();
-        if (o && o.onSaved) o.onSaved();
+        if (o && o.onSaved) o.onSaved(link || created);
       });
     }
 
@@ -2827,7 +2829,7 @@ window.GWHome = (function () {
       };
     }
 
-    function openFolder(fid) {
+    function openFolder(fid, pageId) {
       const f = folders.find((x) => x.id === fid);
       if (!f) return;
       const mineF = !f.shared_by;
@@ -2845,6 +2847,7 @@ window.GWHome = (function () {
         <div data-win class="relative w-full max-w-5xl rounded-[2rem] border border-white/60 bg-white/75 p-5 shadow-2xl backdrop-blur-xl sm:p-6 dark:border-white/10 dark:bg-slate-900/75">
           ${mineF && f.is_shared && !readOnly ? `<button type="button" data-share title="${esc(t("home.shareBtn"))}" aria-label="${esc(t("home.shareBtn"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500 text-white shadow hover:bg-sky-600">${icon("users", "size-4")}</button>` : ""}
           ${!mineF ? `<span title="${esc(t("home.sharedBy"))}" class="absolute top-3 right-3 z-10 flex size-8 items-center justify-center rounded-full bg-sky-500/70 text-white shadow">${icon("users", "size-4")}</span>` : ""}
+          <div data-pages></div>
           <div data-shelf-host></div>
         </div>`;
       document.body.appendChild(wrap);
@@ -2856,11 +2859,13 @@ window.GWHome = (function () {
       // Esc：上面还有弹窗（分享名单、加连结）就不动
       const onKey = (e) => {
         if (e.key !== "Escape" || document.querySelector(".gw-modal")) return;
+        // 正在表格格子 / 分页名字里打字：Esc 只是离开那一格
+        if (document.activeElement && document.activeElement.closest && document.activeElement.closest("[data-sheet], [data-pages]")) return document.activeElement.blur();
         close();
       };
       document.addEventListener("keydown", onKey);
       const canEditF = !readOnly && (mineF || f.share_role === "edit");
-      mountShelves(f, $("[data-shelf-host]", wrap), { canEdit: canEditF, isOwner: canOut, reopen: () => (close(), openFolder(fid)) });
+      mountPages(f, wrap, { canEdit: canEditF, isOwner: canOut, page: pageId, reopen: (pg) => (close(), openFolder(fid, pg)) });
       // 长按名字 → 名字原地变成可以打字；按 ✓、Enter 或点别的地方就存，Esc 取消
       if (canRename) {
         const h = $("[data-title]", wrap);
@@ -2941,6 +2946,410 @@ window.GWHome = (function () {
       });
     }
 
+    // ------------------------------------------------------------ 文件夹分页（Page）
+    /* 一个文件夹可以有好几页（上面一排标签）：「Links」柜子（连结 / App 分标题）或「Sheet」表格（像 Google Sheets：打字、拉宽格子）。
+       存在 gw_user_folders.canvas.pages = [{ id, title, type: "links" | "sheet", … }]（跟柜子同一个栏位，一起存，不用新的 SQL）。
+       第一页（id "main"）= 原本的柜子，资料照旧在 canvas.shelves / canvas.loose；之后加的柜子页自己记 shelves / loose
+       （东西只在一页：其他页拿走的，第一页就不显示）；表格页记 cells { "列:栏": 文字 }、rows / cols、w（栏宽）/ h（列高）。
+       能改的人（拥有者、Can edit）：加页、再按一次现在这页的标签改名字 / 删页（第一页不能删）。 */
+    const PAGE_ID = /^[A-Za-z0-9_-]{1,40}$/;
+    const canvasOf = (f) => (f.canvas && typeof f.canvas === "object" ? f.canvas : {});
+    const rawPages = (f) => (Array.isArray(canvasOf(f).pages) ? canvasOf(f).pages : []).filter((p) => p && typeof p === "object" && PAGE_ID.test(String(p.id || "")) && (p.type === "links" || p.type === "sheet"));
+    function folderPages(f) {
+      const list = rawPages(f).map((p) => ({ id: String(p.id), type: p.type, title: String(p.title || "").slice(0, 40) }));
+      if (!list.some((p) => p.id === "main")) list.unshift({ id: "main", type: "links", title: "" });
+      return list;
+    }
+    // 整个 canvas 一次存（patch 盖掉最外层的 key）；失败回传 false
+    async function saveFolderCanvas(f, patch) {
+      const canvas = { ...canvasOf(f), ...patch };
+      delete canvas.nodes;
+      delete canvas.edges;
+      delete canvas.map;
+      const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
+      if (error) {
+        toast(/too large/i.test(error.message || "") ? t("home.sheetTooBig") : t("home.saveFailed") + (error.message ? " (" + error.message + ")" : ""));
+        return false;
+      }
+      f.canvas = canvas;
+      return true;
+    }
+    // 存分页清单（保留每一页自己的内容；第一页的内容在外层）
+    const pagesWith = (f, list) => {
+      const old = new Map(rawPages(f).map((p) => [p.id, p]));
+      return list.map((p) => (p.id === "main" ? { id: "main", type: "links", title: p.title } : { ...(old.get(p.id) || {}), ...p }));
+    };
+    const pageName = (p) => p.title || (p.id === "main" ? t("home.pageLinks") : t("home.pageUntitled"));
+
+    function mountPages(f, wrap, hooks) {
+      const bar = $("[data-pages]", wrap);
+      const host = $("[data-shelf-host]", wrap);
+      const canEdit = !!hooks.canEdit;
+      let pages = folderPages(f);
+      let cur = pages.some((p) => p.id === hooks.page) ? hooks.page : pages[0].id;
+      let renaming = false;
+      const sharedIcon = f.is_shared || f.shared_by;
+      function paintBar() {
+        if (!canEdit && pages.length < 2) return (bar.innerHTML = "");
+        const tab = (p) => {
+          const on = p.id === cur;
+          if (on && renaming)
+            return `<span class="inline-flex items-center gap-1 rounded-xl bg-white px-1.5 py-1 shadow-sm ring-2 ring-slate-900 dark:bg-slate-800 dark:ring-white">
+              <input data-page-name value="${esc(p.title || pageName(p))}" maxlength="40" aria-label="${esc(t("home.pageName"))}" class="h-7 w-40 rounded-lg bg-transparent px-1.5 text-sm font-semibold outline-none">
+              <button type="button" data-page-ok aria-label="${esc(t("home.save"))}" title="${esc(t("home.save"))}" class="flex size-7 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900">${icon("check", "size-4")}</button>
+              ${p.id !== "main" ? `<button type="button" data-page-del aria-label="${esc(t("home.pageDelete"))}" title="${esc(t("home.pageDelete"))}" class="flex size-7 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}</button>` : ""}
+            </span>`;
+          return `<button type="button" data-page="${esc(p.id)}" ${on && canEdit ? `title="${esc(t("home.pageRenameHint"))}"` : ""} class="inline-flex max-w-[14rem] items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
+            on ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900" : "bg-white/70 text-slate-600 ring-1 ring-slate-200 hover:bg-white dark:bg-white/5 dark:text-slate-300 dark:ring-white/10"
+          }">${icon(p.type === "sheet" ? "table-2" : "layout-list", "size-4 shrink-0")}<span class="truncate">${esc(pageName(p))}</span></button>`;
+        };
+        bar.innerHTML = `<div class="mb-3 flex flex-wrap items-center gap-1.5 border-b border-slate-200/70 pb-3 dark:border-white/10 ${sharedIcon ? "pr-10" : ""}">
+          ${pages.map(tab).join("")}
+          ${canEdit ? `<button type="button" data-page-add aria-label="${esc(t("home.pageAdd"))}" title="${esc(t("home.pageAdd"))}" class="inline-flex items-center gap-1 rounded-xl border border-dashed border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:text-white">${icon("plus", "size-4")}${esc(t("home.pageAdd"))}</button>` : ""}
+        </div>`;
+        refreshIcons();
+        if (renaming) {
+          const inp = $("[data-page-name]", bar);
+          inp.focus();
+          inp.select();
+        }
+      }
+      function mountCurrent() {
+        const p = pages.find((x) => x.id === cur) || pages[0];
+        cur = p.id;
+        // 每次换页都给一个新的方块：上一页挂的事件跟着旧方块一起丢掉，不会两页抢着处理
+        host.innerHTML = "<div></div>";
+        const box = host.firstElementChild;
+        if (p.type === "sheet") return mountSheet(f, p.id, box, { canEdit, toolsPad: false });
+        mountShelves(f, box, {
+          ...hooks,
+          page: p.id === "main" ? null : p.id,
+          otherPages: pages.filter((x) => x.type === "links" && x.id !== p.id),
+          toolsPad: !bar.innerHTML && sharedIcon,
+          reopen: () => hooks.reopen(cur),
+        });
+      }
+      async function rename(commit) {
+        const inp = $("[data-page-name]", bar);
+        const title = inp ? inp.value.trim().slice(0, 40) : "";
+        renaming = false;
+        const p = pages.find((x) => x.id === cur);
+        if (commit && p && title && title !== pageName(p)) {
+          const next = pages.map((x) => (x.id === cur ? { ...x, title } : x));
+          if (await saveFolderCanvas(f, { pages: pagesWith(f, next) })) pages = next;
+        }
+        paintBar();
+      }
+      function addPage() {
+        const dlg = modal(
+          t("home.pageAdd"),
+          `<form class="space-y-4">
+            <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("home.pageName"))}</span>
+              <input name="title" required maxlength="40" placeholder="${esc(t("home.pageNameEg"))}" class="${cls.input}"></label>
+            <div class="grid gap-2 sm:grid-cols-2">
+              ${[
+                ["sheet", "table-2", t("home.pageTypeSheet"), t("home.pageTypeSheetHint")],
+                ["links", "layout-list", t("home.pageTypeLinks"), t("home.pageTypeLinksHint")],
+              ]
+                .map(
+                  ([v, ic, label, hint], i) => `<label class="flex cursor-pointer gap-3 rounded-xl border border-slate-200 p-3 has-[:checked]:border-slate-900 has-[:checked]:ring-1 has-[:checked]:ring-slate-900 dark:border-slate-700 dark:has-[:checked]:border-white dark:has-[:checked]:ring-white">
+                    <input type="radio" name="type" value="${v}" ${i === 0 ? "checked" : ""} class="mt-1 size-4 accent-slate-900">
+                    <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">${icon(ic, "size-4")}${esc(label)}</span><span class="mt-0.5 block text-xs text-slate-500">${esc(hint)}</span></span>
+                  </label>`,
+                )
+                .join("")}
+            </div>
+            <div class="flex justify-end gap-2">
+              <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+              <button type="submit" class="${btn("primary")}">${icon("plus")} ${esc(t("home.pageAdd"))}</button>
+            </div>
+          </form>`,
+        );
+        refreshIcons();
+        $("[data-cancel]", dlg.el).onclick = dlg.close;
+        $("form", dlg.el).addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const fm = e.target;
+          const type = fm.type.value === "links" ? "links" : "sheet";
+          const id = "p" + Math.random().toString(36).slice(2, 10);
+          const page = { id, type, title: fm.title.value.trim().slice(0, 40), ...(type === "sheet" ? { rows: 20, cols: 6, cells: {} } : { shelves: [], loose: [] }) };
+          const list = [...pagesWith(f, pages), page];
+          if (!(await saveFolderCanvas(f, { pages: list }))) return;
+          dlg.close();
+          pages = folderPages(f);
+          cur = id;
+          paintBar();
+          mountCurrent();
+        });
+      }
+      async function deletePage() {
+        const p = pages.find((x) => x.id === cur);
+        if (!p || p.id === "main") return;
+        const ok = await confirmDialog(t("home.pageDeleteTitle"), t(p.type === "sheet" ? "home.pageDeleteSheet" : "home.pageDeleteLinks", { name: pageName(p) }), t("home.delete"), t("home.cancel"));
+        if (!ok) return;
+        const list = pagesWith(f, pages.filter((x) => x.id !== p.id));
+        if (!(await saveFolderCanvas(f, { pages: list }))) return;
+        pages = folderPages(f);
+        cur = "main";
+        renaming = false;
+        paintBar();
+        mountCurrent();
+      }
+      bar.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if ("pageAdd" in b.dataset) return addPage();
+        if ("pageOk" in b.dataset) return rename(true);
+        if ("pageDel" in b.dataset) return deletePage();
+        if (b.dataset.page) {
+          if (b.dataset.page === cur) {
+            // 再按一次现在这页 → 改名字
+            if (!canEdit) return;
+            renaming = true;
+            return paintBar();
+          }
+          cur = b.dataset.page;
+          renaming = false;
+          paintBar();
+          mountCurrent();
+        }
+      });
+      bar.addEventListener("keydown", (e) => {
+        if (!e.target.matches("[data-page-name]")) return;
+        if (e.key === "Enter") (e.preventDefault(), rename(true));
+        if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), rename(false));
+      });
+      paintBar();
+      mountCurrent();
+    }
+
+    // ------------------------------------------------------------ 表格页（像 Google Sheets）
+    /* 格子直接打字（Enter 往下一格、Tab 往右）；从 Excel / Google Sheets 复制一块贴上会自动摊开；
+       拉栏位标题右边 / 列号下面的线改宽度、高度；第一列当标题（粗体）。看的人：Email、网址可以直接点。
+       打字停一下就自动存（整个 canvas 一起存，单页最多约 300KB）。 */
+    function mountSheet(f, pageId, host, hooks) {
+      const canEdit = !!hooks.canEdit;
+      const rec = () => rawPages(f).find((p) => p.id === pageId) || {};
+      const r0 = rec();
+      const num = (v, lo, hi, d) => {
+        const n = Math.round(Number(v));
+        return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
+      };
+      const MAXR = 500, MAXC = 52;
+      let rows = num(r0.rows, 1, MAXR, 20);
+      let cols = num(r0.cols, 1, MAXC, 6);
+      let cells = new Map();
+      if (r0.cells && typeof r0.cells === "object")
+        for (const [k, v] of Object.entries(r0.cells)) if (/^\d{1,3}:\d{1,2}$/.test(k) && typeof v === "string" && v) cells.set(k, v.slice(0, 1000));
+      let w = {}, h = {};
+      if (r0.w && typeof r0.w === "object") for (const [k, v] of Object.entries(r0.w)) if (/^\d{1,2}$/.test(k)) w[k] = num(v, 40, 600, 140);
+      if (r0.h && typeof r0.h === "object") for (const [k, v] of Object.entries(r0.h)) if (/^\d{1,3}$/.test(k)) h[k] = num(v, 24, 240, 32);
+      const colW = (c) => w[c] || 140;
+      const rowH = (r) => h[r] || 32;
+      const colName = (c) => {
+        let s = "";
+        for (let n = c + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+        return s;
+      };
+      let focus = null; // [列, 栏]：最后点的格子（删列 / 删栏用）
+      let timer = null;
+      const status = (txt) => {
+        const el = $("[data-sheet-status]", host);
+        if (el) el.textContent = txt;
+      };
+      const toObj = (m) => Object.fromEntries([...m].filter(([, v]) => v));
+      async function save() {
+        clearTimeout(timer);
+        timer = null;
+        const list = rawPages(f).map((p) => (p.id === pageId ? { ...p, rows, cols, cells: toObj(cells), w, h } : p));
+        status(t("home.mapUnsaved"));
+        const ok = await saveFolderCanvas(f, { pages: list });
+        status(ok ? t("home.mapSaved") : "");
+      }
+      const later = () => {
+        status(t("home.mapUnsaved"));
+        clearTimeout(timer);
+        timer = setTimeout(save, 700);
+      };
+      // 看的人：Email → mailto、网址 → 新分页
+      const show = (v) => {
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return `<a href="mailto:${esc(v)}" class="text-sky-700 hover:underline dark:text-sky-300">${esc(v)}</a>`;
+        if (/^https?:\/\/\S+$/i.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener noreferrer" class="text-sky-700 hover:underline dark:text-sky-300">${esc(v)}</a>`;
+        return esc(v);
+      };
+      function render() {
+        const head = `<tr><th class="sticky top-0 left-0 z-30 w-11 min-w-11 border-r border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></th>${Array.from(
+          { length: cols },
+          (_, c) => `<th class="sticky top-0 z-20 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-semibold text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
+            <div class="relative h-6 leading-6">${colName(c)}${canEdit ? `<span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : ""}</div></th>`,
+        ).join("")}</tr>`;
+        const body = Array.from({ length: rows }, (_, r) => {
+          const tds = Array.from({ length: cols }, (_, c) => {
+            const v = cells.get(r + ":" + c) || "";
+            const bold = r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
+            return canEdit
+              ? `<td class="border-r border-b border-slate-200 p-0 dark:border-slate-700 ${bold}"><input data-cell="${r}:${c}" value="${esc(v)}" maxlength="1000" spellcheck="false" class="block h-full w-full min-w-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-sky-500 focus:ring-inset dark:text-slate-100 dark:focus:bg-slate-900 ${r === 0 ? "font-semibold" : ""}"></td>`
+              : `<td class="overflow-hidden border-r border-b border-slate-200 px-2 text-sm text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${bold}" title="${esc(v)}">${show(v)}</td>`;
+          }).join("");
+          return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-medium text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
+            <div class="relative flex h-full items-center justify-center">${r + 1}${canEdit ? `<span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute -bottom-1 left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : ""}</div></th>${tds}</tr>`;
+        }).join("");
+        const tb = (attr, ic, label) => `<button type="button" ${attr} class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">${icon(ic, "size-4")}${esc(label)}</button>`;
+        host.innerHTML = `
+          ${
+            canEdit
+              ? `<div class="mb-2 flex flex-wrap items-center gap-2">
+                  ${tb("data-sheet-add-row", "rows-3", t("home.sheetAddRow"))}
+                  ${tb("data-sheet-add-col", "columns-3", t("home.sheetAddCol"))}
+                  ${tb(`data-sheet-del-row ${focus ? "" : "disabled"}`, "trash-2", t("home.sheetDelRow"))}
+                  ${tb(`data-sheet-del-col ${focus ? "" : "disabled"}`, "trash-2", t("home.sheetDelCol"))}
+                  <span data-sheet-status class="ml-auto text-xs text-slate-400"></span>
+                </div>`
+              : ""
+          }
+          <div data-sheet class="gw-noscroll max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+            <table class="border-separate border-spacing-0 text-left" style="table-layout:fixed;width:${44 + Array.from({ length: cols }, (_, c) => colW(c)).reduce((a, b) => a + b, 0)}px">
+              <colgroup><col style="width:44px">${Array.from({ length: cols }, (_, c) => `<col data-col="${c}" style="width:${colW(c)}px">`).join("")}</colgroup>
+              <thead>${head}</thead><tbody>${body}</tbody>
+            </table>
+          </div>
+          ${canEdit ? `<p class="mt-2 text-[11px] text-slate-400">${esc(t("home.sheetHint"))}</p>` : ""}`;
+        refreshIcons();
+      }
+      const cellEl = (r, c) => $(`[data-cell="${r}:${c}"]`, host);
+      const go = (r, c) => {
+        const el = cellEl(r, c);
+        if (el) (el.focus(), el.select());
+      };
+      if (canEdit) {
+        host.addEventListener("input", (e) => {
+          const k = e.target.dataset && e.target.dataset.cell;
+          if (!k) return;
+          const v = e.target.value.slice(0, 1000);
+          v ? cells.set(k, v) : cells.delete(k);
+          later();
+        });
+        host.addEventListener("focusin", (e) => {
+          const k = e.target.dataset && e.target.dataset.cell;
+          if (!k) return;
+          const first = !focus;
+          focus = k.split(":").map(Number);
+          if (first) $$("[data-sheet-del-row], [data-sheet-del-col]", host).forEach((b) => (b.disabled = false));
+        });
+        host.addEventListener("keydown", (e) => {
+          const k = e.target.dataset && e.target.dataset.cell;
+          if (!k) return;
+          const [r, c] = k.split(":").map(Number);
+          const el = e.target;
+          if (e.key === "Enter") return e.preventDefault(), go(e.shiftKey ? Math.max(0, r - 1) : Math.min(rows - 1, r + 1), c);
+          if (e.key === "ArrowDown") return e.preventDefault(), go(Math.min(rows - 1, r + 1), c);
+          if (e.key === "ArrowUp") return e.preventDefault(), go(Math.max(0, r - 1), c);
+          if (e.key === "ArrowRight" && el.selectionStart === el.value.length && el.selectionEnd === el.value.length && c < cols - 1) return e.preventDefault(), go(r, c + 1);
+          if (e.key === "ArrowLeft" && el.selectionStart === 0 && el.selectionEnd === 0 && c > 0) return e.preventDefault(), go(r, c - 1);
+        });
+        // 贴上一块（有 Tab / 换行）：从这一格开始摊开，不够就加列 / 栏
+        host.addEventListener("paste", (e) => {
+          const k = e.target.dataset && e.target.dataset.cell;
+          if (!k) return;
+          const text = (e.clipboardData || window.clipboardData).getData("text");
+          if (!/[\t\n]/.test(text)) return;
+          e.preventDefault();
+          const [r0c, c0c] = k.split(":").map(Number);
+          const lines = text.replace(/\r/g, "").replace(/\n+$/, "").split("\n").slice(0, MAXR - r0c);
+          lines.forEach((line, i) =>
+            line
+              .split("\t")
+              .slice(0, MAXC - c0c)
+              .forEach((v, j) => {
+                const key = r0c + i + ":" + (c0c + j);
+                v = v.trim().slice(0, 1000);
+                v ? cells.set(key, v) : cells.delete(key);
+                cols = Math.max(cols, c0c + j + 1);
+              }),
+          );
+          rows = Math.max(rows, r0c + lines.length);
+          render();
+          later();
+          go(r0c, c0c);
+        });
+        // 拉线改栏宽 / 列高（放开才存）
+        host.addEventListener("pointerdown", (e) => {
+          const cr = e.target.closest("[data-col-resize]");
+          const rr = e.target.closest("[data-row-resize]");
+          if (!cr && !rr) return;
+          e.preventDefault();
+          const startX = e.clientX, startY = e.clientY;
+          const table = $("table", host);
+          if (cr) {
+            const c = Number(cr.dataset.colResize);
+            const w0 = colW(c), t0 = table.offsetWidth;
+            const colEl = $(`col[data-col="${c}"]`, host);
+            const move = (ev) => {
+              const nw = Math.min(600, Math.max(40, Math.round(w0 + ev.clientX - startX)));
+              w[c] = nw;
+              colEl.style.width = nw + "px";
+              table.style.width = t0 - w0 + nw + "px";
+            };
+            const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), later());
+            addEventListener("pointermove", move);
+            addEventListener("pointerup", up);
+          } else {
+            const r = Number(rr.dataset.rowResize);
+            const h0 = rowH(r);
+            const tr = rr.closest("tr");
+            const move = (ev) => {
+              const nh = Math.min(240, Math.max(24, Math.round(h0 + ev.clientY - startY)));
+              h[r] = nh;
+              tr.style.height = nh + "px";
+            };
+            const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), later());
+            addEventListener("pointermove", move);
+            addEventListener("pointerup", up);
+          }
+        });
+        // 删一列 / 一栏：后面的往前移（格子、宽度、高度一起）
+        const shift = (m, fn) => {
+          const out = new Map();
+          for (const [k, v] of m) {
+            const nk = fn(k);
+            if (nk != null) out.set(nk, v);
+          }
+          return out;
+        };
+        host.addEventListener("click", (e) => {
+          const b = e.target.closest("button");
+          if (!b || b.disabled) return;
+          if ("sheetAddRow" in b.dataset && rows < MAXR) return (rows++, render(), later(), go(rows - 1, focus ? focus[1] : 0));
+          if ("sheetAddCol" in b.dataset && cols < MAXC) return (cols++, render(), later(), go(focus ? focus[0] : 0, cols - 1));
+          if (!focus) return;
+          const [fr, fc] = focus;
+          if ("sheetDelRow" in b.dataset && rows > 1) {
+            cells = shift(cells, (k) => {
+              const [r, c] = k.split(":").map(Number);
+              return r === fr ? null : (r > fr ? r - 1 : r) + ":" + c;
+            });
+            const nh = {};
+            for (const [k, v] of Object.entries(h)) if (+k !== fr) nh[+k > fr ? +k - 1 : +k] = v;
+            h = nh;
+            rows--;
+          } else if ("sheetDelCol" in b.dataset && cols > 1) {
+            cells = shift(cells, (k) => {
+              const [r, c] = k.split(":").map(Number);
+              return c === fc ? null : r + ":" + (c > fc ? c - 1 : c);
+            });
+            const nw = {};
+            for (const [k, v] of Object.entries(w)) if (+k !== fc) nw[+k > fc ? +k - 1 : +k] = v;
+            w = nw;
+            cols--;
+          } else return;
+          focus = null;
+          render();
+          later();
+        });
+      }
+      render();
+    }
+
     // ------------------------------------------------------------ 文件夹「柜子」看法
     /* 一个文件夹 = 一个柜子，里面好几个标题（Section），每个标题下面一条条连结 / App（↳ 1.1、1.2…，像总表）。
        电脑上标题排成两栏。能改的人（拥有者、被分享成 Can edit 的人）：
@@ -2954,10 +3363,31 @@ window.GWHome = (function () {
       const canEdit = !!hooks.canEdit, isOwner = !!hooks.isOwner;
       const uid = () => Math.random().toString(36).slice(2, 10);
       let editMode = false;
-      const cv0 = f.canvas && typeof f.canvas === "object" ? f.canvas : {};
+      // pageId：null = 第一页（资料在 canvas 最外层）；不然是之后加的柜子页
+      const pageId = hooks.page || null;
+      const otherPages = hooks.otherPages || [];
+      const cv0 = pageId ? rawPages(f).find((p) => p.id === pageId) || {} : canvasOf(f);
       let shelves = (Array.isArray(cv0.shelves) ? cv0.shelves : []).filter((x) => x && typeof x === "object").map((x) => ({ id: /^[A-Za-z0-9_-]{1,40}$/.test(String(x.id || "")) ? String(x.id) : uid(), name: String(x.name || "").slice(0, 40), items: Array.isArray(x.items) ? x.items.map(String) : [] })); // id 只收字母数字（文件夹内容别人也能改：不能让奇怪的字进到画面）
       let looseOrder = Array.isArray(cv0.loose) ? cv0.loose.map(String) : [];
-      const allKeys = () => [...folderApps(f.id).map((id) => "a:" + id), ...folderLinks(f.id).map((l) => "l:" + l.id)];
+      const folderKeys = () => [...folderApps(f.id).map((id) => "a:" + id), ...folderLinks(f.id).map((l) => "l:" + l.id)];
+      // 别的柜子页拿走的东西（第一页不显示）
+      const claimed = () => {
+        const set = new Set();
+        rawPages(f).forEach((p) => {
+          if (p.type !== "links" || p.id === "main" || p.id === pageId) return;
+          (Array.isArray(p.shelves) ? p.shelves : []).forEach((x) => (Array.isArray(x && x.items) ? x.items : []).forEach((k) => set.add(String(k))));
+          (Array.isArray(p.loose) ? p.loose : []).forEach((k) => set.add(String(k)));
+        });
+        return set;
+      };
+      const allKeys = () => {
+        if (!pageId) {
+          const taken = claimed();
+          return folderKeys().filter((k) => !taken.has(k));
+        }
+        const own = new Set([...shelves.flatMap((x) => x.items), ...looseOrder]);
+        return folderKeys().filter((k) => own.has(k));
+      };
       // 已经不在文件夹的拿掉；同一个东西只放一个标题；剩下的 = 还没分
       function loose() {
         const have = new Set(allKeys());
@@ -2985,6 +3415,7 @@ window.GWHome = (function () {
         const link = k[0] === "l";
         return (
           (link ? mini(`data-shelf-edit-link="${id}"`, "pencil", t("home.editLink"), "bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200") : "") +
+          (otherPages.length ? mini(`data-shelf-move="${k}"`, "arrow-right-left", t("home.pageMove"), "bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-200") : "") +
           (isOwner ? mini(link ? `data-out-link="${id}"` : `data-out="${id}"`, "arrow-up-right", t("fab.moveOut"), "bg-slate-700 text-white") : "") +
           (link ? mini(`data-shelf-del-link="${id}"`, "trash-2", t("home.deleteLink"), "bg-white text-red-600 dark:bg-slate-800 dark:text-red-400") : "")
         );
@@ -3023,7 +3454,7 @@ window.GWHome = (function () {
         const empty = !allKeys().length;
         const tools = [canEdit ? tb("data-shelf-link", "link", t("home.shelfAddLink")) : "", canEdit ? tb("data-shelf-add", "plus", t("home.shelfAdd")) : "", canEdit && (shelves.length || !empty) ? tb("data-shelf-edit", editMode ? "check" : "pencil", editMode ? t("home.shelfDone") : t("home.shelfEdit"), editMode) : ""].join("");
         host.innerHTML = `
-          ${tools ? `<div class="mb-3 flex flex-wrap items-center justify-end gap-2 ${f.is_shared || f.shared_by ? "pr-10" : ""}">${tools}</div>` : `<div class="h-6"></div>`}
+          ${tools ? `<div class="mb-3 flex flex-wrap items-center justify-end gap-2 ${hooks.toolsPad ? "pr-10" : ""}">${tools}</div>` : `<div class="${hooks.toolsPad ? "h-6" : "h-0"}"></div>`}
           <div class="gw-noscroll -mx-1 max-h-[68vh] space-y-3 overflow-y-auto px-1 pb-1">
             ${!shelves.length && canEdit && !empty ? `<p class="mb-3 flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">${icon("lightbulb", "size-4 shrink-0")}${esc(t("home.shelfHint"))}</p>` : ""}
             ${shelves.length ? shelvesHtml() : ""}
@@ -3117,21 +3548,51 @@ window.GWHome = (function () {
         save();
         render();
       }
-      async function save() {
-        const canvas = { ...(f.canvas && typeof f.canvas === "object" ? f.canvas : {}), shelves, loose: looseOrder };
-        delete canvas.nodes;
-        delete canvas.edges;
-        delete canvas.map;
-        const { error } = await sb.rpc("gw_save_folder_canvas", { p_folder: f.id, p_canvas: canvas });
-        if (error) return toast(t("home.saveFailed") + " (" + (error.message || "") + ")");
-        f.canvas = canvas;
+      // 存：第一页存在 canvas 最外层；其他柜子页存在自己那一页（move = 把一个东西搬到别的柜子页）
+      function save(move) {
+        let pages = rawPages(f).map((p) => (p.id === pageId ? { ...p, shelves, loose: looseOrder } : p));
+        if (move && move.to !== "main") pages = pages.map((p) => (p.id === move.to ? { ...p, loose: [...(Array.isArray(p.loose) ? p.loose.map(String) : []).filter((x) => x !== move.key), move.key] } : p));
+        if (!pageId) return saveFolderCanvas(f, rawPages(f).length || move ? { shelves, loose: looseOrder, pages } : { shelves, loose: looseOrder });
+        return saveFolderCanvas(f, { pages });
+      }
+      // 搬到别的柜子页：先问哪一页
+      function moveDialog(key) {
+        const dlg = modal(
+          t("home.pageMoveTitle"),
+          `<div class="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">${otherPages
+            .map((p) => `<button type="button" data-move-to="${esc(p.id)}" class="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5">${icon("layout-list", "size-4 text-slate-400")}${esc(pageName(p))}</button>`)
+            .join("")}</div>`,
+        );
+        refreshIcons();
+        dlg.el.addEventListener("click", async (e) => {
+          const b = e.target.closest("[data-move-to]");
+          if (!b) return;
+          dlg.close();
+          shelves.forEach((x) => (x.items = x.items.filter((k) => k !== key)));
+          looseOrder = looseOrder.filter((k) => k !== key);
+          await save({ key, to: b.dataset.moveTo });
+          render();
+        });
       }
       host.addEventListener("click", (e) => {
         const b = e.target.closest("button");
         if (!b || !host.contains(b)) return;
         const d = b.dataset;
         // 新连结记在文件夹拥有者名下（Editor 加的也一样），大家都看得到
-        if ("shelfLink" in d) return linkDialog(null, { folderId: f.id, ownerId: f.shared_by || null, onSaved: hooks.reopen });
+        if ("shelfLink" in d)
+          return linkDialog(null, {
+            folderId: f.id,
+            ownerId: f.shared_by || null,
+            // 在别的柜子页加的连结：记在这一页
+            onSaved: async (l) => {
+              if (pageId && l) {
+                looseOrder = [...looseOrder, "l:" + l.id];
+                await save();
+              }
+              hooks.reopen();
+            },
+          });
+        if (d.shelfMove) return moveDialog(d.shelfMove);
         if (d.shelfDelLink) {
           const l = links.find((x) => x.id === d.shelfDelLink);
           if (!l) return;

@@ -3126,7 +3126,9 @@ window.GWHome = (function () {
     // ------------------------------------------------------------ 表格页（像 Google Sheets）
     /* 格子直接打字（Enter 往下一格、Tab 往右）；从 Excel / Google Sheets 复制一块贴上会自动摊开；
        拉栏位标题右边 / 列号下面的线改宽度、高度；第一列当标题（粗体）。
-       最右边栏位标题旁的「+」加栏、最下面列号的「+」加列（可以打数字一次加好几个）；点栏位字母 / 列号可以删那一栏 / 列。
+       右边「+」加一栏、下面「+」加一列。点栏位字母 / 列号选那一栏 / 列（Shift 再点 = 选一整段），
+       按右键（或再点一次选好的）出现选单：插入几栏 / 几列（左右 / 上下）、设宽度 / 高度、删除——选几栏就一起改；
+       拉线改大小时，选好的几栏 / 几列也一起变。
        放大 / 缩小：缩小时画面能放更多格，空的格子自动补满（不用自己加）。
        留言：看得到这个文件夹的人都可以对一格留言（谁、内容、日期时间），存在 gw_folder_cell_comments（要先跑 20261206 SQL）。
        看的人：Email、网址可以直接点。打字停一下就自动存（整个 canvas 一起存，单页最多约 300KB）。 */
@@ -3183,6 +3185,8 @@ window.GWHome = (function () {
       const grow = (r, c) => ((rows = Math.max(rows, r + 1)), (cols = Math.max(cols, c + 1)));
 
       let focus = null; // [列, 栏]：最后点的格子
+      let sel = null; // 选好的栏 / 列：{ kind: "col" | "row", a, b, anchor }
+      const inSel = (kind, i) => !!sel && sel.kind === kind && i >= sel.a && i <= sel.b;
       let timer = null;
       const status = (txt) => {
         const el = $("[data-sheet-status]", host);
@@ -3245,7 +3249,7 @@ window.GWHome = (function () {
         popEl.style.width = width + "px";
         popEl.innerHTML = html;
         document.body.appendChild(popEl);
-        const a = anchor.getBoundingClientRect();
+        const a = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : anchor; // 元素，或滑鼠位置 { left, top, bottom }
         const pw = popEl.offsetWidth, ph = popEl.offsetHeight;
         let left = Math.min(innerWidth - pw - 8, Math.max(8, a.left));
         let top = a.bottom + 6;
@@ -3327,23 +3331,24 @@ window.GWHome = (function () {
       };
       function render() {
         measure();
+        const hs = (on) => (on ? "bg-sky-200 text-sky-800 dark:bg-sky-800 dark:text-white" : "bg-slate-100 text-slate-500 dark:bg-slate-800");
         const head = `<tr><th class="sticky top-0 left-0 z-30 w-11 min-w-11 border-r border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></th>${Array.from(
           { length: showC },
-          (_, c) => `<th class="sticky top-0 z-20 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-semibold text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
-            <div class="relative h-6 leading-6">${canEdit ? `<button type="button" data-col-menu="${c}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${colName(c)}</button><span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-1"} z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : colName(c)}</div></th>`,
+          (_, c) => `<th class="sticky top-0 z-20 border-r border-b border-slate-200 p-0 text-center text-[11px] font-semibold select-none dark:border-slate-700 ${hs(inSel("col", c))}">
+            <div class="relative h-6 leading-6">${canEdit ? `<button type="button" data-col-menu="${c}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${colName(c)}</button><span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-1"} z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : colName(c)}</div></th>`,
         ).join("")}</tr>`;
         const body = Array.from({ length: showR }, (_, r) => {
           const tds = Array.from({ length: showC }, (_, c) => {
             const k = r + ":" + c;
             const v = cells.get(k) || "";
-            const bold = r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
+            const bold = inSel("col", c) || inSel("row", r) ? "bg-sky-50 dark:bg-sky-900/20" + (r === 0 ? " font-semibold" : "") : r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
             const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
               ? `<td data-td="${k}" class="group relative border-r border-b border-slate-200 p-0 dark:border-slate-700 ${bold}"><input data-cell="${k}" value="${esc(v)}" maxlength="1000" spellcheck="false" class="block h-full w-full min-w-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-white focus:pr-8 focus:ring-2 focus:ring-sky-500 focus:ring-inset dark:text-slate-100 dark:focus:bg-slate-900 ${r === 0 ? "font-semibold" : ""}">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
               : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} class="relative overflow-hidden border-r border-b border-slate-200 px-2 text-sm text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
-          return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-medium text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
-            <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
+          return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 p-0 text-center text-[11px] font-medium select-none dark:border-slate-700 ${hs(inSel("row", r))}">
+            <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200/70 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
         }).join("");
         const tableW = 44 + Array.from({ length: showC }, (_, c) => colW(c)).reduce((a, b) => a + b, 0);
         const zb = (attr, ic, label, dis) => `<button type="button" ${attr} ${dis ? "disabled" : ""} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
@@ -3364,9 +3369,9 @@ window.GWHome = (function () {
                 <thead>${head}</thead><tbody>${body}</tbody>
               </table>
             </div>
-            ${canEdit ? `<button type="button" data-add-cols data-pop-anchor title="${esc(t("home.sheetAddCols"))}" aria-label="${esc(t("home.sheetAddCols"))}" class="flex w-8 shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
+            ${canEdit ? `<button type="button" data-add-cols title="${esc(t("home.sheetAddCols"))}" aria-label="${esc(t("home.sheetAddCols"))}" class="flex w-8 shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
           </div>
-          ${canEdit ? `<button type="button" data-add-rows data-pop-anchor title="${esc(t("home.sheetAddRows"))}" aria-label="${esc(t("home.sheetAddRows"))}" class="mt-2 flex h-8 w-[calc(100%-2.5rem)] items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
+          ${canEdit ? `<button type="button" data-add-rows title="${esc(t("home.sheetAddRows"))}" aria-label="${esc(t("home.sheetAddRows"))}" class="mt-2 flex h-8 w-[calc(100%-2.5rem)] items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
           </div>`;
         refreshIcons();
         paintMarks();
@@ -3381,35 +3386,17 @@ window.GWHome = (function () {
         try { localStorage.setItem("gw-sheet-zoom", String(zoom)); } catch (e) {}
         render();
       }
-      // 加几栏 / 几列：一个小浮窗打数字
-      function addMany(kind, anchor) {
-        const max = kind === "rows" ? MAXR - showR : MAXC - showC;
-        if (max <= 0) return toast(t("home.sheetMax"));
-        const el = pop(
-          anchor,
-          `<form class="flex items-center gap-2"><span class="text-sm">${esc(t("home.sheetAdd"))}</span>
-            <input name="n" type="number" min="1" max="${max}" value="${kind === "rows" ? Math.min(10, max) : 1}" class="h-9 w-20 rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-900">
-            <span class="text-sm">${esc(t(kind === "rows" ? "home.sheetRowsWord" : "home.sheetColsWord"))}</span>
-            <button type="submit" class="${btn("primary", "sm")} ml-auto">${esc(t("home.sheetAddBtn"))}</button></form>`,
-          280,
-        );
-        const inp = $("input", el);
-        inp.focus();
-        inp.select();
-        $("form", el).addEventListener("submit", (e) => {
-          e.preventDefault();
-          const n = num(inp.value, 1, max, 1);
-          if (kind === "rows") rows = showR + n;
-          else cols = showC + n;
-          closePop();
-          render();
-          later();
-          const sh = $("[data-sheet]", host);
-          if (kind === "rows") sh.scrollTop = sh.scrollHeight;
-          else sh.scrollLeft = sh.scrollWidth;
-        });
+      // 「+」：直接加一栏 / 一列（加在最后面，卷到看得到）
+      function addOne(kind) {
+        if (kind === "rows" ? showR >= MAXR : showC >= MAXC) return toast(t("home.sheetMax"));
+        if (kind === "rows") rows = showR + 1;
+        else cols = showC + 1;
+        render();
+        later();
+        const sh = $("[data-sheet]", host);
+        if (kind === "rows") sh.scrollTop = sh.scrollHeight;
+        else sh.scrollLeft = sh.scrollWidth;
       }
-      // 点栏位字母 / 列号：删那一栏 / 列（后面的往前移；留言也跟着移）
       const shift = (m, fn) => {
         const out = new Map();
         for (const [k, v] of m) {
@@ -3418,47 +3405,131 @@ window.GWHome = (function () {
         }
         return out;
       };
-      function delMenu(kind, idx, anchor) {
-        const label = kind === "row" ? t("home.sheetDelRowN", { n: idx + 1 }) : t("home.sheetDelColN", { c: colName(idx) });
-        const el = pop(anchor, `<button type="button" data-do-del class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}${esc(label)}</button>`, 220);
-        $("[data-do-del]", el).onclick = async () => {
+      // 栏 / 列编号往后（count > 0，插入）或往前（count < 0，删掉 at 开始的 -count 个）移：格子、宽度 / 高度、留言一起
+      function moveLines(kind, at, count) {
+        const pos = kind === "row" ? 0 : 1;
+        const lim = kind === "row" ? MAXR : MAXC;
+        const end = count < 0 ? at - count : at; // 删掉的范围 [at, end)
+        const idx = (i) => (count < 0 ? (i < at ? i : i < end ? null : i + count) : i < at ? i : i + count < lim ? i + count : null);
+        cells = shift(cells, (k) => {
+          const p2 = k.split(":").map(Number);
+          const ni = idx(p2[pos]);
+          if (ni == null) return null;
+          p2[pos] = ni;
+          return p2.join(":");
+        });
+        const sizes = kind === "row" ? h : w;
+        const ns = {};
+        for (const [k, v] of Object.entries(sizes)) {
+          const ni = idx(+k);
+          if (ni != null) ns[ni] = v;
+        }
+        if (kind === "row") h = ns;
+        else w = ns;
+        if (notesOn && notes.length) {
+          notes = notes
+            .map((n) => {
+              const p2 = n.cell.split(":").map(Number);
+              const ni = idx(p2[pos]);
+              if (ni == null) return null;
+              p2[pos] = ni;
+              return { ...n, cell: p2.join(":") };
+            })
+            .filter(Boolean);
+          // 资料库：新的 gw_move_cell_comments（20261207）；还没跑的话，删一个时用旧的
+          sb.rpc("gw_move_cell_comments", { p_folder: f.id, p_page: pageId, p_kind: kind, p_at: at, p_count: count }).then(({ error }) => {
+            if (error && count === -1) sb.rpc("gw_shift_cell_comments", { p_folder: f.id, p_page: pageId, p_kind: kind, p_index: at }).then(() => {}, () => {});
+          }, () => {});
+        }
+      }
+      // 右键（或再点一次选好的）选单：插入 / 宽度或高度 / 删除——对选好的全部栏 / 列
+      function lineMenu(kind, anchor) {
+        const isRow = kind === "row";
+        const a = sel.a, b = sel.b, n = b - a + 1;
+        const nm = (i) => (isRow ? String(i + 1) : colName(i));
+        const label = n === 1 ? t(isRow ? "home.sheetRowLabel" : "home.sheetColLabel", { a: nm(a) }) : t(isRow ? "home.sheetRowsLabel" : "home.sheetColsLabel", { a: nm(a), b: nm(b) });
+        const size0 = isRow ? rowH(a) : colW(a);
+        const inp = "h-8 w-16 rounded-lg border border-slate-300 bg-white px-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:focus:border-white";
+        const sbtn = "flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-white/5";
+        const el = pop(
+          anchor,
+          `<p class="mb-2 text-xs font-bold text-slate-500">${esc(label)}</p>
+          <div class="space-y-1.5 border-b border-slate-100 pb-3 dark:border-slate-800">
+            <div class="flex items-center gap-2"><span class="w-14 text-xs text-slate-500">${esc(t("home.sheetInsert"))}</span><input data-ins-n type="number" min="1" max="${isRow ? MAXR : MAXC}" value="${n}" class="${inp}"><span class="text-xs text-slate-500">${esc(t(isRow ? "home.sheetRowsWord" : "home.sheetColsWord"))}</span></div>
+            <div class="flex gap-1.5 pl-16">
+              <button type="button" data-ins-at="before" class="${sbtn}">${icon(isRow ? "arrow-up" : "arrow-left", "inline size-3.5")} ${esc(t(isRow ? "home.sheetAbove" : "home.sheetLeft"))}</button>
+              <button type="button" data-ins-at="after" class="${sbtn}">${esc(t(isRow ? "home.sheetBelow" : "home.sheetRight"))} ${icon(isRow ? "arrow-down" : "arrow-right", "inline size-3.5")}</button>
+            </div>
+          </div>
+          <form data-size-form class="flex items-center gap-2 border-b border-slate-100 py-3 dark:border-slate-800"><span class="w-14 text-xs text-slate-500">${esc(t(isRow ? "home.sheetHeight" : "home.sheetWidth"))}</span>
+            <input data-size-px type="number" min="${isRow ? 24 : 40}" max="${isRow ? 240 : 600}" value="${size0}" class="${inp}"><span class="text-xs text-slate-500">px</span>
+            <button type="submit" class="${btn("secondary", "sm")} ml-auto">${esc(t("home.sheetApply"))}</button></form>
+          <button type="button" data-do-del class="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30">${icon("trash-2", "size-4")}${esc(n === 1 ? t(isRow ? "home.sheetDelRowN" : "home.sheetDelColN", isRow ? { n: a + 1 } : { c: nm(a) }) : t(isRow ? "home.sheetDelRows" : "home.sheetDelCols", { a: nm(a), b: nm(b) }))}</button>`,
+          290,
+        );
+        el.addEventListener("click", (e) => {
+          const bt = e.target.closest("button");
+          if (!bt) return;
+          if (bt.dataset.insAt) {
+            const want = num($("[data-ins-n]", el).value, 1, isRow ? MAXR : MAXC, 1);
+            const at = bt.dataset.insAt === "before" ? a : b + 1;
+            const total = isRow ? Math.max(rows, at) : Math.max(cols, at);
+            const k = Math.min(want, (isRow ? MAXR : MAXC) - total);
+            if (k <= 0) return toast(t("home.sheetMax"));
+            moveLines(kind, at, k);
+            if (isRow) rows = total + k;
+            else cols = total + k;
+            sel = { kind, a: at, b: at + k - 1, anchor: at };
+            closePop();
+            render();
+            return later();
+          }
+          if ("doDel" in bt.dataset) {
+            const total = isRow ? rows : cols;
+            if (a < total) {
+              const gone = Math.min(b, total - 1) - a + 1;
+              if (isRow) rows = Math.max(1, rows - gone);
+              else cols = Math.max(1, cols - gone);
+            }
+            moveLines(kind, a, -n);
+            sel = null;
+            focus = null;
+            closePop();
+            render();
+            return later();
+          }
+        });
+        $("[data-size-form]", el).addEventListener("submit", (e) => {
+          e.preventDefault();
+          const px = isRow ? num($("[data-size-px]", el).value, 24, 240, 32) : num($("[data-size-px]", el).value, 40, 600, 140);
+          for (let i = a; i <= b; i++) (isRow ? h : w)[i] = px;
           closePop();
-          if (kind === "row") {
-            cells = shift(cells, (k) => {
-              const [r, c] = k.split(":").map(Number);
-              return r === idx ? null : (r > idx ? r - 1 : r) + ":" + c;
-            });
-            const nh = {};
-            for (const [k, v] of Object.entries(h)) if (+k !== idx) nh[+k > idx ? +k - 1 : +k] = v;
-            h = nh;
-            rows = Math.max(1, (idx < rows ? rows : showR) - 1);
-          } else {
-            cells = shift(cells, (k) => {
-              const [r, c] = k.split(":").map(Number);
-              return c === idx ? null : r + ":" + (c > idx ? c - 1 : c);
-            });
-            const nw = {};
-            for (const [k, v] of Object.entries(w)) if (+k !== idx) nw[+k > idx ? +k - 1 : +k] = v;
-            w = nw;
-            cols = Math.max(1, (idx < cols ? cols : showC) - 1);
-          }
-          // 留言跟着移（那一列 / 栏的留言删掉）
-          if (notesOn && notes.length) {
-            const pos = kind === "row" ? 0 : 1;
-            notes = notes
-              .filter((n) => Number(n.cell.split(":")[pos]) !== idx)
-              .map((n) => {
-                const p2 = n.cell.split(":").map(Number);
-                if (p2[pos] > idx) p2[pos]--;
-                return { ...n, cell: p2.join(":") };
-              });
-            sb.rpc("gw_shift_cell_comments", { p_folder: f.id, p_page: pageId, p_kind: kind, p_index: idx }).then(() => {}, () => {});
-          }
-          focus = null;
           render();
           later();
-        };
+        });
+        const ni = $("[data-ins-n]", el);
+        ni.focus();
+        ni.select();
       }
+      // 点栏位字母 / 列号：选那一栏 / 列；Shift 再点 = 选一整段；再点一次选好的那一个 = 开选单（手机没有右键）
+      function pick(kind, i, e, anchor) {
+        if (e.shiftKey && sel && sel.kind === kind) sel = { kind, a: Math.min(sel.anchor, i), b: Math.max(sel.anchor, i), anchor: sel.anchor };
+        else if (sel && sel.kind === kind && sel.a === i && sel.b === i) return lineMenu(kind, anchor);
+        else sel = { kind, a: i, b: i, anchor: i };
+        render();
+      }
+      host.addEventListener("contextmenu", (e) => {
+        const hb = canEdit && e.target.closest("[data-col-menu], [data-row-menu]");
+        if (!hb) return;
+        e.preventDefault();
+        const kind = hb.dataset.colMenu != null ? "col" : "row";
+        const i = Number(kind === "col" ? hb.dataset.colMenu : hb.dataset.rowMenu);
+        if (!inSel(kind, i)) {
+          sel = { kind, a: i, b: i, anchor: i };
+          render();
+        }
+        lineMenu(kind, { left: e.clientX, top: e.clientY, bottom: e.clientY });
+      });
       host.addEventListener("click", (e) => {
         const b = e.target.closest("button, [data-cmt]");
         if (!b || b.disabled || !host.contains(b)) return;
@@ -3469,10 +3540,10 @@ window.GWHome = (function () {
         if ("zoomReset" in d) return setZoom(100);
         if (d.cmt) return openNotes(d.cmt, b.closest("td") || b);
         if (!canEdit) return;
-        if ("addRows" in d) return addMany("rows", b);
-        if ("addCols" in d) return addMany("cols", b);
-        if (d.colMenu) return delMenu("col", Number(d.colMenu), b);
-        if (d.rowMenu) return delMenu("row", Number(d.rowMenu), b);
+        if ("addRows" in d) return addOne("rows");
+        if ("addCols" in d) return addOne("cols");
+        if (d.colMenu) return pick("col", Number(d.colMenu), e, b);
+        if (d.rowMenu) return pick("row", Number(d.rowMenu), e, b);
       });
       if (canEdit) {
         host.addEventListener("input", (e) => {
@@ -3486,7 +3557,13 @@ window.GWHome = (function () {
         });
         host.addEventListener("focusin", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
-          if (k) focus = k.split(":").map(Number);
+          if (!k) return;
+          focus = k.split(":").map(Number);
+          if (sel) {
+            sel = null;
+            $$("[data-col-menu], [data-row-menu]", host).forEach((x) => x.closest("th").classList.remove("bg-sky-200", "text-sky-800", "dark:bg-sky-800", "dark:text-white"));
+            $$("td.bg-sky-50", host).forEach((x) => x.classList.remove("bg-sky-50", "dark:bg-sky-900/20"));
+          }
         });
         host.addEventListener("keydown", (e) => {
           const k = e.target.dataset && e.target.dataset.cell;
@@ -3533,13 +3610,16 @@ window.GWHome = (function () {
           const table = $("table", host);
           if (cr) {
             const c = Number(cr.dataset.colResize);
-            const w0 = colW(c), t0 = parseFloat(table.style.width);
-            const colEl = $(`col[data-col="${c}"]`, host);
+            const w0 = colW(c);
+            const targets = inSel("col", c) ? Array.from({ length: sel.b - sel.a + 1 }, (_, i) => sel.a + i) : [c];
             const move = (ev) => {
               const nw = Math.min(600, Math.max(40, Math.round(w0 + (ev.clientX - startX) / z())));
-              w[c] = nw;
-              colEl.style.width = nw + "px";
-              table.style.width = t0 - w0 + nw + "px";
+              targets.forEach((x) => {
+                w[x] = nw;
+                const colEl = $(`col[data-col="${x}"]`, host);
+                if (colEl) colEl.style.width = nw + "px";
+              });
+              table.style.width = 44 + Array.from({ length: showC }, (_, x) => colW(x)).reduce((p, q) => p + q, 0) + "px";
             };
             const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), grow(0, c), later());
             addEventListener("pointermove", move);
@@ -3547,11 +3627,14 @@ window.GWHome = (function () {
           } else {
             const r = Number(rr.dataset.rowResize);
             const h0 = rowH(r);
-            const tr = rr.closest("tr");
+            const targets = inSel("row", r) ? Array.from({ length: sel.b - sel.a + 1 }, (_, i) => sel.a + i) : [r];
+            const trs = $$("tbody tr", host);
             const move = (ev) => {
               const nh = Math.min(240, Math.max(24, Math.round(h0 + (ev.clientY - startY) / z())));
-              h[r] = nh;
-              tr.style.height = nh + "px";
+              targets.forEach((x) => {
+                h[x] = nh;
+                if (trs[x]) trs[x].style.height = nh + "px";
+              });
             };
             const up = () => (removeEventListener("pointermove", move), removeEventListener("pointerup", up), grow(r, 0), later());
             addEventListener("pointermove", move);

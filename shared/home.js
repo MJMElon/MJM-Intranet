@@ -3165,15 +3165,19 @@ window.GWHome = (function () {
       const z = () => zoom / 100;
       // 画面上显示几栏 / 几列：存的数目，不够填满看得到的范围就自动补空格子
       let showC = cols, showR = rows;
+      // 补满：只补到刚好放得进视窗的格子数（最后一格不会被切掉，不用卷到右边 / 下面）
+      const SIDE = canEdit ? 40 : 0; // 右边「+ 栏」那一条（含间距）
+      const BOTTOM = canEdit ? 40 : 0; // 下面「+ 列」那一条
+      const maxH = () => Math.round(innerHeight * 0.6);
       function measure() {
-        const availW = Math.max(300, host.clientWidth || 900) / z() - 44 - 34;
+        const availW = (Math.max(300, host.clientWidth || 900) - SIDE - 2) / z() - 44;
         let c = 0, sum = 0;
-        while (c < MAXC && (sum < availW || c < cols)) sum += colW(c++);
-        showC = Math.max(cols, c);
-        const availH = (innerHeight * 0.62) / z() - 24 - 34;
+        while (c < MAXC && (c < cols || sum + colW(c) <= availW)) sum += colW(c++);
+        showC = Math.max(cols, c, 1);
+        const availH = (maxH() - 6) / z() - 27; // 边框 + 栏位标题那一行（留一点空，不会出现卷轴）
         let r = 0, hs = 0;
-        while (r < MAXR && (hs < availH || r < rows)) hs += rowH(r++);
-        showR = Math.max(rows, r);
+        while (r < MAXR && (r < rows || hs + rowH(r) <= availH)) hs += rowH(r++);
+        showR = Math.max(rows, r, 1);
       }
       // 打到补出来的格子里：那一格就算进正式的范围
       const grow = (r, c) => ((rows = Math.max(rows, r + 1)), (cols = Math.max(cols, c + 1)));
@@ -3321,14 +3325,13 @@ window.GWHome = (function () {
         if (/^https?:\/\/\S+$/i.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener noreferrer" class="text-sky-700 hover:underline dark:text-sky-300">${esc(v)}</a>`;
         return esc(v);
       };
-      const plusCls = "flex size-6 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-500 hover:border-slate-900 hover:text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:hover:border-white dark:hover:text-white";
       function render() {
         measure();
         const head = `<tr><th class="sticky top-0 left-0 z-30 w-11 min-w-11 border-r border-b border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></th>${Array.from(
           { length: showC },
           (_, c) => `<th class="sticky top-0 z-20 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-semibold text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
-            <div class="relative h-6 leading-6">${canEdit ? `<button type="button" data-col-menu="${c}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${colName(c)}</button><span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 -right-1 z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : colName(c)}</div></th>`,
-        ).join("")}${canEdit ? `<th class="sticky top-0 z-20 w-[34px] min-w-[34px] border-b border-slate-200 bg-slate-100 p-0 dark:border-slate-700 dark:bg-slate-800"><div class="flex h-6 items-center justify-center"><button type="button" data-add-cols data-pop-anchor title="${esc(t("home.sheetAddCols"))}" aria-label="${esc(t("home.sheetAddCols"))}" class="${plusCls} size-5">${icon("plus", "size-3.5")}</button></div></th>` : ""}</tr>`;
+            <div class="relative h-6 leading-6">${canEdit ? `<button type="button" data-col-menu="${c}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${colName(c)}</button><span data-col-resize="${c}" title="${esc(t("home.sheetDragSize"))}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-1"} z-10 h-full w-2 cursor-col-resize hover:bg-sky-400/60"></span>` : colName(c)}</div></th>`,
+        ).join("")}</tr>`;
         const body = Array.from({ length: showR }, (_, r) => {
           const tds = Array.from({ length: showC }, (_, c) => {
             const k = r + ":" + c;
@@ -3336,16 +3339,13 @@ window.GWHome = (function () {
             const bold = r === 0 ? "font-semibold bg-slate-50 dark:bg-white/5" : "";
             const cmt = notesOn ? `<button type="button" data-cmt="${k}" data-pop-anchor title="${esc(t("home.sheetComment"))}" aria-label="${esc(t("home.sheetComment"))}" class="absolute top-1/2 right-1 z-[2] hidden size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-slate-500 shadow ring-1 ring-slate-200 group-focus-within:flex hover:text-slate-900 dark:bg-slate-800 dark:ring-slate-700">${icon("message-square-plus", "size-3.5")}</button>` : "";
             return canEdit
-              ? `<td data-td="${k}" class="group relative border-r border-b border-slate-200 p-0 dark:border-slate-700 ${bold}"><input data-cell="${k}" value="${esc(v)}" maxlength="1000" spellcheck="false" class="block h-full w-full min-w-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-white focus:pr-8 focus:ring-2 focus:ring-sky-500 focus:ring-inset dark:text-slate-100 dark:focus:bg-slate-900 ${r === 0 ? "font-semibold" : ""}">${cmt}</td>`
+              ? `<td data-td="${k}" class="group relative border-r border-b border-slate-200 p-0 dark:border-slate-700 ${bold}"><input data-cell="${k}" value="${esc(v)}" maxlength="1000" spellcheck="false" class="block h-full w-full min-w-0 bg-transparent px-2 text-sm text-slate-800 outline-none focus:bg-white focus:pr-8 focus:ring-2 focus:ring-sky-500 focus:ring-inset dark:text-slate-100 dark:focus:bg-slate-900 ${r === 0 ? "font-semibold" : ""}">${cmt}<span data-col-resize="${c}" class="absolute top-0 ${c === showC - 1 ? "right-0" : "-right-[3px]"} z-[3] h-full w-[6px] cursor-col-resize hover:bg-sky-400/50"></span><span data-row-resize="${r}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-[3px]"} left-0 z-[3] h-[6px] w-full cursor-row-resize hover:bg-sky-400/50"></span></td>`
               : `<td data-td="${k}" ${notesOn ? `data-cmt="${k}" data-pop-anchor` : ""} class="relative overflow-hidden border-r border-b border-slate-200 px-2 text-sm text-ellipsis whitespace-nowrap text-slate-800 dark:border-slate-700 dark:text-slate-100 ${notesOn ? "cursor-pointer hover:bg-sky-50/60 dark:hover:bg-white/5" : ""} ${bold}" title="${esc(v)}">${show(v)}</td>`;
           }).join("");
           return `<tr style="height:${rowH(r)}px"><th class="sticky left-0 z-10 border-r border-b border-slate-200 bg-slate-100 p-0 text-center text-[11px] font-medium text-slate-500 select-none dark:border-slate-700 dark:bg-slate-800">
-            <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute -bottom-1 left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}${canEdit ? "<td></td>" : ""}</tr>`;
+            <div class="relative flex h-full items-center justify-center">${canEdit ? `<button type="button" data-row-menu="${r}" data-pop-anchor class="h-full w-full hover:bg-slate-200 dark:hover:bg-slate-700">${r + 1}</button><span data-row-resize="${r}" title="${esc(t("home.sheetDragSize"))}" class="absolute ${r === showR - 1 ? "bottom-0" : "-bottom-1"} left-0 z-10 h-2 w-full cursor-row-resize hover:bg-sky-400/60"></span>` : r + 1}</div></th>${tds}</tr>`;
         }).join("");
-        const addRow = canEdit
-          ? `<tr style="height:34px"><th class="sticky left-0 z-10 bg-slate-100 p-0 dark:bg-slate-800"><div class="flex h-full items-center justify-center"><button type="button" data-add-rows data-pop-anchor title="${esc(t("home.sheetAddRows"))}" aria-label="${esc(t("home.sheetAddRows"))}" class="${plusCls} size-5">${icon("plus", "size-3.5")}</button></div></th><td colspan="${showC + 1}"></td></tr>`
-          : "";
-        const tableW = 44 + Array.from({ length: showC }, (_, c) => colW(c)).reduce((a, b) => a + b, 0) + (canEdit ? 34 : 0);
+        const tableW = 44 + Array.from({ length: showC }, (_, c) => colW(c)).reduce((a, b) => a + b, 0);
         const zb = (attr, ic, label, dis) => `<button type="button" ${attr} ${dis ? "disabled" : ""} title="${esc(label)}" aria-label="${esc(label)}" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
         host.innerHTML = `
           <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -3356,13 +3356,18 @@ window.GWHome = (function () {
               ${zb("data-zoom-in", "zoom-in", t("home.sheetZoomIn"), zoom >= SHEET_ZOOMS[SHEET_ZOOMS.length - 1])}
             </div>
           </div>
-          <div data-sheet class="gw-noscroll max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-            <table class="border-separate border-spacing-0 text-left" style="table-layout:fixed;width:${tableW}px;zoom:${z()}">
-              <colgroup><col style="width:44px">${Array.from({ length: showC }, (_, c) => `<col data-col="${c}" style="width:${colW(c)}px">`).join("")}${canEdit ? `<col style="width:34px">` : ""}</colgroup>
-              <thead>${head}</thead><tbody>${body}${addRow}</tbody>
-            </table>
+          <div class="inline-flex max-w-full flex-col align-top">
+          <div class="flex items-stretch gap-2">
+            <div data-sheet class="gw-noscroll min-w-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" style="max-height:${maxH()}px">
+              <table class="border-separate border-spacing-0 text-left" style="table-layout:fixed;width:${tableW}px;zoom:${z()}">
+                <colgroup><col style="width:44px">${Array.from({ length: showC }, (_, c) => `<col data-col="${c}" style="width:${colW(c)}px">`).join("")}</colgroup>
+                <thead>${head}</thead><tbody>${body}</tbody>
+              </table>
+            </div>
+            ${canEdit ? `<button type="button" data-add-cols data-pop-anchor title="${esc(t("home.sheetAddCols"))}" aria-label="${esc(t("home.sheetAddCols"))}" class="flex w-8 shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
           </div>
-          <p class="mt-2 text-[11px] text-slate-400">${esc(t(canEdit ? "home.sheetHint" : "home.sheetHintView"))}</p>`;
+          ${canEdit ? `<button type="button" data-add-rows data-pop-anchor title="${esc(t("home.sheetAddRows"))}" aria-label="${esc(t("home.sheetAddRows"))}" class="mt-2 flex h-8 w-[calc(100%-2.5rem)] items-center justify-center rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-slate-900 hover:bg-white hover:text-slate-900 dark:border-slate-600 dark:hover:border-white dark:hover:bg-white/5 dark:hover:text-white">${icon("plus", "size-4")}</button>` : ""}
+          </div>`;
         refreshIcons();
         paintMarks();
       }

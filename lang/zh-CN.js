@@ -633,7 +633,6 @@ window.GW_LANG["zh-CN"] = {
       "opisproHint": "这家公司在 Opispro 的编号，之后接旧系统用。",
       "locationName": "Location 名称",
       "locationShortName": "简称",
-      "locationShortNamePh": "例如 SGR",
       "locationShortNeedsDb": "已保存，但 Location 简称需要先更新资料库（运行 20261208100000_gw_company_location_short_name.sql）。",
       "locationDuplicate": "这家公司已经有同样的 Location ID 或名称。",
       "locationsNotReady": "Location 需要先更新资料库：在 Intranet 资料库跑 20261205100000 company locations (all) 这份 SQL。",

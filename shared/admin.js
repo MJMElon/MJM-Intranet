@@ -1698,7 +1698,7 @@
       const locRow = (x) => `<div data-loc-row data-loc-rowid="${x ? x.id : ""}" class="grid grid-cols-[8rem_1fr_6.5rem_7.5rem_auto] items-center gap-2">
           <input data-loc-id maxlength="40" value="${esc(x ? x.location_id || "" : "")}" aria-label="${esc(tc("opisproLocationId"))}" class="${cls.input} h-9 font-mono">
           <input data-loc-name maxlength="100" value="${esc(x ? x.name : "")}" aria-label="${esc(tc("locationName"))}" class="${cls.input} h-9">
-          <input data-loc-short maxlength="20" value="${esc(x ? x.short_name || "" : "")}" aria-label="${esc(tc("locationShortName"))}" placeholder="${esc(tc("locationShortNamePh"))}" class="${cls.input} h-9">
+          <input data-loc-short maxlength="20" value="${esc(x ? x.short_name || "" : "")}" aria-label="${esc(tc("locationShortName"))}" class="${cls.input} h-9">
           <span class="flex items-center gap-1"><input data-loc-area type="number" min="0" step="0.01" value="${x ? numVal(x.area) : ""}" placeholder="0" aria-label="${esc(tc("area"))}" class="${cls.input} h-9 min-w-0">${ha}</span>
           <button type="button" data-loc-row-del aria-label="${esc(tg("delete"))}" title="${esc(tg("delete"))}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${icon("x")}</button>
         </div>`;

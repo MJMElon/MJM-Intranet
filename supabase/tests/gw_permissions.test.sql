@@ -359,8 +359,8 @@ set local role anon;
 select throws_ok($$ select * from public.gw_modules $$, '42501', null, '未登录不能读取模块');
 reset role;
 
-select public.gw_login_failed('Lock@Test.local') from generate_series(1, 5);
-select ok(public.gw_login_locked_until('lock@test.local') > now() + interval '14 minutes', '连续输错 5 次锁 15 分钟');
+-- 登入锁定已关闭（20261129100000）：输错只记录，不锁帐号
+select lives_ok($$ select public.gw_login_failed('Lock@Test.local') $$, '输错密码会记录（不锁帐号）');
 
 -- ---------------------------------------------------------------------
 -- 7. 首页小工具：只能动自己的；重设首页会清掉

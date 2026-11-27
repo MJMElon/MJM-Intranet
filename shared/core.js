@@ -77,18 +77,18 @@ window.GW = (function () {
     const session = data.session;
     if (!session) return { session: null, profile: null };
     // 一次请求拿到：个人资料 ＋ 角色 ＋ 角色的 Business 功能；模块管理员资料同时一起拿
-    // 按 Business ＋ Company 指派的角色（gw_member_companies.role_id）也一起拿：只算在那个 Business 的功能，全域功能照算
+    // 我在哪些 Business ＋ Company（角色只看个人的 gw_profiles.role_id）
     const [{ data: profile }, { data: adm }, { data: mcs }] = await Promise.all([
       sb.from("gw_profiles").select("*, gw_roles(*, gw_role_businesses(*))").eq("id", session.user.id).maybeSingle(),
       sb.from("gw_module_members").select("module_id, group_id").eq("user_id", session.user.id).eq("is_admin", true),
-      sb.from("gw_member_companies").select("group_id, company_id, role_id, gw_roles(*, gw_role_businesses(*))").eq("user_id", session.user.id),
+      sb.from("gw_member_companies").select("group_id, company_id").eq("user_id", session.user.id),
     ]);
     if (profile) {
       const role = profile.gw_roles || null;
       const biz = role ? role.gw_role_businesses || [] : [];
       delete profile.gw_roles;
       // 每个 Company 的角色：{ group_id, company_id, role_id, role }
-      profile.companyRoles = (mcs || []).map((x) => ({ group_id: x.group_id, company_id: x.company_id, role_id: x.role_id, role: x.gw_roles || null }));
+      profile.companyRoles = (mcs || []).map((x) => ({ group_id: x.group_id, company_id: x.company_id, role_id: null, role: null }));
       // 自订角色：管哪些 Business、能不能发公告（RLS 只给看自己的角色）
       profile.isSuper = profile.role === "super_admin";
       profile.roleName = null;

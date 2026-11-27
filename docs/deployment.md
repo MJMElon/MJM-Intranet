@@ -10,16 +10,19 @@
 
 | Function | 用途 |
 | --- | --- |
-| `gw-auth` | 登录（含连续输错 5 次锁 15 分钟）、改密码后清除强制改密码标记 |
+| `gw-auth` | 密码登录（超级管理员备用）、改密码（要现在的密码；第一次强制改密码除外） |
 | `gw-admin` | 建立用户、Excel 批量导入、停用/启用、重设密码、模块 API Key |
 | `gw-issue-token` | 第 2 级接入：签发 60 秒 Token |
 | `gw-check-access` | 目标系统兑换 Token / 查询权限 |
 | `gw-jwks` | Token 公钥 |
+| `gw-opispro` | 用 OPIS PRO 登录（OIDC）；第一次登录的新员工建立「等待批准」帐号（见 opispro-sso.md） |
+| `gw-master-data` | 给其他系统读 Business / Company / Location 与模块用户（模块 API Key） |
+| `gw-mcp` | AI Connector：用户自己的 AI 助手读资料（连结 180 天过期） |
+| `gw-ai-chat` | 主画面 AI 助手（还没开放） |
 
 ## 1. 数据库 migration
 
-依序套用 `supabase/migrations/` 里的档案（只新增 `gw_*` 对象）。
-`20261029120000_drop_ai_management.sql` 是移除项目里原本不再使用的「AI 管理」表的记录。
+依序在 Supabase SQL Editor 跑 `supabase/migrations/` 里的档案。步骤和「查哪些还没跑」见 [database-updates.md](database-updates.md)。
 
 ## 2. 第一位超级管理员
 
@@ -62,3 +65,12 @@ GitHub repo → Settings → Pages → Build and deployment：
   - Site URL：`https://mjmelon.github.io/MJM-Intranet/`
   - Redirect URLs：加入 `https://mjmelon.github.io/MJM-Intranet/**`
 - Authentication → Emails：设定 SMTP（内建邮件每小时只能寄很少封）
+
+## 交接 / 安全检查清单
+
+- GitHub（MJMElon）和 Supabase 项目的拥有者用公司帐号
+- 换掉前任知道的金钥：GitHub secret `SUPABASE_ACCESS_TOKEN`、Edge Function secrets（`GW_TOKEN_PRIVATE_JWK`、OPIS PRO client secret、AI key）、Admin 里的模块 API Key
+- Supabase → Authentication：关闭「Allow new users to sign up」
+- 检查超级管理员名单、AI Connector 连结（Admin → AI Connector）
+- 跑 [check-database.sql](check-database.sql)，确认没有漏跑的资料库更新
+

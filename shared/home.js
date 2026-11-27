@@ -207,16 +207,11 @@ window.GWHome = (function () {
     async function loadShared() {
       if (readOnly) return;
       const me = data.profile.id;
-      const TAGS = "tag_group_id, tag_company_id, tag_role";
-      let mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas, " + TAGS).eq("user_id", me);
-      let tagCols = TAGS;
-      if (mineRes.error && /tag_role/.test(mineRes.error.message || "")) ((tagCols = "tag_group_id, tag_company_id"), (mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas, " + tagCols).eq("user_id", me)));
-      const tagsOn = !(mineRes.error && /tag_/.test(mineRes.error.message || ""));
-      if (!tagsOn) mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me); // 资料库还没加 Business 标签：照旧
+      const mineRes = await sb.from("gw_user_folders").select("id, is_shared, canvas").eq("user_id", me);
       let shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order, role").eq("user_id", me);
       if (shareRes.error && /role/.test(shareRes.error.message || "")) shareRes = await sb.from("gw_folder_shares").select("folder_id, sort_order").eq("user_id", me); // 还没套用 role 的资料库：当作可以改
       if (mineRes.error || shareRes.error) return; // 资料库还没更新：没有分享功能，其他照常
-      (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas, tag_group_id: r.tag_group_id || null, tag_company_id: r.tag_company_id || null, tag_role: r.tag_role || "view" }));
+      (mineRes.data || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { is_shared: !!r.is_shared, canvas: r.canvas }));
       const shares = shareRes.data || [];
       // 文件夹分享给哪些 Business（一个文件夹可以好几个）：RLS 只给我看得到的
       const bizAll = await sb.from("gw_folder_business_shares").select("folder_id, group_id, company_id, role");
@@ -225,14 +220,11 @@ window.GWHome = (function () {
         folderBiz.clear();
         (bizAll.data || []).forEach((b) => folderBiz.set(b.folder_id, [...(folderBiz.get(b.folder_id) || []), b]));
       }
-      // 还没跑新 SQL：用以前的单一 Business 设定
-      const legacyBiz = (f) => (f.tag_group_id ? [{ folder_id: f.id, group_id: f.tag_group_id, company_id: f.tag_company_id || null, role: f.tag_role || "view" }] : []);
-      folders.forEach((f) => !bizTableOn && folderBiz.set(f.id, legacyBiz(f)));
-      const bizRes = bizTableOn ? { data: [...folderBiz.keys()].filter((id) => !folders.some((f) => f.id === id)).map((id) => ({ id })) } : tagsOn ? await sb.from("gw_user_folders").select("id").neq("user_id", me).not("tag_group_id", "is", null) : { data: [] };
+      const bizRes = { data: bizTableOn ? [...folderBiz.keys()].filter((id) => !folders.some((f) => f.id === id)).map((id) => ({ id })) : [] };
       const ids = [...new Set([...shares.map((x) => x.folder_id), ...((bizRes.data || []).map((x) => x.id))])];
       if (ids.length) {
         const [fs, ls, ly] = await Promise.all([
-          sb.from("gw_user_folders").select("id, user_id, name, color, collapsed, is_shared, canvas" + (tagsOn ? ", " + tagCols : "")).in("id", ids),
+          sb.from("gw_user_folders").select("id, user_id, name, color, collapsed, is_shared, canvas").in("id", ids),
           sb.from("gw_user_links").select("*").in("folder_id", ids),
           sb.from("gw_user_layout").select("module_id, folder_id").in("folder_id", ids),
         ]).then((r) => r.map((x) => x.data || []));
@@ -240,7 +232,6 @@ window.GWHome = (function () {
           if (folders.some((x) => x.id === f.id)) return;
           const sh = shares.find((x) => x.folder_id === f.id);
           // 权限：个人分享和 Business 分享取比较大的（有一个是 Editor 就是 Editor）
-          if (!bizTableOn) folderBiz.set(f.id, legacyBiz(f));
           const mine = (folderBiz.get(f.id) || []).filter((b) => isSuper || myGroups.has(b.group_id));
           const viaBiz = mine.length ? (mine.some((b) => b.role === "edit") ? "edit" : "view") : null;
           const viaMe = sh ? sh.role || "edit" : null;

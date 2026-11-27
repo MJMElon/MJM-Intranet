@@ -4,8 +4,9 @@
 Gateway 只管**认证、授权、导航**，不处理业务资料。
 
 - 网址：https://mjmelon.github.io/MJM-Intranet/
-- 前端：纯 HTML + JavaScript（跟 mjm-ai-system 一样），不需要建置；GitHub Pages「从分支发布」
-- 函式库（CDN）：Tailwind CSS（@tailwindcss/browser）、supabase-js、SortableJS（拖拉，支持手机长按）、Lucide 图示、ExcelJS（需要时才载入）
+- 前端：纯 HTML + JavaScript；GitHub Pages 由 GitHub Actions 发布（`.github/workflows/pages.yml`：编译 Tailwind → `shared/app.css`、加版本号、每页加 Content-Security-Policy）
+- 函式库放在 `shared/vendor/`（不从 CDN 载入）：supabase-js、SortableJS、Lucide 图示、ExcelJS
+- 登录：员工用 **OPIS PRO** 登录（`gw-opispro`）；Email + 密码只留给超级管理员备用（`login.html?mode=password`）
 - 后端：Supabase 项目 MJM Intranet（ref `briqzyxfxsvulyizzbiu`）：Auth、PostgreSQL、RLS、Edge Functions
 - 界面文字：预设英文 `lang/en.js`，另有简体中文 `lang/zh-CN.js`（个人设置可切换）；以后加 `ms.js`
 
@@ -24,8 +25,8 @@ shared/core.js           登录检查、页面外框、对话框、Edge Function
 shared/home.js           主画面（首页与后台预览共用）；小工具资料存 gw_user_widgets
 shared/admin.js          权限后台
 lang/en.js lang/zh-CN.js  界面文字（英文 / 简体中文）
-supabase/migrations/     数据库 migration（只新增 gw_* 对象）；接入其他系统用 gw_register_system(...)，每个系统一个 *_system_*.sql（见 docs/integration.md）
-supabase/functions/      Edge Functions：gw-auth、gw-admin、gw-issue-token、gw-check-access、gw-jwks
+supabase/migrations/     数据库更新：**要手动在 Supabase SQL Editor 跑**（见 docs/database-updates.md）；接入其他系统用 gw_register_system(...)
+supabase/functions/      Edge Functions（推到 main 自动发布）：gw-auth、gw-admin、gw-issue-token、gw-check-access、gw-jwks、gw-master-data、gw-mcp、gw-ai-chat、gw-opispro
 supabase/tests/          RLS 权限测试（pgTAP）
 scripts/                 产生签名金钥、本地测试资料
 docs/                    目标系统接入说明、上线步骤
@@ -75,7 +76,8 @@ localStorage.setItem("gw_local_config", JSON.stringify({ supabaseUrl: "http://12
 
 ## 已知限制
 
-- **登录锁定**（连续输错 5 次锁 15 分钟）在 `gw-auth` Edge Function 里执行。anon key 是公开的，直接调用 Supabase Auth API 可以绕过，只受 Supabase 本身的频率限制。要完全堵住需要 Password Verification Hook（部分付费方案才有）。
+- **密码登录没有锁定**（20261129100000 关掉了）：员工都用 OPIS PRO 登录。有密码的帐号（超级管理员备用）只受 Supabase 本身的频率限制，密码要够长。
+- **Supabase 新用户注册要关闭**（Authentication → Sign In / Providers → Allow new users to sign up = off）：帐号只由 gw-admin 或 OPIS PRO 登录建立。
 - **第 3 级（SSO）** 目前和第 1 级一样直接打开网址。
 - 模块名称、说明目前只有一种语言（资料库栏位）。
 

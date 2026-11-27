@@ -224,8 +224,7 @@
       sb.from("gw_companies").select("id, name, short_name, code").order("sort_order").order("name"),
       sb.from("gw_modules").select("id, code, name, icon, image_url, is_active").order("sort_order").order("name"),
       sb.from("gw_group_modules").select("group_id, module_id"),
-      // 资料库还没套用「每个 Company 的角色」migration（没有 role_id 栏）的话，退回只读 Company
-      sb.from("gw_member_companies").select("group_id, company_id, role_id").eq("user_id", uid).then((r) => (r.error && /role_id/.test(r.error.message || "") ? sb.from("gw_member_companies").select("group_id, company_id").eq("user_id", uid) : r)),
+      sb.from("gw_member_companies").select("group_id, company_id").eq("user_id", uid),
       sb.from("gw_business_companies").select("group_id, company_id"),
       sb.from("gw_roles").select("id, name").order("sort_order").order("name"),
     ]);
@@ -588,8 +587,7 @@
       const cos = cosOfBiz(gid);
       if (cos.length !== 1 || mcRow(gid, cos[0].id)) return;
       const cid = cos[0].id;
-      let { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid, role_id: null });
-      if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid }));
+      const { error } = await sb.from("gw_member_companies").insert({ group_id: gid, user_id: uid, company_id: cid });
       if (error) return fail(error);
       mcs.push({ group_id: gid, company_id: cid, role_id: null });
     };
@@ -625,8 +623,7 @@
       });
     }
 
-    // Company 小窗：这个 Business 底下每个 Company 一个勾（勾了 = 在这个 Company，预设一般用户），右边下拉可以换角色
-    //   → 立刻写 gw_member_companies(role_id)
+    // Company 小窗：这个 Business 底下每个 Company 一个勾（勾了 = 在这个 Company）；角色是个人的（gw_profiles.role_id）
     function companyDialog(g) {
       const cos = cosOfBiz(g.id);
       // 先记在画面上（in = 在这个 Company，role_id = 角色，null = 一般用户），按 Save 一次写入
@@ -701,8 +698,7 @@
           if (now.in && !was.in) {
             const e1 = await ensureMember(g.id);
             if (e1) return stop(e1);
-            let { error } = await sb.from("gw_member_companies").insert({ group_id: g.id, user_id: uid, company_id: c.id, role_id: now.role_id });
-            if (error && /role_id/.test(error.message || "")) ({ error } = await sb.from("gw_member_companies").insert({ group_id: g.id, user_id: uid, company_id: c.id })); // 没有 role_id 栏的旧资料库
+            const { error } = await sb.from("gw_member_companies").insert({ group_id: g.id, user_id: uid, company_id: c.id });
             if (error) return stop(error);
             mcs.push({ group_id: g.id, company_id: c.id, role_id: now.role_id });
           } else if (!now.in && was.in) {
@@ -712,10 +708,6 @@
               mcs.splice(mcs.indexOf(cur), 1);
               if (ctx) for (const [k, r] of [...ctx.rows]) if (r.user_id === uid && r.group_id === g.id && r.company_id === c.id) ctx.rows.delete(k);
             }
-          } else if (now.in && cur && (cur.role_id || null) !== now.role_id) {
-            const { error } = await sb.from("gw_member_companies").update({ role_id: now.role_id }).eq("group_id", g.id).eq("user_id", uid).eq("company_id", c.id);
-            if (error) return stop(error);
-            cur.role_id = now.role_id;
           }
           orig.set(c.id, { ...now });
         }

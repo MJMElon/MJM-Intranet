@@ -985,9 +985,9 @@ window.GWHome = (function () {
       sb.from("gw_user_widgets").update({ config: w.config }).eq("id", w.id).then(({ error }) => error && toast(t("home.saveFailed")));
     })();
     // 模块有标 Company 的，只在选了那个 Company（或选全部）时显示；没标 Company 的模块一律显示
-    // 我在这个 Business 现在选的 Company 有没有这个模块的权限（super_admin 全部都有）
+    // 我在这个 Business 现在选的 Company 有没有这个模块的权限（Super Admin 也一样：有勾才算）
     const accessHere = (gid, moduleId, sel) => {
-      if (isSuper || !S.myAccess) return true;
+      if (!S.myAccess) return true;
       const rows = S.myAccess.filter((r) => r.group_id === gid && r.module_id === moduleId);
       if (!rows.length) return false;
       if (sel === "all") return true;
@@ -999,7 +999,9 @@ window.GWHome = (function () {
       const sel = selectedCompany(gid);
       if (!accessHere(gid, moduleId, sel)) return false;
       if (sel === "all") return true;
-      const tags = S.moduleCompanies.filter((x) => x.module_id === moduleId);
+      // 只看这个 Business 自己的 Company 标签（模块在别的 Business 标了别的 Company 不算；这个 Business 一个都没标 = 全部 Company 都能用）
+      const here = new Set(S.bizCompanies.filter((x) => x.group_id === gid).map((x) => x.company_id));
+      const tags = S.moduleCompanies.filter((x) => x.module_id === moduleId && here.has(x.company_id));
       if (sel === "none") return !tags.length;
       if (sel === "hq") return !tags.length || tags.some((x) => companiesOf(gid).some((c) => c.id === x.company_id));
       return !tags.length || tags.some((x) => x.company_id === sel);

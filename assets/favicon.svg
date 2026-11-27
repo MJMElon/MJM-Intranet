@@ -1,14 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- 三个一样大的三角形（积木）：黄 ▲、绿 ▼、黄 ▲，中间是一个 V，整个看起来也是 M -->
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#15803d"/></linearGradient>
-    <linearGradient id="y" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde047"/><stop offset="1" stop-color="#eab308"/></linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="26" fill="#ffffff"/>
-  <g transform="translate(12 20)">
-    <path d="M0 88 L26 0 L52 88 Z" fill="url(#y)"/>
-    <path d="M26 0 L78 0 L52 88 Z" fill="url(#g)"/>
-    <path d="M52 88 L78 0 L104 88 Z" fill="url(#y)"/>
-    <path d="M26 0 L52 88 L78 0" fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"/>
+  <!-- 黑色圆角方块 + 三个一样大的纯色三角形：黄 ▲、绿 ▼、橘 ▲（中间小缝是黑色） -->
+  <rect width="128" height="128" rx="28" fill="#111111"/>
+  <g transform="translate(16 28) scale(1.2)" stroke="#111111" stroke-width="4.5" stroke-linejoin="round">
+    <path d="M0 62 L20 0 L40 62 Z" fill="#facc15"/>
+    <path d="M20 0 L60 0 L40 62 Z" fill="#22c55e"/>
+    <path d="M40 62 L60 0 L80 62 Z" fill="#f97316"/>
   </g>
 </svg>

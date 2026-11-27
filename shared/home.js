@@ -694,9 +694,10 @@ window.GWHome = (function () {
           </div>`;
         }
         case "clock":
-          return `<div class="flex h-full flex-col justify-center ${w.size === "small" ? "items-center text-center" : ""}">
-            <div data-clock class="font-bold tabular-nums ${w.size === "small" ? "text-3xl" : "text-5xl"}">${esc(fmt({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }))}</div>
-            <div class="mt-1 text-sm text-slate-500">${esc(fmt({ weekday: "short", day: "numeric", month: "short" }))}</div>
+          // 时间的字跟着小工具的宽度缩放（手机上窄的格子也不会超出框外）；最大还是原来的大小
+          return `<div class="flex h-full min-w-0 flex-col justify-center ${w.size === "small" ? "items-center text-center" : ""}" style="container-type:inline-size">
+            <div data-clock class="leading-none font-bold whitespace-nowrap tabular-nums" style="font-size:${w.size === "small" ? "min(30px, 19cqw)" : "min(48px, 19cqw)"}">${esc(fmt({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }))}</div>
+            <div class="mt-1 truncate text-sm text-slate-500">${esc(fmt({ weekday: "short", day: "numeric", month: "short" }))}</div>
           </div>`;
         case "ai":
           return aiBody();

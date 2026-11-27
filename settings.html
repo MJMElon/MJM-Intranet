@@ -41,21 +41,6 @@
         <button id="reset" class="${btn("secondary")}">${icon("rotate-ccw")} ${esc(t("settings.resetHome"))}</button>
       </div>
     </div>
-    <div id="connector" class="${cls.card} space-y-4 p-5"></div>
-    ${profile.isSuper ? `<div class="${cls.card} p-5">
-      <h2 class="mb-4 font-semibold">${esc(t("settings.changePassword"))}</h2>
-      <form id="pw" class="space-y-4">
-        <div id="pw-msg"></div>
-        <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("password.current"))}</span>
-          <input name="current" type="password" autocomplete="current-password" required class="${cls.input}"></label>
-        <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("password.new"))}</span>
-          <input name="password" type="password" autocomplete="new-password" required minlength="8" class="${cls.input}">
-          <span class="block text-xs text-slate-500">${esc(t("password.rule"))}</span></label>
-        <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("password.confirm"))}</span>
-          <input name="confirm" type="password" autocomplete="new-password" required minlength="8" class="${cls.input}"></label>
-        <button type="submit" class="${btn("primary")}">${esc(t("password.submit"))}</button>
-      </form>
-    </div>` : ""}
   </div>`;
 
   let theme = profile.theme;
@@ -92,96 +77,6 @@
       /* 忽略 */
     }
     document.getElementById("done").innerHTML = alertBox(t("settings.resetHomeDone"), "green");
-  });
-  /* AI Connector：让用户用自己的 AI 助手连到自己看得到的资料（链接只显示一次，数据库只存杂凑值） */
-  const tc = (k, v) => t("settings.connector." + k, v);
-  const connectorBox = document.getElementById("connector");
-  let freshLink = null;
-  async function drawConnector() {
-    const [en, list] = await Promise.all([sb.rpc("gw_mcp_enabled"), sb.rpc("gw_mcp_list")]);
-    if (en.error || list.error) {
-      connectorBox.innerHTML = `<h2 class="font-semibold">${esc(tc("title"))}</h2><p class="text-sm text-slate-500">${esc(tc("notReady"))}</p>`;
-      return;
-    }
-    const mine = (list.data || []).filter((x) => x.user_id === profile.id);
-    const active = mine.filter((x) => !x.revoked_at);
-    const url = (token) => `${GW_CONFIG.supabaseUrl}/functions/v1/gw-mcp/${token}`;
-    connectorBox.innerHTML = `<h2 class="font-semibold">${esc(tc("title"))}</h2>
-      <p class="text-sm text-slate-500">${esc(tc("intro"))}</p>
-      <div id="cn-msg"></div>
-      ${
-        freshLink
-          ? `<div class="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-500/10">
-              <p class="text-sm font-medium">${esc(tc("created"))}</p>
-              <div class="flex gap-2"><input id="cn-url" readonly value="${esc(url(freshLink))}" class="${cls.input} font-mono text-xs"><button id="cn-copy" class="${btn("secondary")}">${icon("copy")} ${esc(tc("copy"))}</button></div>
-              <p class="text-xs text-slate-600 dark:text-slate-300">${esc(tc("warn"))}</p>
-              <p class="text-xs text-slate-600 dark:text-slate-300"><b>${esc(tc("howTitle"))}</b><br>${esc(tc("how1"))}<br>${esc(tc("how2"))}</p>
-            </div>`
-          : ""
-      }
-      ${
-        en.data
-          ? `<form id="cn-form" class="flex flex-wrap gap-2"><input name="label" maxlength="40" placeholder="${esc(tc("namePlaceholder"))}" aria-label="${esc(tc("name"))}" class="${cls.input} min-w-0 flex-1 basis-48"><button type="submit" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tc("create"))}</button></form>`
-          : `<p class="text-sm text-slate-500">${esc(tc("off"))}</p>`
-      }
-      <div>
-        <p class="mb-1.5 ${cls.label}">${esc(tc("yours"))}</p>
-        ${
-          mine.length
-            ? `<ul class="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700">${mine
-                .map(
-                  (x) => `<li class="flex items-center gap-3 px-3 py-2 text-sm">
-                    <span class="min-w-0 flex-1"><span class="block truncate font-medium${x.revoked_at ? " text-slate-400 line-through" : ""}">${esc(x.label)}</span>
-                    <span class="block text-xs text-slate-500">${esc(x.revoked_at ? tc("revoked") : x.expires_at && new Date(x.expires_at) < new Date() ? tc("expired") : [x.last_used_at ? tc("lastUsed", { time: GW.fmtDateTime(x.last_used_at) }) : tc("neverUsed"), x.expires_at ? tc("expires", { time: GW.fmtDateTime(x.expires_at) }) : ""].filter(Boolean).join(" · "))}</span></span>
-                    ${x.revoked_at ? "" : `<button data-revoke="${x.id}" class="${btn("ghost", "sm")} text-red-600 dark:text-red-400">${esc(tc("revoke"))}</button>`}
-                  </li>`,
-                )
-                .join("")}</ul>`
-            : `<p class="text-sm text-slate-400">${esc(tc("none"))}</p>`
-        }
-      </div>`;
-    refreshIcons();
-    const msg = (text, tone) => (document.getElementById("cn-msg").innerHTML = alertBox(text, tone));
-    document.getElementById("cn-copy")?.addEventListener("click", async (e) => {
-      const input = document.getElementById("cn-url");
-      try {
-        await navigator.clipboard.writeText(input.value);
-      } catch (err) {
-        input.select();
-        document.execCommand("copy");
-      }
-      e.currentTarget.innerHTML = `${icon("check")} ${esc(tc("copied"))}`;
-      refreshIcons();
-    });
-    document.getElementById("cn-form")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const label = String(new FormData(e.target).get("label") || "").trim();
-      const { data, error } = await sb.rpc("gw_mcp_create", { p_label: label || "My AI" });
-      if (error) {
-        await drawConnector();
-        return msg(error.message.includes("too_many") ? tc("tooMany") : error.message.includes("connector_off") ? tc("off") : tc("error"));
-      }
-      freshLink = data.token;
-      drawConnector();
-    });
-    connectorBox.querySelectorAll("[data-revoke]").forEach((b) =>
-      b.addEventListener("click", async () => {
-        if (!(await GW.confirmDialog(tc("title"), tc("revokeConfirm"), tc("revoke"), t("settings.cancel")))) return;
-        const { error } = await sb.rpc("gw_mcp_revoke", { p_id: b.dataset.revoke });
-        freshLink = null;
-        await drawConnector();
-        msg(error ? tc("error") : tc("revokedDone"), error ? undefined : "green");
-      }),
-    );
-  }
-  drawConnector();
-  const pwForm = document.getElementById("pw");
-  if (pwForm) pwForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const form = new FormData(e.target);
-    const error = await GW.changePassword(String(form.get("password") || ""), String(form.get("confirm") || ""), String(form.get("current") || ""));
-    document.getElementById("pw-msg").innerHTML = error ? alertBox(t("password.errors." + error)) : alertBox(t("password.changed"), "green");
-    if (!error) e.target.reset();
   });
 })();
 </script>

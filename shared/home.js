@@ -177,6 +177,7 @@ window.GWHome = (function () {
        Notice Board 固定在棋盘上方，不在格子里。 */
     const isPinned = (w) => !!(w && WIDGETS[w.widget_type] && WIDGETS[w.widget_type].pinned);
     const board = () => widgets.find(isPinned) || null;
+    let drawHeld = false; // 第一次画之前（还在等文件夹分到哪个 Business）：其他地方叫 draw 先不画
     const SIZES = { small: [2, 2], medium: [4, 2], large: [4, 4] };
     const cols = () => (matchMedia("(min-width: 1024px)").matches ? 8 : matchMedia("(min-width: 640px)").matches ? 6 : 4);
 
@@ -2444,6 +2445,7 @@ window.GWHome = (function () {
     }
 
     function draw() {
+      if (drawHeld) return;
       clearInterval(clockTimer);
       // 还没被分配到任何群组：主画面什么都不显示，只显示等待分配
       if (opts && opts.pending) {
@@ -5448,18 +5450,30 @@ window.GWHome = (function () {
     });
 
     if (sectionsOn) widgets.filter(isFloating).forEach(migratePos); // 旧版 px 位置换成格子（只在记忆中）
-    draw();
-    // 以前放进 Business 区块的小工具：搬出来放在页面上（Business 区块只放 App）
-    if (sectionsOn)
-      (async () => {
-        // My Home 没打开、里面也没有 App：里面的小工具也搬出来（不然 My Home 会自己冒出来）
-        const homeGone = !homeOn() && !rootItems().length;
-        for (const w of widgets.filter((x) => isFloating(x) && x.config.pos.box && (x.config.pos.box !== "home" || homeGone))) {
-          const el = $(`[data-fw="${w.id}"]`, root);
-          await dropOnPage(w, el ? el.getBoundingClientRect() : { left: 0, top: innerHeight });
-        }
-      })();
-    loadShared();
+    const firstDraw = () => {
+      draw();
+      // 以前放进 Business 区块的小工具：搬出来放在页面上（Business 区块只放 App）
+      if (sectionsOn)
+        (async () => {
+          // My Home 没打开、里面也没有 App：里面的小工具也搬出来（不然 My Home 会自己冒出来）
+          const homeGone = !homeOn() && !rootItems().length;
+          for (const w of widgets.filter((x) => isFloating(x) && x.config.pos.box && (x.config.pos.box !== "home" || homeGone))) {
+            const el = $(`[data-fw="${w.id}"]`, root);
+            await dropOnPage(w, el ? el.getBoundingClientRect() : { left: 0, top: innerHeight });
+          }
+        })();
+    };
+    if (sectionsOn && !readOnly) {
+      // 先知道文件夹分到哪个 Business 再画：不然分到 Business 的文件夹（例如 HQ Masterlist）会先出现在 My Home，一下又不见
+      let shown1 = false;
+      drawHeld = true;
+      const go = () => !shown1 && ((shown1 = true), (drawHeld = false), firstDraw());
+      loadShared().catch(() => {}).finally(go);
+      setTimeout(go, 2500); // 网路太慢：不要一直空白
+    } else {
+      firstDraw();
+      loadShared();
+    }
 
     // 公告的下架时间：首页资料没有带，另外拿；时间到了就从公告栏拿掉（不用重新整理页面）
     const expireNotices = () => {

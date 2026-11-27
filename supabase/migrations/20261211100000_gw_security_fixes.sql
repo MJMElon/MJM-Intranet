@@ -137,7 +137,15 @@ revoke execute on function public.gw__display_name(uuid) from public, anon;
 grant execute on function public.gw__display_name(uuid) to authenticated;
 
 -- 未登入的人不能执行（Supabase 预设会直接给 anon 执行权，只 revoke public 不够）
-revoke execute on function public.gw_my_add_right(text), public.gw_my_delete_right(text) from anon;
+do $$
+begin
+  if to_regprocedure('public.gw_my_add_right(text)') is not null then
+    revoke execute on function public.gw_my_add_right(text) from anon;
+  end if;
+  if to_regprocedure('public.gw_my_delete_right(text)') is not null then
+    revoke execute on function public.gw_my_delete_right(text) from anon;
+  end if;
+end $$;
 
 notify pgrst, 'reload schema';
 

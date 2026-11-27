@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <!-- 三块积木（背景透明）：上面深绿、左下橘色、右下黄色；每块有深色外框和浅色的面 -->
-  <!-- 整个缩小 10%（以中心为准） -->
-  <g transform="translate(6.4 6.4) scale(0.9)">
+  <!-- 整个缩小到 72%（以中心为准），四周留空，分页上看起来不会比标题字大 -->
+  <g transform="translate(17.92 17.92) scale(0.72)">
     <!-- 左下：橘 -->
     <rect x="9" y="65" width="53" height="53" rx="11" fill="#f08a2c" stroke="#b9580f" stroke-width="4"/>
     <rect x="18" y="74" width="35" height="35" rx="6" fill="#f7a95a"/>

@@ -1878,7 +1878,7 @@ window.GWHome = (function () {
     // 第一个放得下的空位：从第 y0 行开始，由左到右、由上到下
     function pageFree(w, h, blocks, y0) {
       const g = pageGeo();
-      const W = Math.max(1, Math.min(w, Math.floor(g.halves / 2)));
+      const W = Math.max(1, Math.min(w, g.halves / 2));
       for (let y = y0 || 0; y < 400; y++) for (let x = 0; x + 2 * W <= g.halves; x++) if (!blocks.some((b) => hit({ x, y, w: 2 * W, h }, b))) return { x, y, w: W, h };
       return { x: 0, y: 400, w: W, h };
     }
@@ -2019,7 +2019,7 @@ window.GWHome = (function () {
       });
       pageWidgets().forEach((w) => {
         const p = { ...w.config.pos };
-        p.w = Math.max(1, Math.min(p.w, Math.floor(g.halves / 2)));
+        p.w = Math.max(1, Math.min(p.w, g.halves / 2)); // 可以是半格（x.5）
         p.x = Math.max(0, Math.min(p.x, g.halves - 2 * p.w));
         items.push({ w, p, r: wRect(p) });
       });
@@ -2074,7 +2074,7 @@ window.GWHome = (function () {
     // ---- 拖小工具（编辑时）：放在页面上 = 最近的空位、跟同一排对齐；放在区块上 = 那个区块里最近的空格
     async function dropOnPage(w, r) {
       const g = pageGeo();
-      const pw = Math.max(1, Math.min(w.config.pos.w, Math.floor(g.halves / 2)));
+      const pw = Math.max(1, Math.min(w.config.pos.w, g.halves / 2));
       const ph = w.config.pos.h;
       // 先量放下的位置（还没移出前）：移出后上面的空行会收掉、区块往上跑，量出来的行数就会错
       // 从第一个区块的上缘算第几行；放在区块上面（Notice Board 那边）= 负数，区块会往下推
@@ -2103,7 +2103,7 @@ window.GWHome = (function () {
       }
       const B = boxGeo(key);
       const lr = list.getBoundingClientRect();
-      const pw = Math.min(w.config.pos.w, B.n);
+      const pw = Math.min(Math.max(1, Math.floor(w.config.pos.w)), B.n); // 区块里只有整数格
       const ph = w.config.pos.h;
       const me = "fw:" + w.id;
       const others = B.model.filter((it) => it.key !== me).map((it) => ({ ...it, ...B.L.pos.get(it.key) }));
@@ -2121,11 +2121,13 @@ window.GWHome = (function () {
       saves.push(...settlePage(true));
       await Promise.all(saves);
     }
-    // 拖拉调整小工具大小：放开时吸附到整数格；同一排的跟着对齐
+    // 拖拉调整小工具大小：放开时吸附到格线；同一排的跟着对齐
+    // 页面上：宽度以「半格」为单位（区块宽 = 整数格 + 半格，小工具才能跟区块一样宽、边对齐）；区块里：整数格
     async function resizeWidgetEnd(w, el) {
       const g = pageGeo();
       const p = w.config.pos;
       const nw = Math.max(1, Math.round(el.getBoundingClientRect().width / g.cw));
+      const nwHalf = Math.max(1, Math.round(el.getBoundingClientRect().width / g.hw) / 2);
       const nh = Math.max(MIN_ROWS[w.widget_type] || 1, Math.round(el.getBoundingClientRect().height / g.rh));
       if (p.box) {
         const B = boxGeo(p.box);
@@ -2147,7 +2149,7 @@ window.GWHome = (function () {
         return Promise.all(saves);
       }
       const cur = shownOf(w);
-      const W = Math.min(nw, Math.floor(g.halves / 2));
+      const W = Math.min(nwHalf, g.halves / 2);
       const blocks = blocksExcept(w.id);
       let spot = { x: Math.min(cur.x, g.halves - 2 * W), y: cur.y };
       if (blocks.some((b) => hit({ x: spot.x, y: spot.y, w: 2 * W, h: nh }, b))) spot = pageNear(spot.x, spot.y, W, nh, blocks);

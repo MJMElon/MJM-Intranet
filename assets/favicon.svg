@@ -1,27 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- 方块：一个 V（左上角 → 下面中间 → 右上角）分成三块积木：上面绿色倒三角，左右两块黄色三角（看起来也是一个 M） -->
   <defs>
-    <!-- one petal = a droplet: round end outside, pointed end at the centre (centre is 0,0) -->
-    <path id="petal" d="M0 -7 C-5 -15 -18 -26 -18 -39 A18 18 0 1 1 18 -39 C18 -26 5 -15 0 -7 Z"/>
-    <linearGradient id="g" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#15803d"/>
-      <stop offset="1" stop-color="#4ade80"/>
+    <clipPath id="box"><rect width="128" height="128" rx="22"/></clipPath>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#15803d"/>
     </linearGradient>
-    <linearGradient id="y" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#eab308"/>
-      <stop offset="1" stop-color="#fde047"/>
+    <linearGradient id="y" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#eab308"/>
     </linearGradient>
-    <g id="pg"><use href="#petal" fill="url(#g)"/><ellipse cx="-7" cy="-44" rx="4" ry="6.5" fill="#fff" fill-opacity=".55" transform="rotate(-20 -7 -44)"/></g>
-    <g id="py"><use href="#petal" fill="url(#y)"/><ellipse cx="-7" cy="-44" rx="4" ry="6.5" fill="#fff" fill-opacity=".6" transform="rotate(-20 -7 -44)"/></g>
   </defs>
-  <g transform="translate(64 64)">
-    <use href="#pg"/>
-    <use href="#py" transform="rotate(60)"/>
-    <use href="#pg" transform="rotate(120)"/>
-    <use href="#py" transform="rotate(180)"/>
-    <use href="#pg" transform="rotate(240)"/>
-    <use href="#py" transform="rotate(300)"/>
-    <circle r="10" fill="#fff"/>
-    <circle r="6" fill="#facc15"/>
-    <circle r="6" fill="none" stroke="#15803d" stroke-width="2"/>
+  <g clip-path="url(#box)">
+    <path d="M0 0 L128 0 L64 128 Z" fill="url(#g)"/>
+    <path d="M0 0 L64 128 L0 128 Z" fill="url(#y)"/>
+    <path d="M128 0 L128 128 L64 128 Z" fill="url(#y)"/>
+    <!-- 积木之间的缝 -->
+    <path d="M0 0 L64 128 L128 0" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
   </g>
 </svg>

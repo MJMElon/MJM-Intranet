@@ -2519,7 +2519,7 @@
     const seq = routeSeq;
     const tl = (k, v) => t("admin.audit." + k, v);
     const PAGE = 50;
-    const TARGETS = ["auth", "profiles", "roles", "role_businesses", "groups", "group_members", "companies", "business_companies", "company_mappings", "modules", "group_modules", "module_companies", "sectors", "module_members", "announcements"];
+    const TARGETS = ["auth", "profiles", "roles", "role_businesses", "groups", "group_members", "companies", "business_companies", "modules", "group_modules", "module_companies", "sectors", "module_members", "announcements"];
     let filters = { from: "", to: "", actor: "", action: "", target: "" };
     let page = 1;
 

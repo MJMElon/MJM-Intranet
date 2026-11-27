@@ -79,7 +79,8 @@ from (values
   ('20261210100000_gw_icon_looks'),
   ('20261211100000_gw_security_fixes'),
   ('20261212100000_gw_catch_up_missing_columns'),
-  ('20261213100000_gw_cleanup_and_migration_log')
+  ('20261213100000_gw_cleanup_and_migration_log'),
+  ('20261214100000_gw_table_descriptions')
 ) as v(name)
 where not exists (select 1 from public.gw_migrations m where m.name = v.name)
 order by v.name;

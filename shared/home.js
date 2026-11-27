@@ -37,9 +37,9 @@ window.GWHome = (function () {
   const hashOf = (code) => [...String(code)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
   // 渐层色的 class；白色（glass）风格而且没有自己选颜色时回 null
   const tileColor = (code, id, color) => {
-    if (color && PALETTE[color]) return PALETTE[color][0]; // 连结自己选的颜色
-    const own = id && ICON.apps[id];
+    const own = id && ICON.apps[id]; // 自己在「图示颜色」选的（只有自己看得到）
     if (own && PALETTE[own]) return PALETTE[own][0];
+    if (color && PALETTE[color]) return PALETTE[color][0]; // 连结 / 模块 / 文件夹自己设的颜色
     if (PALETTE[ICON.style]) return PALETTE[ICON.style][0];
     if (ICON.style === "glass") return null;
     const list = ICON.style === "colorful" ? COLORFUL : CALM;
@@ -249,6 +249,7 @@ window.GWHome = (function () {
         ls.forEach((l) => !links.some((x) => x.id === l.id) && links.push({ ...l }));
         ly.forEach((l) => sharedApps.set(l.folder_id, [...(sharedApps.get(l.folder_id) || []), l.module_id]));
       }
+      await loadFolderLooks();
       draw();
       askTransfers();
     }
@@ -448,6 +449,152 @@ window.GWHome = (function () {
       </span>`;
     }
 
+    // ---- 图示外观（编辑时图示右上角的笔）：模块 = super admin 或这个模块的负责人；文件夹 = 拥有者
+    const LOOK_ICONS = ["folder", "link", ...Object.keys(GW.MODULE_ICONS)].filter((v, i, a) => a.indexOf(v) === i);
+    const lookSym = (k, size) => (k === "folder" ? icon("folder-open", size) : k === "link" ? icon("link", size) : moduleIcon(k, size));
+    const myLeads = new Set(); // 我是负责人的模块
+    const canLook = (kind, id) => {
+      if (readOnly || !sectionsOn) return false;
+      if (kind === "module") return isSuper || myLeads.has(id);
+      const f = folders.find((x) => x.id === id);
+      return !!f && !f.shared_by; // 只有拥有者（分享给我的不行）
+    };
+    const lookBadge = (kind, id) => (canLook(kind, id) ? badge(`data-look-${kind}="${id}"`, "pencil", t("home.editLook"), BADGE_R) : "");
+    // 文件夹有自己设的外观就用它；没有就用原本的样子（fallback）
+    function folderLook(f, fallback) {
+      const lk = f && f.look;
+      if (!lk || !(lk.icon || lk.color || lk.image_url)) return fallback;
+      const people = f.is_shared || f.shared_by || boxesOf(f).length ? `<span class="absolute right-1 bottom-1 flex size-[1.15rem] items-center justify-center rounded-full bg-white text-sky-600 shadow-sm">${icon("users", "size-3")}</span>` : "";
+      if (lk.image_url && ownPhoto(lk.image_url)) return `<span class="gw-icon relative flex size-14 overflow-hidden rounded-[26%] bg-white shadow-sm sm:size-16"><img src="${esc(lk.image_url)}" alt="" class="size-full object-cover">${people}</span>`;
+      const grad = lk.color && PALETTE[lk.color] ? PALETTE[lk.color][0] : "from-sky-400 to-indigo-500";
+      return `<span class="gw-icon relative flex size-14 items-center justify-center rounded-[26%] bg-gradient-to-br ${grad} text-white shadow-sm sm:size-16">${lookSym(lk.icon || "folder", "size-[46%]")}${people}</span>`;
+    }
+    // 改外观的窗：图示、颜色、照片；上面有预览
+    function lookDialog(o) {
+      let chosen = o.icon || o.firstIcon;
+      let color = o.color || "";
+      let photo = o.image_url || null;
+      const dlg = modal(
+        t("home.lookTitle", { name: o.name }),
+        `<form class="space-y-4">
+          <div data-err></div>
+          <div class="flex items-center gap-3"><span data-look-preview></span><p class="text-sm text-slate-500">${esc(o.hint)}</p></div>
+          <div>
+            <p class="mb-1.5 ${cls.label}">${esc(t("home.linkIcon"))}</p>
+            <div class="flex flex-wrap gap-1.5">${o.icons.map((k) => `<button type="button" data-pick-icon="${k}" class="flex size-9 items-center justify-center rounded-lg border"></button>`).join("")}</div>
+          </div>
+          <div>
+            <p class="mb-1.5 ${cls.label}">${esc(t("home.linkColor"))}</p>
+            <div class="flex flex-wrap gap-1.5">${["", ...Object.keys(PALETTE)].map((c) => `<button type="button" data-pick-color="${c}" title="${esc(c || t("home.iconAuto"))}" class="size-7 rounded-full border-2 shadow ${c ? "" : "bg-gradient-to-br from-slate-300 to-slate-500"}" style="${c ? `background:${PALETTE[c][1]}` : ""}"></button>`).join("")}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="${btn("secondary", "sm")} cursor-pointer">${icon("upload", "size-4")} ${esc(t("home.linkPhoto"))}<input type="file" data-photo accept="image/*" class="hidden"></label>
+            <button type="button" data-nophoto class="${btn("ghost", "sm")} hidden text-red-600 dark:text-red-400">${icon("image-off", "size-4")} ${esc(t("home.linkRemovePhoto"))}</button>
+          </div>
+          <div class="flex justify-end gap-2">
+            <button type="button" data-cancel class="${btn("secondary")}">${esc(t("home.cancel"))}</button>
+            <button type="submit" class="${btn("primary")}">${esc(t("home.save"))}</button>
+          </div>
+        </form>`,
+      );
+      const paint = () => {
+        $$("[data-pick-icon]", dlg.el).forEach((b) => {
+          b.className = `flex size-9 items-center justify-center rounded-lg border ${b.dataset.pickIcon === chosen ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-700/20 dark:text-brand-100" : "border-slate-200 text-slate-500 dark:border-slate-700"}`;
+          b.innerHTML = lookSym(b.dataset.pickIcon, "size-4");
+        });
+        $$("[data-pick-color]", dlg.el).forEach((b) => {
+          b.classList.toggle("border-slate-900", b.dataset.pickColor === color);
+          b.classList.toggle("dark:border-white", b.dataset.pickColor === color);
+          b.classList.toggle("border-white", b.dataset.pickColor !== color);
+        });
+        $("[data-look-preview]", dlg.el).innerHTML = o.preview({ icon: chosen, color: color || null, image_url: photo });
+        $("[data-nophoto]", dlg.el).classList.toggle("hidden", !photo);
+        refreshIcons();
+      };
+      paint();
+      $$("[data-pick-icon]", dlg.el).forEach((b) => b.addEventListener("click", () => ((chosen = b.dataset.pickIcon), paint())));
+      $$("[data-pick-color]", dlg.el).forEach((b) => b.addEventListener("click", () => ((color = b.dataset.pickColor), paint())));
+      $("[data-nophoto]", dlg.el).addEventListener("click", () => ((photo = null), paint()));
+      // 照片：先传到 link-icons（自己的资料夹、随机档名），按 Save 才记上去
+      $("[data-photo]", dlg.el).addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) return toast(t("home.linkPhotoTooBig"));
+        const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : file.type === "image/gif" ? "gif" : "jpg";
+        const path = `${data.profile.id}/${crypto.randomUUID()}.${ext}`;
+        const up = await sb.storage.from("link-icons").upload(path, file, { contentType: file.type, upsert: true });
+        if (up.error) return toast(t("home.saveFailed") + " (" + (up.error.message || "") + ")");
+        photo = sb.storage.from("link-icons").getPublicUrl(path).data.publicUrl;
+        paint();
+      });
+      $("[data-cancel]", dlg.el).onclick = dlg.close;
+      $("form", dlg.el).addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const msg = await o.save({ icon: chosen, color: color || null, image_url: photo });
+        if (msg) return ($("[data-err]", dlg.el).innerHTML = GW.alertBox(msg));
+        dlg.close();
+        draw();
+      });
+    }
+    // 资料库还没跑这次的 SQL（栏位 / 函数不存在）
+    const lookNoDb = (error) => ["42703", "42883", "PGRST202", "PGRST204"].includes(error && error.code);
+    function moduleLookDialog(id) {
+      const m = modules.get(id);
+      if (!m || !canLook("module", id)) return;
+      lookDialog({
+        name: m.name,
+        hint: t("home.lookModuleHint"),
+        icon: m.icon,
+        color: m.color,
+        image_url: m.image_url,
+        firstIcon: "app-window",
+        icons: Object.keys(GW.MODULE_ICONS),
+        preview: (lk) => appIcon({ ...m, ...lk, id: null }),
+        save: async (lk) => {
+          const { error } = await sb.rpc("gw_set_module_look", { p_module: id, p_icon: lk.icon, p_color: lk.color, p_image_url: lk.image_url });
+          if (error) return lookNoDb(error) ? t("home.folderTagNeedsDb") : error.code === "42501" ? t("home.lookNoRight") : t("home.saveFailed") + " (" + (error.message || "") + ")";
+          Object.assign(m, lk);
+          return null;
+        },
+      });
+    }
+    function folderLookDialog(id) {
+      const f = folders.find((x) => x.id === id);
+      if (!f || !canLook("folder", id)) return;
+      const lk0 = f.look || {};
+      lookDialog({
+        name: f.name,
+        hint: t("home.lookFolderHint"),
+        icon: lk0.icon || "folder",
+        color: lk0.color,
+        image_url: lk0.image_url,
+        firstIcon: "folder",
+        icons: LOOK_ICONS,
+        preview: (lk) => folderLook({ ...f, look: lk }, ""),
+        save: async (lk) => {
+          const look = lk.icon === "folder" && !lk.color && !lk.image_url ? null : lk; // 全部预设 = 回到原本的样子
+          const { error } = await sb.from("gw_user_folders").update({ look }).eq("id", f.id);
+          if (error) return lookNoDb(error) ? t("home.folderTagNeedsDb") : t("home.saveFailed") + " (" + (error.message || "") + ")";
+          f.look = look;
+          return null;
+        },
+      });
+    }
+    // 模块的外观（颜色是新栏位）和我是哪些模块的负责人：打开首页时拿一次
+    async function loadLooks() {
+      if (readOnly) return;
+      const ids = [...modules.keys()];
+      const [mods, leads] = await Promise.all([ids.length ? sb.from("gw_modules").select("id, icon, color, image_url").in("id", ids) : { data: [] }, sb.rpc("gw_my_lead_modules")]);
+      if (!mods.error) (mods.data || []).forEach((r) => Object.assign(modules.get(r.id) || {}, { icon: r.icon, color: r.color || null, image_url: r.image_url }));
+      if (!leads.error) (leads.data || []).forEach((r) => myLeads.add(typeof r === "string" ? r : r.gw_my_lead_modules || r.id));
+    }
+    // 文件夹的外观（自己的、分享给我的都拿）
+    async function loadFolderLooks() {
+      if (!folders.length) return;
+      const { data: rows, error } = await sb.from("gw_user_folders").select("id, look").in("id", folders.map((f) => f.id));
+      if (!error) (rows || []).forEach((r) => Object.assign(folders.find((f) => f.id === r.id) || {}, { look: r.look || null }));
+    }
+
     // 个人连结图示
     function linkTile(l) {
       return `<div data-kind="link" data-id="${l.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
@@ -478,7 +625,7 @@ window.GWHome = (function () {
       ].slice(0, 9).join("");
       return `<div data-kind="folder" data-id="${f.id}" class="gw-item relative flex flex-col items-center gap-1.5 pt-1">
         <button type="button" data-folder="${f.id}" class="flex flex-col items-center gap-1.5">
-          <span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>
+          ${folderLook(f, `<span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>`)}
           <span class="w-20 text-center text-xs leading-tight font-medium break-words text-slate-700 dark:text-slate-200">${esc(f.name)}</span>
         </button>
         ${editing ? badge(`data-remove-folder="${f.id}"`, "minus", t("home.deleteFolder"), "top-0 left-1/2 -translate-x-[2.4rem]") : ""}
@@ -1031,7 +1178,8 @@ window.GWHome = (function () {
     const BADGE_R = "top-0 right-[calc(50%-36px)] sm:top-1 sm:right-[calc(50%-40px)]";
     const cellCss = (p) => `grid-column:${p.c + 1} / span ${p.w};grid-row:${p.r + 1} / span ${p.h}`;
     // 分享的文件夹：蓝色文件夹图示，右下角小小的「人」（一眼看得出是大家一起用的）
-    const sharedFolderIcon = (f) =>
+    const sharedFolderIcon = (f) => folderLook(f, sharedFolderBase(f));
+    const sharedFolderBase = (f) =>
       `<span title="${esc(t(f.shared_by ? "home.sharedBy" : "home.sharedBadge"))}" class="gw-icon relative flex size-14 items-center justify-center rounded-[26%] bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-sm sm:size-16">${icon("folder-open", "size-[46%]")}<span class="absolute right-1 bottom-1 flex size-[1.15rem] items-center justify-center rounded-full bg-white text-sky-600 shadow-sm">${icon("users", "size-3")}</span></span>`;
     const folderIcon = (minis) => `<span class="grid size-14 grid-cols-3 grid-rows-3 content-start gap-1 gw-icon rounded-[26%] border border-white/60 bg-white/50 p-2 backdrop-blur-xl sm:size-16 dark:border-white/10 dark:bg-white/10">${minis}</span>`;
     function cellTile({ key, kind, p, btnAttr, iconHtml, label, title, badges }) {
@@ -1042,12 +1190,12 @@ window.GWHome = (function () {
     function sTile(gid, it, p) {
       if (it.kind === "sfolder") {
         const f = folders.find((x) => x.id === it.folder_id);
-        return cellTile({ key: it.id, kind: "sfolder", p, btnAttr: `data-folder="${f.id}"`, iconHtml: sharedFolderIcon(f), label: f.name, title: f.name });
+        return cellTile({ key: it.id, kind: "sfolder", p, btnAttr: `data-folder="${f.id}"`, iconHtml: sharedFolderIcon(f), label: f.name, title: f.name, badges: lookBadge("folder", f.id) });
       }
       if (it.kind === "module") {
         const m = modules.get(it.module_id);
         // Business 区块里的 App 固定在那里（不能拿掉）；要整理就拖一份到 My Home
-        return cellTile({ key: it.id, kind: "module", p, btnAttr: `data-open="${m.id}" data-gid="${gid}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name });
+        return cellTile({ key: it.id, kind: "module", p, btnAttr: `data-open="${m.id}" data-gid="${gid}"`, iconHtml: appIcon(m), label: m.name, title: m.description || m.name, badges: lookBadge("module", m.id) });
       }
       const del = badge(`data-del-item="${it.id}"`, "minus", t("home.delete"), BADGE_L);
       if (it.kind === "folder") {
@@ -1075,9 +1223,9 @@ window.GWHome = (function () {
         const f = folders.find((x) => x.id === it.id);
         const minis = [...folderApps(f.id).map((id) => miniColor(modules.get(id).code, id)), ...folderLinks(f.id).map((l) => miniColor(l.name, null, l.color))].slice(0, 9).map((c) => `<span class="aspect-square rounded-[28%] bg-gradient-to-br ${c}"></span>`).join("");
         const shared = f.is_shared || f.shared_by;
-        const iconHtml = shared ? sharedFolderIcon(f) : folderIcon(minis);
+        const iconHtml = folderLook(f, shared ? sharedFolderIcon(f) : folderIcon(minis));
         const copy = boxesOf(f).length > 0 && homeCopyOf(f.id) != null;
-        return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(copy ? "home.removeFromHome" : f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) });
+        return cellTile({ key: it.key, kind: "folder", p, btnAttr: `data-folder="${f.id}"`, iconHtml, label: f.name, badges: badge(`data-remove-folder="${f.id}"`, "minus", t(copy ? "home.removeFromHome" : f.shared_by ? "home.leaveShared" : "home.deleteFolder"), BADGE_L) + lookBadge("folder", f.id) });
       }
       return widgetTile(widgets.find((w) => w.id === it.id), p, it.key);
     }
@@ -2885,11 +3033,14 @@ window.GWHome = (function () {
               ${folders.filter((f) => !f.shared_by).map((f) => `<option value="${f.id}" ${current === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}
             </select>
           </label>
+          ${canLook("module", id) ? `<button data-look class="${btn("secondary")} w-full">${icon("pencil")} ${esc(t("home.editLook"))}</button>` : ""}
           <button data-colors class="${btn("secondary")} w-full">${icon("palette")} ${esc(t("fab.iconColors"))}</button>
           <button data-remove class="${btn("ghost")} w-full text-red-600 dark:text-red-400">${icon("trash-2")} ${esc(t("home.removeFromHome"))}</button>
         </div>`,
       );
       $("[data-colors]", dlg.el).onclick = () => (dlg.close(), iconColorsDialog());
+      const lookBtn = $("[data-look]", dlg.el);
+      if (lookBtn) lookBtn.onclick = () => (dlg.close(), moduleLookDialog(id));
       $("[data-move]", dlg.el).addEventListener("change", async (e) => {
         const folderId = e.target.value || null;
         const order = folderId ? folderApps(folderId).length + 1 : nextSlot(1, 1);
@@ -5363,6 +5514,8 @@ window.GWHome = (function () {
       if (d.folder) return editing ? null : openFolder(d.folder);
       if (d.appMenu) return appMenu(d.appMenu);
       if (d.removeApp) return removeApp(d.removeApp);
+      if (d.lookModule) return moduleLookDialog(d.lookModule);
+      if (d.lookFolder) return folderLookDialog(d.lookFolder);
       if (d.removeWidget) return removeWidget(d.removeWidget);
       if (d.removeFolder) return deleteFolder(d.removeFolder);
       if (d.resize) return resizeWidget(d.resize);
@@ -5591,11 +5744,12 @@ window.GWHome = (function () {
       let shown1 = false;
       drawHeld = true;
       const go = () => !shown1 && ((shown1 = true), (drawHeld = false), firstDraw());
-      loadShared().catch(() => {}).finally(go);
+      Promise.all([loadShared().catch(() => {}), loadLooks().catch(() => {})]).finally(go);
       setTimeout(go, 2500); // 网路太慢：不要一直空白
     } else {
       firstDraw();
       loadShared();
+      loadLooks().then(draw, () => {});
     }
 
     // 公告的下架时间：首页资料没有带，另外拿；时间到了就从公告栏拿掉（不用重新整理页面）

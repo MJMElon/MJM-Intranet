@@ -1099,7 +1099,7 @@ window.GWHome = (function () {
         <h2 data-sec-title class="shrink-0 whitespace-nowrap text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${
           key === "home"
             ? editing && sectionsOn
-              ? `<button type="button" data-home-rename class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 dark:hover:bg-white/10" title="${esc(t("home.renameHome"))}" aria-label="${esc(t("home.renameHome"))}">${icon("pencil", "size-4")}</button>${homeOn() ? `<button type="button" data-home-remove class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" title="${esc(t("home.removeHome"))}" aria-label="${esc(t("home.removeHome"))}">${icon("minus-circle", "size-4")}</button>` : ""}`
+              ? `<button type="button" data-home-rename class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 dark:hover:bg-white/10" title="${esc(t("home.renameHome"))}" aria-label="${esc(t("home.renameHome"))}">${icon("pencil", "size-4")}</button>${`<button type="button" data-home-remove class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" title="${esc(t("home.removeHome"))}" aria-label="${esc(t("home.removeHome"))}">${icon("minus-circle", "size-4")}</button>`}`
               : ""
             : companyPicker(key) // 只选 Company；Location 在模块里面自己选
         }
@@ -5394,12 +5394,78 @@ window.GWHome = (function () {
       if ("sheetLink" in d) return ((sheet = null), draw(), linkDialog(null));
       if ("sheetFolder" in d) return ((sheet = null), draw(), folderDialog(null));
       if ("homeRename" in d) return renameHome();
-      if ("homeRemove" in d) {
-        if (rootItems().length) return toast(t("home.removeHomeNotEmpty"));
-        setHomeBox({ on: false, added: false });
-        return draw();
-      }
+      if ("homeRemove" in d) return removeHome();
     });
+    // 拿掉 My Home：里面有图示就先问；确定后图示一起拿掉（不再记它们的位置），里面的小工具搬到页面上
+    async function removeHome() {
+      const items = rootItems();
+      const inHome = boxWidgets("home");
+      const own = items.filter((it) => it.kind === "folder").map((it) => folders.find((f) => f.id === it.id)).filter((f) => f && !f.shared_by && !(boxesOf(f).length && homeCopyOf(f.id) != null));
+      if (items.length || inHome.length) {
+        const body = t("home.removeHomeBody") + (own.some((f) => f.is_shared) ? " " + t("home.removeHomeShared") : "");
+        if (!(await confirmDialog(t("home.removeHomeTitle", { name: homeName() }), body, t("home.removeHomeOk"), t("home.cancel")))) return;
+      }
+      const me = data.profile.id;
+      const saves = [];
+      const appIds = items.filter((it) => it.kind === "app").map((it) => it.id);
+      const linkIds = items.filter((it) => it.kind === "link").map((it) => it.id);
+      appIds.forEach((id) => layout.delete(id));
+      if (appIds.length) saves.push(sb.from("gw_user_layout").delete().eq("user_id", me).in("module_id", appIds));
+      if (linkIds.length) saves.push(sb.from("gw_user_links").delete().in("id", linkIds));
+      links = links.filter((l) => !linkIds.includes(l.id));
+      const copies = {};
+      for (const it of items.filter((x) => x.kind === "folder")) {
+        const f = folders.find((x) => x.id === it.id);
+        if (!f) continue;
+        if (boxesOf(f).length && homeCopyOf(f.id) != null) {
+          copies[f.id] = true; // 只是 Business 文件夹在 My Home 的复制：拿掉复制，Business 里的还在
+        } else if (f.shared_by) {
+          // 别人分享给我的：退出分享（文件夹是对方的）
+          folders = folders.filter((x) => x.id !== f.id);
+          links = links.filter((l) => l.folder_id !== f.id);
+          sharedApps.delete(f.id);
+          saves.push(sb.from("gw_folder_shares").delete().eq("folder_id", f.id).eq("user_id", me));
+        } else {
+          // 自己的文件夹：连里面的 App、连结一起删掉
+          folders = folders.filter((x) => x.id !== f.id);
+          links = links.filter((l) => l.folder_id !== f.id);
+          [...layout].forEach(([mid, l]) => l.folder_id === f.id && layout.delete(mid));
+          saves.push(
+            (async () => {
+              await sb.from("gw_user_layout").delete().eq("user_id", me).eq("folder_id", f.id);
+              await sb.from("gw_user_links").delete().eq("folder_id", f.id);
+              return sb.from("gw_user_folders").delete().eq("id", f.id);
+            })(),
+          );
+        }
+      }
+      // 记在 Notice Board 设定里的：My Home 关掉、复制的文件夹拿掉（一次存）
+      const bw = board();
+      if (bw) {
+        const hf = { ...(boardCfg().homeFolders || {}) };
+        Object.keys(copies).forEach((fid) => delete hf[fid]);
+        bw.config = { ...(bw.config || {}), homeFolders: hf, homeBox: { ...((bw.config || {}).homeBox || {}), on: false, added: false } };
+        saves.push(saveBoardConfig());
+      }
+      // My Home 里的小工具（包括旧版没有位置的）：搬到页面上的空位
+      const loose = [...inHome, ...items.filter((it) => it.kind === "widget").map((it) => widgets.find((w) => w.id === it.id)).filter(Boolean)];
+      loose.forEach((w) => (w.config = { ...(w.config || {}), pos: { ...((w.config && w.config.pos) || cellsToPos(w)), box: null, x: 0, y: 9999, v: 2 } }));
+      draw();
+      loose.forEach((w) => {
+        const p = w.config.pos;
+        const spot = pageFree(p.w, p.h, blocksExcept(w.id), 0);
+        shown.set(w.id, { ...p, ...spot });
+        saves.push(saveWidgetPos(w, { ...p, ...spot, box: null }));
+      });
+      if (loose.length) draw();
+      const res = await Promise.all(saves);
+      if (res.some((r) => r && r.error)) toast(t("home.saveFailed"));
+    }
+    // 旧版（不在格子上）的小工具：用它的大小算出几栏几行
+    const cellsToPos = (w) => {
+      const [cw, ch] = cellsFor(w.widget_type, w.size);
+      return { w: cw, h: ch };
+    };
     // 改 My Home 的名字（空白 = 回到「My Home」）
     function renameHome() {
       const dlg = modal(

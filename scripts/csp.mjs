@@ -14,6 +14,8 @@ if (!supabase) throw new Error("supabaseUrl not found in shared/config.js");
 const ws = supabase.replace(/^https:/, "wss:");
 // 月历小工具向 MJMConnect 拿请假 / Estate 资料（config.js 的 mjmconnectCalendarUrl）
 const mjmconnect = ((config.match(/mjmconnectCalendarUrl:\s*"(https:\/\/[^/"]+)/) || [])[1]) || "";
+// 开模块前先帮他登入的系统（shared/core.js 的 HANDOFF endpoint：例如 Plantation Operation 的 Supabase）
+const handoff = [...new Set([...readFileSync(join(root, "shared/core.js"), "utf8").matchAll(/endpoint:\s*"(https:\/\/[^/"]+)/g)].map((m) => m[1]))].join(" ");
 
 const policyFor = (hashes) =>
   [
@@ -22,7 +24,7 @@ const policyFor = (hashes) =>
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${supabase}`,
     "font-src 'self' data:",
-    `connect-src 'self' ${supabase} ${ws} ${mjmconnect} https://api.open-meteo.com https://api.bigdatacloud.net`.replace(/  +/g, " "),
+    `connect-src 'self' ${supabase} ${ws} ${mjmconnect} ${handoff} https://api.open-meteo.com https://api.bigdatacloud.net`.replace(/  +/g, " "),
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

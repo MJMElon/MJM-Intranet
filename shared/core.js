@@ -562,6 +562,53 @@ window.GW = (function () {
       return url;
     }
   }
+  // Systems that can be signed in to from here, before leaving the Intranet: the
+  // Intranet redeems the token with the system's own sign-in endpoint while its
+  // small "Opening…" box shows, then opens the system already signed in (the
+  // result goes in the address's #hash, which never reaches any server).
+  // Plantation Operation (PORT), and Management Report / Mantap through it.
+  const HANDOFF = [
+    {
+      prefix: "https://oliviawsc.github.io/MJM-PORT/",
+      endpoint: "https://pxzvayptwpvuvlenmdwp.supabase.co/functions/v1/stock-sso",
+      key: "sb_publishable_tKap42sXnzGzmVUoLAw4xQ__bkXq8l_",
+      body: (token, u) => {
+        const mod = u.searchParams.get("module");
+        return { token, module: mod === "report" || mod === "mantap" ? mod : "stock" };
+      },
+    },
+  ];
+  const b64url = (text) => btoa(unescape(encodeURIComponent(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  // → the address to open (signed in), null when this system has no handoff,
+  //   "retry" when its sign-in could not be reached
+  async function handoffUrl(redirectUrl, ctx) {
+    let u;
+    try {
+      u = new URL(redirectUrl);
+    } catch (e) {
+      return null;
+    }
+    const h = HANDOFF.find((x) => u.href.startsWith(x.prefix));
+    const token = u.searchParams.get("gw_token");
+    if (!h || !token) return null;
+    u.searchParams.delete("gw_token");
+    const target = new URL(withCompany(u.toString(), ctx));
+    let res;
+    try {
+      res = await fetch(h.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: h.key, Authorization: "Bearer " + h.key },
+        body: JSON.stringify(h.body(token, u)),
+      });
+    } catch (e) {
+      return "retry"; // could not reach it: open with a fresh token, the system signs in by itself
+    }
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data && data.session) target.hash = "gw_handoff=" + b64url(JSON.stringify({ session: data.session, auth: data.auth || null }));
+    else target.hash = "gw_error=" + encodeURIComponent((data && data.error) || "err_network");
+    return target.toString();
+  }
+
   async function openModule(m, ctx) {
     const newTab = m.open_mode === "new_tab";
     if (m.access_level === 2) {
@@ -581,7 +628,13 @@ window.GW = (function () {
         if (win) win.close();
         return false;
       }
-      const target = withCompany(r.redirect_url, ctx);
+      let target = await handoffUrl(r.redirect_url, ctx);
+      if (target === "retry") {
+        // the first token may have been used on the way: ask for a new one
+        const r2 = await invoke("gw-issue-token", { module_code: m.code });
+        target = r2 && r2.redirect_url ? withCompany(r2.redirect_url, ctx) : null;
+      }
+      if (!target) target = withCompany(r.redirect_url, ctx);
       if (win) {
         win.opener = null;
         win.location.href = target;

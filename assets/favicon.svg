@@ -1,21 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- 方块：一个 V（左上角 → 下面中间 → 右上角）分成三块积木：上面绿色倒三角，左右两块黄色三角（看起来也是一个 M） -->
+  <!-- 三个一样大的三角形（积木）：黄 ▲、绿 ▼、黄 ▲，中间是一个 V，整个看起来也是 M -->
   <defs>
-    <clipPath id="box"><rect width="128" height="128" rx="22"/></clipPath>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#22c55e"/>
-      <stop offset="1" stop-color="#15803d"/>
-    </linearGradient>
-    <linearGradient id="y" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fde047"/>
-      <stop offset="1" stop-color="#eab308"/>
-    </linearGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22c55e"/><stop offset="1" stop-color="#15803d"/></linearGradient>
+    <linearGradient id="y" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde047"/><stop offset="1" stop-color="#eab308"/></linearGradient>
   </defs>
-  <g clip-path="url(#box)">
-    <path d="M0 0 L128 0 L64 128 Z" fill="url(#g)"/>
-    <path d="M0 0 L64 128 L0 128 Z" fill="url(#y)"/>
-    <path d="M128 0 L128 128 L64 128 Z" fill="url(#y)"/>
-    <!-- 积木之间的缝 -->
-    <path d="M0 0 L64 128 L128 0" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
+  <rect width="128" height="128" rx="26" fill="#ffffff"/>
+  <g transform="translate(12 20)">
+    <path d="M0 88 L26 0 L52 88 Z" fill="url(#y)"/>
+    <path d="M26 0 L78 0 L52 88 Z" fill="url(#g)"/>
+    <path d="M52 88 L78 0 L104 88 Z" fill="url(#y)"/>
+    <path d="M26 0 L52 88 L78 0" fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"/>
   </g>
 </svg>

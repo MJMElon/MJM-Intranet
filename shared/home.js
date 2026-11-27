@@ -1168,7 +1168,7 @@ window.GWHome = (function () {
     }
 
     // ---- 区块外观
-    const LABEL = "w-[72px] text-center text-xs leading-tight font-medium break-words text-slate-700 sm:w-20 dark:text-slate-200"; // 名字太长就换行，整个名字都要看得到
+    const LABEL = "w-[84px] text-center text-[11px] leading-tight font-medium break-words text-slate-700 sm:w-20 sm:text-xs dark:text-slate-200"; // 名字太长就换行，整个名字都要看得到
     // 编辑时图示左上角 / 右上角的小圆钮（对准图示的角）
     const BADGE_L = "top-0 left-[calc(50%-36px)] sm:top-1 sm:left-[calc(50%-40px)]";
     const BADGE_R = "top-0 right-[calc(50%-36px)] sm:top-1 sm:right-[calc(50%-40px)]";
@@ -3723,7 +3723,7 @@ window.GWHome = (function () {
       function toolsHtml() {
         const tb = (attr, ic, label) => `<button type="button" ${attr} title="${esc(label)}" aria-label="${esc(label)}" aria-pressed="false" class="flex size-7 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent aria-pressed:bg-slate-900 aria-pressed:text-white dark:text-slate-300 dark:hover:bg-white/10 dark:aria-pressed:bg-white dark:aria-pressed:text-slate-900">${icon(ic, "size-4")}</button>`;
         const sep = `<span class="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700"></span>`;
-        return `<div data-fmt-bar class="flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white px-1 py-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        return `<div data-fmt-bar class="gw-noscroll flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl border [&>*]:shrink-0 border-slate-200 bg-white px-1 py-0.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           ${tb("data-undo", "undo-2", t("home.sheetUndo"))}
           ${tb("data-redo", "redo-2", t("home.sheetRedo"))}
           ${sep}
@@ -5081,10 +5081,10 @@ window.GWHome = (function () {
           </label>
           <div class="!mt-6 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
             <p class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">${icon("calendar-clock", "size-4 text-brand-600 dark:text-brand-400")}${esc(t("widgets.postSchedule"))}</p>
-            <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
-              <label for="gw-post-on" class="max-w-[6.5rem] text-xs leading-tight font-medium text-slate-500">${esc(t("widgets.postOn"))}</label>
+            <div class="grid grid-cols-1 gap-y-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-x-3 sm:gap-y-2">
+              <label for="gw-post-on" class="sm:max-w-[6.5rem] text-xs leading-tight font-medium text-slate-500">${esc(t("widgets.postOn"))}</label>
               <span class="flex items-center gap-1"><input id="gw-post-on" type="datetime-local" name="starts_at" step="300" ${notice ? "" : `min="${localInput(floor5(Date.now()))}"`} value="${startsInit}" required class="${dt} min-w-0 flex-1"><span aria-hidden="true" class="invisible h-9 shrink-0 px-2.5 text-xs font-semibold">${esc(t("widgets.postEndsClear"))}</span></span>
-              <label for="gw-post-ends" class="max-w-[6.5rem] text-xs leading-tight font-medium text-slate-500">${esc(t("widgets.postEnds"))}</label>
+              <label for="gw-post-ends" class="mt-2 sm:mt-0 sm:max-w-[6.5rem] text-xs leading-tight font-medium text-slate-500">${esc(t("widgets.postEnds"))}</label>
               <span class="flex items-center gap-1"><input id="gw-post-ends" type="datetime-local" name="ends_at" step="300" min="${localInput(ceil5(Date.now()))}" value="${endsInit}" class="${dt} min-w-0 flex-1">
                 <button type="button" data-clear-ends title="${esc(t("widgets.postEndsClear"))}" aria-label="${esc(t("widgets.postEndsClear"))}" class="h-9 shrink-0 rounded-lg px-2.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/10 dark:hover:text-white">${esc(t("widgets.postEndsClear"))}</button></span>
             </div>

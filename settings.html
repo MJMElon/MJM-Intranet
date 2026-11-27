@@ -121,7 +121,7 @@
       }
       ${
         en.data
-          ? `<form id="cn-form" class="flex gap-2"><input name="label" maxlength="40" placeholder="${esc(tc("namePlaceholder"))}" aria-label="${esc(tc("name"))}" class="${cls.input}"><button type="submit" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tc("create"))}</button></form>`
+          ? `<form id="cn-form" class="flex flex-wrap gap-2"><input name="label" maxlength="40" placeholder="${esc(tc("namePlaceholder"))}" aria-label="${esc(tc("name"))}" class="${cls.input} min-w-0 flex-1 basis-48"><button type="submit" class="${btn("primary")} shrink-0">${icon("plus")} ${esc(tc("create"))}</button></form>`
           : `<p class="text-sm text-slate-500">${esc(tc("off"))}</p>`
       }
       <div>

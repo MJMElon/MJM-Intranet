@@ -1106,30 +1106,49 @@ window.GWHome = (function () {
     }
     // 区块标题列太窄：公司名字先换简称，再不够就只剩图示（区块名字一定显示完整）
     function fitHeads(scope) {
-      // 小框被挤窄了（比它原本要的宽度窄）= 放不下
-      const over = (pill) => {
-        const w = pill.getBoundingClientRect().width;
-        pill.style.flexShrink = "0";
-        pill.style.maxWidth = "none";
-        const nat = pill.getBoundingClientRect().width;
-        pill.style.flexShrink = "";
-        pill.style.maxWidth = "";
-        return nat > w + 0.5;
+      // 标题列放不放得下：每样东西都用原本的宽度，看最右边（展开 / 收起按钮）有没有超出
+      const fits = (head) => {
+        const last = head.lastElementChild;
+        const pr = parseFloat(getComputedStyle(head).paddingRight) || 0;
+        return last.getBoundingClientRect().right <= head.getBoundingClientRect().right - pr + 0.5;
       };
-      $$("[data-co-full]", scope || root).forEach((f) => {
-        const sh = f.nextElementSibling;
-        const pill = f.parentElement;
-        pill.style.flexShrink = "";
-        f.classList.toggle("hidden", false);
-        sh.classList.toggle("hidden", true);
-        if (!over(pill)) return;
-        f.classList.toggle("hidden", true);
-        if (sh.textContent) {
-          sh.classList.toggle("hidden", false);
-          if (!over(pill)) return;
-          sh.classList.toggle("hidden", true);
+      const show = (el, on) => el && el.classList.toggle("hidden", !on);
+      $$("[data-sec-title]", scope || root).forEach((h2) => {
+        const head = h2.parentElement;
+        [...head.children].forEach((c) => (c.style.flexShrink = "0"));
+        h2.classList.remove("truncate", "min-w-0");
+        h2.removeAttribute("title");
+        const f = $("[data-co-full]", head);
+        const sh = f && f.nextElementSibling;
+        const item = f && [...head.children].find((c) => c.contains(f));
+        if (item) item.style.display = "";
+        $$("[data-mode]", head).forEach((b) => (b.style.display = ""));
+        show(f, true);
+        show(sh, false);
+        if (fits(head)) return;
+        if (f) {
+          // 1. 公司简称  2. 只剩图示（还是可以点开选单）  3. 只有一家、不能点的：整个拿掉
+          show(f, false);
+          if (sh.textContent) {
+            show(sh, true);
+            if (fits(head)) return;
+            show(sh, false);
+          }
+          if (fits(head)) return;
+          // 灰掉（按不了）的展开 / 收起箭头先收起来，空出位置
+          $$("[data-mode][disabled]", head).forEach((b) => (b.style.display = "none"));
+          if (fits(head)) return;
+          if (!$("[data-company-menu]", item)) {
+            item.style.display = "none";
+            if (fits(head)) return;
+          }
         }
-        pill.style.flexShrink = "0"; // 只剩图示：不要再被挤到切掉图示
+        $$("[data-mode][disabled]", head).forEach((b) => (b.style.display = "none"));
+        if (fits(head)) return;
+        // 4. 真的太窄：区块名字才截短（滑鼠移过去看全名），展开 / 收起按钮一定看得到
+        h2.style.flexShrink = "1";
+        h2.classList.add("truncate", "min-w-0");
+        h2.title = h2.textContent;
       });
     }
     // 一个区块（My Home 也一样）：外框宽 = 整数格 + 半格，高 = 整数格
@@ -1169,7 +1188,7 @@ window.GWHome = (function () {
         if (list.length === 1) return `<span title="${esc(list[0].name)}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(list[0].name, shortOf(list[0]))}</span>`;
         const open = companyMenuGid === gid;
         return `<div data-pick-wrap class="relative min-w-0">
-        <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(t("home.hqShowCompanies"))}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(t("home.hqAllCompanies", { count: list.length }), String(list.length))}${icon(open ? "chevron-up" : "chevron-down", "size-3.5 shrink-0")}</button>
+        <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(t("home.hqShowCompanies"))}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(t("home.hqAllCompanies", { count: list.length }), "")}${icon(open ? "chevron-up" : "chevron-down", "size-3.5 shrink-0")}</button>
         ${
           open
             ? `<div data-hq-list class="absolute top-full left-0 z-30 mt-1 max-h-80 w-max max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">

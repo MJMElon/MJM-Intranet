@@ -438,7 +438,7 @@ window.GW_LANG["en"] = {
     "addAppsHint": "Every app you can use. Tap + to add it to your home screen.",
     "newFolder": "New Folder",
     "edit": "Edit Home Screen",
-    "editHint": "Drag to rearrange, drag a corner to resize, tap − or ✕ to remove. Tap Done or an empty spot to finish. (Tip: press and hold anything to start editing.)",
+    "editHint": "Drag to rearrange, drag a corner to resize, tap − or ✕ to remove. Tap Done or double-tap an empty spot to finish. (Tip: press and hold anything to start editing.)",
     "done": "Done",
     "homeScreen": "Home screen (no folder)",
     "moveOut": "Move to home screen",

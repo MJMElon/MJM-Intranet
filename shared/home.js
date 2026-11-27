@@ -1094,7 +1094,7 @@ window.GWHome = (function () {
       const step = (dir, ic, label, off) => `<button type="button" data-mode="${dir}" aria-label="${esc(label)}" title="${esc(label)}" ${off ? "disabled" : ""} class="flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 disabled:pointer-events-none disabled:opacity-25 dark:hover:bg-white/10">${icon(ic, "size-4")}</button>`;
       const steps = key === "home" ? "" : step("less", "chevron-up", t("home.collapse"), mode === "title") + step("more", "chevron-down", t("home.expand"), mode === "full");
       return `<div class="flex min-w-0 items-center gap-2" style="height:${g.th}px;${mode === "title" ? "" : `margin-bottom:${g.tg}px;`}padding:0 ${Math.max(0, side - 6)}px 0 ${side}px">
-        <h2 class="min-w-0 truncate text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${
+        <h2 data-sec-title class="shrink-0 whitespace-nowrap text-[15px] leading-6 font-semibold tracking-tight text-slate-800 dark:text-slate-100">${esc(title)}</h2>${
           key === "home"
             ? editing && sectionsOn
               ? `<button type="button" data-home-rename class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white/60 dark:hover:bg-white/10" title="${esc(t("home.renameHome"))}" aria-label="${esc(t("home.renameHome"))}">${icon("pencil", "size-4")}</button>${homeOn() ? `<button type="button" data-home-remove class="no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" title="${esc(t("home.removeHome"))}" aria-label="${esc(t("home.removeHome"))}">${icon("minus-circle", "size-4")}</button>` : ""}`
@@ -1102,6 +1102,34 @@ window.GWHome = (function () {
             : companyPicker(key) // 只选 Company；Location 在模块里面自己选
         }
         <div class="ml-auto flex shrink-0 items-center">${sectionsOn ? secGrip() : ""}${steps}</div></div>`;
+    }
+    // 区块标题列太窄：公司名字先换简称，再不够就只剩图示（区块名字一定显示完整）
+    function fitHeads(scope) {
+      // 小框被挤窄了（比它原本要的宽度窄）= 放不下
+      const over = (pill) => {
+        const w = pill.getBoundingClientRect().width;
+        pill.style.flexShrink = "0";
+        pill.style.maxWidth = "none";
+        const nat = pill.getBoundingClientRect().width;
+        pill.style.flexShrink = "";
+        pill.style.maxWidth = "";
+        return nat > w + 0.5;
+      };
+      $$("[data-co-full]", scope || root).forEach((f) => {
+        const sh = f.nextElementSibling;
+        const pill = f.parentElement;
+        pill.style.flexShrink = "";
+        f.classList.toggle("hidden", false);
+        sh.classList.toggle("hidden", true);
+        if (!over(pill)) return;
+        f.classList.toggle("hidden", true);
+        if (sh.textContent) {
+          sh.classList.toggle("hidden", false);
+          if (!over(pill)) return;
+          sh.classList.toggle("hidden", true);
+        }
+        pill.style.flexShrink = "0"; // 只剩图示：不要再被挤到切掉图示
+      });
     }
     // 一个区块（My Home 也一样）：外框宽 = 整数格 + 半格，高 = 整数格
     function boxShell(key, title, B, tiles) {
@@ -1129,15 +1157,18 @@ window.GWHome = (function () {
         .join("");
     }
     // 区块标题旁边的 Company 选择
+    // 公司名字：放得下 = 全名；放不下 = 简称；还是放不下 = 只剩图示（fitHeads 量过再决定）
+    const coLabel = (full, short) => `<span data-co-full class="shrink-0 whitespace-nowrap">${esc(full)}</span><span data-co-short class="hidden shrink-0 whitespace-nowrap">${esc(short && short !== full ? short : "")}</span>`;
+    const shortOf = (c) => c.short_name || c.code || "";
     const companyPicker = (gid) => {
       const list = companiesOf(gid);
       if (!list.length) return "";
       // HQ（全部 Company）：不用选，显示「All companies」；点一下展开看包括哪几家（只看，不能选）
       if (isHq(gid)) {
-        if (list.length === 1) return `<span class="inline-flex max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(list[0].name)}</span></span>`;
+        if (list.length === 1) return `<span title="${esc(list[0].name)}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(list[0].name, shortOf(list[0]))}</span>`;
         const open = companyMenuGid === gid;
         return `<div data-pick-wrap class="relative min-w-0">
-        <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(t("home.hqShowCompanies"))}" class="inline-flex max-w-[14rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(t("home.hqAllCompanies", { count: list.length }))}</span>${icon(open ? "chevron-up" : "chevron-down", "size-3.5 shrink-0")}</button>
+        <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(t("home.hqShowCompanies"))}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(t("home.hqAllCompanies", { count: list.length }), String(list.length))}${icon(open ? "chevron-up" : "chevron-down", "size-3.5 shrink-0")}</button>
         ${
           open
             ? `<div data-hq-list class="absolute top-full left-0 z-30 mt-1 max-h-80 w-max max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">
@@ -1149,7 +1180,7 @@ window.GWHome = (function () {
       </div>`;
       }
       // 只有一个 Company：只显示它的名字，不用下拉选单
-      if (list.length === 1) return `<span class="inline-flex max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(list[0].name)}</span></span>`;
+      if (list.length === 1) return `<span title="${esc(list[0].name)}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(list[0].name, shortOf(list[0]))}</span>`;
       const sel = selectedCompany(gid);
       const cur = list.find((c) => c.id === sel);
       const label = cur ? cur.short_name || cur.code || cur.name : list[0].name;
@@ -1158,7 +1189,7 @@ window.GWHome = (function () {
           <button type="button" data-company-pick="${id}" data-gid="${gid}" class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pr-2.5 text-left text-sm"><span class="truncate">${esc(text)}</span>${sel === id ? icon("check", "size-4 shrink-0 text-emerald-600") : ""}</button>
         </div>`;
       return `<div data-pick-wrap class="relative min-w-0">
-        <button type="button" data-company-menu="${gid}" class="inline-flex max-w-[11rem] items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}<span class="truncate">${esc(label)}</span>${icon("chevron-down", "size-3.5 shrink-0")}</button>
+        <button type="button" data-company-menu="${gid}" title="${esc(cur ? cur.name : list[0].name)}" class="inline-flex overflow-hidden max-w-[11rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(label, "")}${icon("chevron-down", "size-3.5 shrink-0")}</button>
         ${companyMenuGid === gid ? `<div data-co-list="${gid}" class="absolute top-full left-0 z-30 mt-1 max-h-64 w-64 overflow-y-auto rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90">${list.map((c) => row(c.id, c.name)).join("")}</div>` : ""}
       </div>`;
     };
@@ -1267,8 +1298,8 @@ window.GWHome = (function () {
     };
     addEventListener("pointerup", lpEnd);
     addEventListener("pointercancel", lpEnd);
-    // 编辑中点页面空白处：离开编辑
-    document.addEventListener("click", (e) => {
+    // 编辑中连点两下页面空白处：离开编辑（点一下不会，免得不小心结束）
+    document.addEventListener("dblclick", (e) => {
       if (sectionsOn && editing && downOnEmpty && Date.now() - lastDragEnd > 400 && (e.target === document.body || e.target === document.documentElement || e.target.id === "main")) setEditing(false);
     });
     const EDIT_KEEP = "button, a, input, textarea, select, label, .gw-item, [data-fw], .gw-sheet, [data-sec-resize], .sec-grip, [data-board-resize]";
@@ -1464,6 +1495,7 @@ window.GWHome = (function () {
         if (g.wide) n = Math.max(B0.minC, Math.min(g.fit, Math.round((start.width + ev.clientX - sx - g.hw) / g.cw)));
         R = Math.max(minRowsAt(B0.model, n), Math.round((start.height + ev.clientY - sy) / g.rh) - 1);
         previewBox(key, wrap, list, n, R);
+        fitHeads(wrap);
       };
       const up = async () => {
         removeEventListener("pointermove", move);
@@ -1683,12 +1715,13 @@ window.GWHome = (function () {
       const g = pageGeo();
       const minY = -(topRows() + h); // 最多比现在最上面再高一个小工具
       const ok = (cx, cy) => cx >= 0 && cy >= minY && cx + 2 * w <= g.halves && !blocks.some((b) => hit({ x: cx, y: cy, w: 2 * w, h }, b));
-      for (let k = 0; k <= 40; k++)
+      for (let k = 0; k <= 40; k++) {
+        const ring = [];
         for (let dy = -k; dy <= k; dy++)
-          for (let dx = -2 * k; dx <= 2 * k; dx++) {
-            if (Math.max(Math.abs(dx) / 2, Math.abs(dy)) < k - 0.5 && k) continue;
-            if (ok(x + dx, y + dy)) return { x: x + dx, y: y + dy };
-          }
+          for (let dx = -2 * k; dx <= 2 * k; dx++) if (!(Math.max(Math.abs(dx) / 2, Math.abs(dy)) < k - 0.5 && k)) ring.push([dx, dy]);
+        ring.sort((a, b) => Math.hypot(a[0] / 2, a[1]) - Math.hypot(b[0] / 2, b[1]) || Math.abs(a[1]) - Math.abs(b[1]) || Math.abs(a[0]) - Math.abs(b[0]));
+        for (const [dx, dy] of ring) if (ok(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+      }
       return pageFree(w, h, blocks, 0);
     }
     const blocksExcept = (id) => [...boxRectsPage(), ...pageWidgets().filter((o) => o.id !== id).map((o) => wRect(shownOf(o)))];
@@ -1822,12 +1855,14 @@ window.GWHome = (function () {
       const g = pageGeo();
       const pw = Math.max(1, Math.min(w.config.pos.w, Math.floor(g.halves / 2)));
       const ph = w.config.pos.h;
-      w.config = { ...w.config, pos: { ...w.config.pos, box: null, w: pw, h: ph, x: 0, y: 9999 } }; // 先移出原来的地方
-      draw();
+      // 先量放下的位置（还没移出前）：移出后上面的空行会收掉、区块往上跑，量出来的行数就会错
       // 从第一个区块的上缘算第几行；放在区块上面（Notice Board 那边）= 负数，区块会往下推
       const pr = $("#gw-stack", root).getBoundingClientRect();
       const x = Math.max(0, Math.min(g.halves - 2 * pw, Math.round((r.left - pr.left) / g.hw)));
-      const y = Math.max(-(topRows() + ph), Math.round((r.top - pr.top) / g.rh));
+      const y0 = Math.round((r.top - pr.top) / g.rh);
+      w.config = { ...w.config, pos: { ...w.config.pos, box: null, w: pw, h: ph, x: 0, y: 9999 } }; // 先移出原来的地方
+      draw();
+      const y = Math.max(-(topRows() + ph), y0);
       const spot = pageNear(x, y, pw, ph, blocksExcept(w.id));
       shown.set(w.id, { x: spot.x, y: spot.y, w: pw, h: ph });
       const changed = [...alignBand(w.id, "drop"), ...compactTop()];
@@ -2441,6 +2476,7 @@ window.GWHome = (function () {
         lastGeo = geoSig();
         fitBoard();
         settlePage(false);
+        fitHeads();
       }
       // 「All companies」清单：宽到看得见完整的公司名；右边超出画面就往左移
       const hqList = $("[data-hq-list]", root);

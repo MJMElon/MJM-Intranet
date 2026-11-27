@@ -872,7 +872,8 @@ window.GWHome = (function () {
     const hiddenIn = () => new Set();
     // My Home 里从 Business 区块复制来的文件夹
     // My Home 方块：从「Add widget」加进来（config.homeBox.on），空的也一直在；名字可以自己改（config.homeBox.name）
-    const homeOn = () => !!(boardCfg().homeBox && boardCfg().homeBox.on);
+    // 只有按了「Add widget」里的 My Home 才算（added）；以前改名字也会打开它，那种空的不再显示
+    const homeOn = () => !!(boardCfg().homeBox && boardCfg().homeBox.on && boardCfg().homeBox.added);
     const homeName = () => ((boardCfg().homeBox && boardCfg().homeBox.name) || "").trim() || t("home.myHome");
     function setHomeBox(patch) {
       const bw = board();
@@ -2422,7 +2423,7 @@ window.GWHome = (function () {
         </div>`
         : "";
       // My Home 只在有东西、或从「Add widget」加了才出现（编辑时不再突然冒出来，把区块挤开）
-      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || homeOn() || widgets.some((w) => isFloating(w) && w.config.pos.box === "home")) : "";
+      const stackHtml = sectionsOn ? pageHtml(items.length > 0 || homeOn()) : "";
       root.innerHTML = `
         ${uninitialized ? `<div class="mb-4 rounded-2xl bg-white/70 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">${esc(t("home.previewUninitialized"))}</div>` : ""}
         ${sectionsOn ? stackHtml : boardHtml()}
@@ -5275,13 +5276,13 @@ window.GWHome = (function () {
       if ("closeSheet" in d) return ((sheet = null), draw());
       if (d.add) return addApp(d.add);
       if (d.addWidget) return addWidget(d.addWidget, d.size);
-      if ("sheetHome" in d) return ((sheet = null), setHomeBox({ on: true }), draw());
+      if ("sheetHome" in d) return ((sheet = null), setHomeBox({ on: true, added: true }), draw());
       if ("sheetLink" in d) return ((sheet = null), draw(), linkDialog(null));
       if ("sheetFolder" in d) return ((sheet = null), draw(), folderDialog(null));
       if ("homeRename" in d) return renameHome();
       if ("homeRemove" in d) {
         if (rootItems().length) return toast(t("home.removeHomeNotEmpty"));
-        setHomeBox({ on: false });
+        setHomeBox({ on: false, added: false });
         return draw();
       }
     });
@@ -5303,7 +5304,7 @@ window.GWHome = (function () {
       $("[data-cancel]", dlg.el).onclick = dlg.close;
       f.addEventListener("submit", (e) => {
         e.preventDefault();
-        setHomeBox({ name: f.n.value.trim().slice(0, 40), on: true });
+        setHomeBox({ name: f.n.value.trim().slice(0, 40) }); // 改名字不会把 My Home 打开
         dlg.close();
         draw();
       });
@@ -5396,7 +5397,9 @@ window.GWHome = (function () {
     // 以前放进 Business 区块的小工具：搬出来放在页面上（Business 区块只放 App）
     if (sectionsOn)
       (async () => {
-        for (const w of widgets.filter((x) => isFloating(x) && x.config.pos.box && x.config.pos.box !== "home")) {
+        // My Home 没打开、里面也没有 App：里面的小工具也搬出来（不然 My Home 会自己冒出来）
+        const homeGone = !homeOn() && !rootItems().length;
+        for (const w of widgets.filter((x) => isFloating(x) && x.config.pos.box && (x.config.pos.box !== "home" || homeGone))) {
           const el = $(`[data-fw="${w.id}"]`, root);
           await dropOnPage(w, el ? el.getBoundingClientRect() : { left: 0, top: innerHeight });
         }

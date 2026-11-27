@@ -1542,38 +1542,30 @@ window.GWHome = (function () {
       addEventListener("pointercancel", up);
     });
 
-    // 区块（My Home 和各 Business）用握把拖着换位置（不用进编辑，按住握把马上可以拖）：上下左右都可以。
-    // 放开前一直照鼠标位置找最近的区块：压在哪个区块上就排在它前面或后面（窄的区块看左右，整行宽的看上下），空白处找最近的。
+    // 区块（My Home 和各 Business）用握把拖着换位置（不用进编辑，按住握把马上可以拖）：跟小工具一样，放在页面上任何空位
+    // （虚线框 = 会放在哪里；压到别的区块或小工具就放在最近的空位，不会盖住）
     root.addEventListener("pointerdown", (e) => {
       const grip = e.target.closest(".sec-grip");
       if (!grip || e.button !== 0 || readOnly || !sectionsOn) return;
       const stack = $("#gw-stack", root);
       const wrap = grip.closest("[data-sec-wrap]");
-      if (!stack || !wrap) return;
+      const key = wrap && wrap.dataset.secKey;
+      if (!stack || !wrap || !boxShown.get(key)) return;
       e.preventDefault();
       const rect = wrap.getBoundingClientRect();
       const sx = e.clientX;
       const sy = e.clientY;
+      const me = boxShown.get(key);
+      const hint = $("[data-page-hint]", root);
       let ghost = null;
       let moved = false;
-      const dist = (r, x, y) => Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
-      const place = (x, y) => {
-        const mine = wrap.getBoundingClientRect();
-        if (x >= mine.left && x <= mine.right && y >= mine.top && y <= mine.bottom) return; // 还在自己的位置上
-        const others = $$("[data-sec-wrap]", stack).filter((el) => el !== wrap);
-        if (!others.length) return;
-        let target = others[0];
-        let best = Infinity;
-        for (const el of others) {
-          const d = dist(el.getBoundingClientRect(), x, y);
-          if (d < best) ((best = d), (target = el));
-        }
-        const r = target.getBoundingClientRect();
-        const narrow = r.width < stack.clientWidth * 0.8;
-        const before = y < r.top ? true : y > r.bottom ? false : narrow ? x < r.left + r.width / 2 : y < r.top + r.height / 2;
-        if (before) {
-          if (target.previousElementSibling !== wrap) stack.insertBefore(wrap, target);
-        } else if (target.nextElementSibling !== wrap) stack.insertBefore(wrap, target.nextElementSibling);
+      let spot = null;
+      const target = (ev) => {
+        const g = pageGeo();
+        const sr = stack.getBoundingClientRect();
+        const x = Math.max(0, Math.min(g.halves - me.w, Math.round((rect.left + ev.clientX - sx - sr.left) / g.hw)));
+        const y = Math.round((rect.top + ev.clientY - sy - sr.top) / g.rh) - topRows();
+        return nearFree(x, y, me.w, me.h, [...boxRectsPage(key), ...pageWidgets().map((o) => wRect(shownOf(o)))]);
       };
       if (lp) (clearTimeout(lp.timer), (lp = null));
       lastDragEnd = Date.now(); // 按握把放开的那一下不算点击（不会打开 App、不会离开编辑）
@@ -1596,26 +1588,36 @@ window.GWHome = (function () {
         ghost.style.top = rect.top + ev.clientY - sy + "px";
         if (ev.clientY < 90) scrollBy(0, -16);
         else if (ev.clientY > innerHeight - 90) scrollBy(0, 16);
-        place(ev.clientX, ev.clientY);
+        spot = target(ev);
+        if (hint && spot) {
+          const g = pageGeo();
+          hint.classList.remove("hidden");
+          Object.assign(hint.style, { left: spot.x * g.hw + 8 + "px", top: (spot.y + topRows()) * g.rh + 8 + "px", width: me.w * g.hw - 16 + "px", height: me.h * g.rh - 16 + "px" });
+        }
       };
-      const up = async () => {
+      const up = async (ev) => {
         removeEventListener("pointermove", move);
         removeEventListener("pointerup", up);
         removeEventListener("pointercancel", up);
         document.removeEventListener("touchmove", noScroll);
         document.body.classList.remove("gw-dragging");
         lastDragEnd = Date.now();
+        if (hint) hint.classList.add("hidden");
         if (!moved) return;
         ghost.remove();
         wrap.style.opacity = "";
-        const order = $$("[data-sec-wrap]", stack).map((el) => el.dataset.secKey);
-        if (order.join() === sectionOrder().join()) return;
-        const w = board();
-        if (!w) return;
-        w.config = { ...(w.config || {}), order };
-        const saving = saveBoardConfig();
+        if (ev.type === "pointercancel" || !spot || (spot.x === me.x && spot.y === me.y)) return;
+        boxShown.set(key, { ...me, x: spot.x, y: spot.y });
+        applyShown();
+        // 全部区块现在的位置一起存（以前没存过的从这次开始固定）；手机上只记先后顺序
+        const saves = commitBoxes();
+        if (!pageGeo().wide && board()) {
+          const order = [...boxShown].sort((a, b) => a[1].y - b[1].y || a[1].x - b[1].x).map(([k]) => k);
+          board().config = { ...(board().config || {}), order };
+          saves.push(saveBoardConfig());
+        }
         draw();
-        await Promise.all([saving, ...settlePage(true)]);
+        await Promise.all(saves);
       };
       addEventListener("pointermove", move);
       addEventListener("pointerup", up);
@@ -1688,16 +1690,13 @@ window.GWHome = (function () {
     const shownOf = (w) => shown.get(w.id) || w.config.pos;
     // 放在所有区块上面的小工具：y 是负数（区块从第 0 行开始）；区块整排往下推这么多行
     const topRowsOf = (list) => Math.max(0, ...list.map((p) => -p.y));
-    const topRows = () => topRowsOf(pageWidgets().map(shownOf));
-    // 上面那排小工具跟区块之间不要留空行
-    function compactTop() {
-      const negs = pageWidgets().filter((w) => shownOf(w).y < 0);
-      if (!negs.length) return [];
-      const gap = -Math.max(...negs.map((w) => shownOf(w).y + shownOf(w).h));
-      if (gap <= 0) return [];
-      negs.forEach((w) => shown.set(w.id, { ...shownOf(w), y: shownOf(w).y + gap }));
-      return negs.map((w) => w.id);
-    }
+    // 区块也跟小工具一样自由摆放：位置记在 Notice Board 小工具的 config.boxPos = { key: { x 半格, y 行 } }
+    const boxShown = new Map(); // 区块现在显示的位置 { x, y, w（半格）, h（行） }
+    // 画面从最上面那个东西开始（区块或小工具都算）
+    const minRow = () => Math.min(...[...boxShown.values()].map((b) => b.y), ...pageWidgets().map((w) => shownOf(w).y), 0);
+    const topRows = () => -minRow();
+    // 自由摆放：中间可以留空，不再自动往上收
+    const compactTop = () => [];
     // 每个区块的高度补到「整数行」（页面格子 rh 的倍数）：区块底边才会和旁边的小工具底边对齐、下一个区块也从格线开始
     function alignBoxes() {
       const page = $("#gw-page", root);
@@ -1713,16 +1712,8 @@ window.GWHome = (function () {
         if (extra) box.style.paddingBottom = Math.round(parseFloat(getComputedStyle(box).paddingBottom) + extra) + "px";
       });
     }
-    function boxRectsPage() {
-      const page = $("#gw-page", root);
-      if (!page) return [];
-      alignBoxes();
-      const g = pageGeo();
-      const pr = ($("#gw-stack", page) || page).getBoundingClientRect();
-      return $$("[data-sec-wrap]", page).map((el) => {
-        const r = el.getBoundingClientRect();
-        return { x: Math.round((r.left - pr.left) / g.hw), y: Math.round((r.top - pr.top) / g.rh), w: Math.max(1, Math.round(r.width / g.hw)), h: Math.max(1, Math.ceil(r.height / g.rh - 0.05)) };
-      });
+    function boxRectsPage(exceptKey) {
+      return [...boxShown].filter(([k]) => k !== exceptKey).map(([, b]) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
     }
     // 第一个放得下的空位：从第 y0 行开始，由左到右、由上到下
     function pageFree(w, h, blocks, y0) {
@@ -1733,9 +1724,13 @@ window.GWHome = (function () {
     }
     // 离 (x, y) 最近的空位
     function pageNear(x, y, w, h, blocks) {
+      return nearFree(x, y, 2 * w, h, blocks) || pageFree(w, h, blocks, 0);
+    }
+    // 离 (x, y) 最近的空位（宽 wh 个半格）；找不到回传 null
+    function nearFree(x, y, wh, h, blocks) {
       const g = pageGeo();
-      const minY = -(topRows() + h); // 最多比现在最上面再高一个小工具
-      const ok = (cx, cy) => cx >= 0 && cy >= minY && cx + 2 * w <= g.halves && !blocks.some((b) => hit({ x: cx, y: cy, w: 2 * w, h }, b));
+      const minY = -(topRows() + h); // 最多比现在最上面再高一个东西
+      const ok = (cx, cy) => cx >= 0 && cy >= minY && cx + wh <= g.halves && !blocks.some((b) => hit({ x: cx, y: cy, w: wh, h }, b));
       for (let k = 0; k <= 40; k++) {
         const ring = [];
         for (let dy = -k; dy <= k; dy++)
@@ -1743,7 +1738,8 @@ window.GWHome = (function () {
         ring.sort((a, b) => Math.hypot(a[0] / 2, a[1]) - Math.hypot(b[0] / 2, b[1]) || Math.abs(a[1]) - Math.abs(b[1]) || Math.abs(a[0]) - Math.abs(b[0]));
         for (const [dx, dy] of ring) if (ok(x + dx, y + dy)) return { x: x + dx, y: y + dy };
       }
-      return pageFree(w, h, blocks, 0);
+      for (let cy = Math.max(0, y); cy < 400; cy++) for (let cx = 0; cx + wh <= g.halves; cx++) if (ok(cx, cy)) return { x: cx, y: cy };
+      return null;
     }
     const blocksExcept = (id) => [...boxRectsPage(), ...pageWidgets().filter((o) => o.id !== id).map((o) => wRect(shownOf(o)))];
     // 同一排（上下范围有重叠）的小工具：能对齐就对齐成一样的上缘、下缘
@@ -1795,8 +1791,19 @@ window.GWHome = (function () {
       if (!page) return;
       const g = pageGeo();
       const T = topRows();
-      page.style.paddingTop = T * g.rh + "px"; // 用 padding（margin 会跟外框合并，小工具那层也跟着往下跑）
+      page.style.paddingTop = "0px";
       let bottom = 0;
+      const stack = $("#gw-stack", page);
+      if (stack) {
+        stack.style.display = "block";
+        stack.style.position = "relative";
+        $$("[data-sec-wrap]", stack).forEach((el) => {
+          const b = boxShown.get(el.dataset.secKey);
+          if (!b) return;
+          bottom = Math.max(bottom, b.y + b.h);
+          Object.assign(el.style, { position: "absolute", left: b.x * g.hw + "px", top: (b.y + T) * g.rh + "px" });
+        });
+      }
       pageWidgets().forEach((w) => {
         const p = shownOf(w);
         bottom = Math.max(bottom, p.y + p.h);
@@ -1804,6 +1811,18 @@ window.GWHome = (function () {
         if (el) Object.assign(el.style, { left: p.x * g.hw + "px", top: (p.y + T) * g.rh + "px", width: p.w * g.cw + "px", height: p.h * g.rh + "px" });
       });
       page.style.minHeight = (bottom + T) * g.rh + "px";
+      if (stack) stack.style.height = (bottom + T) * g.rh + "px";
+    }
+    // 区块显示的位置存起来（手机上全部占满一整行，不存，免得把电脑上的摆法盖掉）
+    function commitBoxes() {
+      const bw = board();
+      if (!bw || !pageGeo().wide || !boxShown.size) return [];
+      const cur = boardCfg().boxPos || {};
+      const next = { ...cur };
+      boxShown.forEach((b, k) => (next[k] = { x: b.x, y: b.y }));
+      if (JSON.stringify(next) === JSON.stringify(cur)) return [];
+      bw.config = { ...(bw.config || {}), boxPos: next };
+      return [saveBoardConfig()];
     }
     // 显示的位置存起来（只存有变的）
     function commitShown(ids) {
@@ -1815,25 +1834,47 @@ window.GWHome = (function () {
     /* 画完之后摆好页面上的小工具：被区块盖到的搬到那个区块下面第一个空位（由左到右，保持原来的先后）。
        save = true（区块被调整过）：搬过的存起来；false（只是打开页面）：只改显示。回传存档的 promise。 */
     function settlePage(save) {
-      if (!$("#gw-page", root)) return [];
+      const stack = $("#gw-stack", root);
+      if (!stack) return [];
+      // 刚画好（区块还是一个接一个排）：量大小、摆到自己的位置；同一次画面再叫就只存
+      if (!stack.dataset.laid) layoutPage(stack);
+      return save ? [...commitShown(), ...commitBoxes()] : [];
+    }
+    function layoutPage(stack) {
       const g = pageGeo();
-      const boxes = boxRectsPage();
+      alignBoxes();
+      const sr = stack.getBoundingClientRect();
+      const saved = boardCfg().boxPos || {};
+      const items = [];
+      // 区块：有存位置就照存的；还没存过（以前的版本、新的 Business）= 现在一个接一个排出来的位置
+      $$("[data-sec-wrap]", stack).forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const key = el.dataset.secKey;
+        const w = Math.max(1, Math.min(g.halves, Math.round(r.width / g.hw)));
+        const h = Math.max(1, Math.ceil(r.height / g.rh - 0.05));
+        const sp = g.wide ? saved[key] : null; // 手机：区块占满整行，照顺序往下排
+        const x = sp ? sp.x : Math.round((r.left - sr.left) / g.hw);
+        const y = sp ? sp.y : Math.round((r.top - sr.top) / g.rh);
+        items.push({ box: key, r: { x: Math.max(0, Math.min(x, g.halves - w)), y, w, h } });
+      });
+      pageWidgets().forEach((w) => {
+        const p = { ...w.config.pos };
+        p.w = Math.max(1, Math.min(p.w, Math.floor(g.halves / 2)));
+        p.x = Math.max(0, Math.min(p.x, g.halves - 2 * p.w));
+        items.push({ w, p, r: wRect(p) });
+      });
+      // 由上到下摆；压到已经摆好的东西就往下移（同一栏），不会盖住别的区块或小工具
+      items.sort((a, b) => a.r.y - b.r.y || (a.box ? 0 : 1) - (b.box ? 0 : 1) || a.r.x - b.r.x);
       const placed = [];
+      boxShown.clear();
       shown.clear();
-      [...pageWidgets()]
-        .sort((a, b) => a.config.pos.y - b.config.pos.y || a.config.pos.x - b.config.pos.x)
-        .forEach((w) => {
-          let p = { ...w.config.pos };
-          p.w = Math.max(1, Math.min(p.w, Math.floor(g.halves / 2)));
-          p.x = Math.max(0, Math.min(p.x, g.halves - 2 * p.w));
-          const under = boxes.filter((b) => hit(wRect(p), b));
-          if (under.length || placed.some((b) => hit(wRect(p), b))) {
-            const y0 = under.length ? Math.max(...under.map((b) => b.y + b.h)) : p.y;
-            p = { ...p, ...pageFree(p.w, p.h, [...boxes, ...placed], y0) };
-          }
-          placed.push(wRect(p));
-          shown.set(w.id, p);
-        });
+      items.forEach((it) => {
+        while (placed.some((b) => hit(it.r, b))) it.r.y++;
+        placed.push(it.r);
+        if (it.box) boxShown.set(it.box, { ...it.r });
+        else shown.set(it.w.id, { ...it.p, y: it.r.y });
+      });
+      stack.dataset.laid = "1";
       // 旧版位置换过来后，同一排的先对齐（只改记忆中的资料，下次移动时才存）
       if (migrated) {
         migrated = false;
@@ -1843,7 +1884,6 @@ window.GWHome = (function () {
         });
       }
       applyShown();
-      return save ? commitShown() : [];
     }
     // 整理页面上的小工具：照原来的上下左右顺序重新排整齐，同一排对齐
     async function tidyWidgets() {
@@ -1880,7 +1920,7 @@ window.GWHome = (function () {
       // 从第一个区块的上缘算第几行；放在区块上面（Notice Board 那边）= 负数，区块会往下推
       const pr = $("#gw-stack", root).getBoundingClientRect();
       const x = Math.max(0, Math.min(g.halves - 2 * pw, Math.round((r.left - pr.left) / g.hw)));
-      const y0 = Math.round((r.top - pr.top) / g.rh);
+      const y0 = Math.round((r.top - pr.top) / g.rh) - topRows();
       w.config = { ...w.config, pos: { ...w.config.pos, box: null, w: pw, h: ph, x: 0, y: 9999 } }; // 先移出原来的地方
       draw();
       const y = Math.max(-(topRows() + ph), y0);
@@ -2437,7 +2477,8 @@ window.GWHome = (function () {
       return `<div id="gw-frame" class="mx-auto max-w-full" style="width:${g.width}px">
         ${boardHtml()}
         ${editing ? `<p class="mx-2 mb-2 text-center text-xs text-slate-500">${esc(t("fab.editHint"))}</p>` : ""}
-        <div id="gw-page" class="relative mb-6" style="padding-top:${T0 * g.rh}px">
+        <div id="gw-page" class="relative mb-6">
+          <div data-page-hint class="pointer-events-none absolute hidden rounded-3xl border-2 border-dashed border-brand-500/70 bg-brand-500/10"></div>
           <div id="gw-stack" class="flex flex-wrap items-start">${parts.map((x) => x[1]).join("")}</div>
           <div id="gw-float" class="pointer-events-none absolute inset-0 z-10 [&>*]:pointer-events-auto">${pageWidgets().map((w) => pageWidget(w, g, T0)).join("")}</div>
         </div>

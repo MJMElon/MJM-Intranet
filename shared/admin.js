@@ -110,7 +110,8 @@
     const groupHas = (gid, mid) => gm.some((x) => x.group_id === gid && x.module_id === mid);
     const myAdmin = (gid, mid) => [...ctx.rows.values()].some((r) => r.user_id === me.id && r.module_id === mid && r.group_id === gid && r.is_admin);
     const roleHas = (gid, mid, flag) => me.bizCan(gid, flag) && groupHas(gid, mid);
-    const locked = (u) => u.id === me.id || u.role === "super_admin";
+    // 不能改的人：自己、Super Admin（Super Admin 例外：谁都可以改，包括自己）
+    const locked = (u) => !isSuper && (u.id === me.id || u.role === "super_admin");
     // 在某个 Business 里，我能不能改这个人这个模块的 Access / Admin（规则同数据库 RLS）
     // 角色功能：加进模块 / 从模块移除 / 设定模块 Admin；在这个 Business 是这个模块的管理员：加、移除都可以
     const adminReach = (gid, mid) => myAdmin(gid, mid) && groupHas(gid, mid);
@@ -177,7 +178,6 @@
   const byModName = (a, b) => (a.name || "").localeCompare(b.name || "");
   // Super Admin 自动拥有所有模块（资料库 gw__effective_module_ids 也是这样算），画面上一律显示成有权限 + Admin
   const isSuperUser = (u) => !!u && u.role === "super_admin";
-  const SUPER_ROW = Object.freeze({ is_admin: true, auto: true });
   const adminMark = () => `<span data-admin-mark title="${esc(t("admin.userWindow.adminOf"))}" class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-sky-500 text-white ring-2 ring-white dark:ring-slate-800">${icon("shield-check", "size-2.5")}</span>`;
   // ---------------------------------------------------------------- 模块小图示、用户资料窗（用户名单、群组管理共用）
   const modLogo = (m, size) =>
@@ -249,8 +249,9 @@
     const cosIn = (gid) => cosOfBiz(gid).filter((c) => mcRow(gid, c.id)); // 这个人在的 Company（同样的顺序）
     const mcRow = (gid, cid) => mcs.find((x) => x.group_id === gid && x.company_id === cid);
     const superU = () => isSuperUser(u);
-    const locked = () => u.id === me.id || superU();
-    const rowOf = (gid, mid, cid) => (superU() ? SUPER_ROW : ctx.rows.get(accessKey(u.id, mid, gid, ctx.companyMode ? cid : ""))); // 这个人在这个 Business（＋ Company）的这个模块
+    // Super Admin 也要勾 Access 才有模块（不再自动全部有）；Super Admin 可以改任何人，包括自己
+    const locked = () => !isSuper && (u.id === me.id || superU());
+    const rowOf = (gid, mid, cid) => ctx.rows.get(accessKey(u.id, mid, gid, ctx.companyMode ? cid : "")); // 这个人在这个 Business（＋ Company）的这个模块
     const selCo = new Map(); // 每个 Business 现在选的 Company（"" = 没有 Company）
     const openBiz = new Set(); // 展开的 Business（一开始全部收起来）
     // 勾 / 取消模块权限：先记在这里（还没存），按 Save 才一起存；key = Business|Company|模块 → 要不要有权限
@@ -313,14 +314,14 @@
         const tags = ctx.coTags.filter((x) => x.module_id === mod.id && here.includes(x.company_id));
         return !tags.length || (!!cid && tags.some((x) => x.company_id === cid));
       });
-    const countIn = (gid, cid) => (superU() ? modsForCo(gid, cid).length : [...ctx.rows.values()].filter((r) => r.user_id === u.id && r.group_id === gid && (r.company_id || "") === cid).length);
+    const countIn = (gid, cid) => [...ctx.rows.values()].filter((r) => r.user_id === u.id && r.group_id === gid && (r.company_id || "") === cid).length;
 
     // 一个 Business 方块：先收起来（只有名字），点了才展开
     //   展开：左边一排 Company 简称（滑过去看全名），右边是选中那家的模块清单：Access 勾（按 Save 才存，太多可以往下卷）
     // 模块清单最上面「全选」：只管我有权限改的模块；勾了 = 全部有权限，取消 = 全部拿掉（一样按 Save 才存）
     const accKeyOf = (gid, cid, mid) => gid + "|" + cid + "|" + mid;
     const accOn = (gid, cid, mid) => (stagedAcc.has(accKeyOf(gid, cid, mid)) ? stagedAcc.get(accKeyOf(gid, cid, mid)) : !!rowOf(gid, mid, cid));
-    const changeable = (gid, cid, list) => (superU() ? [] : list.filter((mod) => (rowOf(gid, mod.id, cid) ? ctx.canRevoke(u, gid, mod.id) : ctx.canGrant(u, gid, mod.id))));
+    const changeable = (gid, cid, list) => (locked() ? [] : list.filter((mod) => (rowOf(gid, mod.id, cid) ? ctx.canRevoke(u, gid, mod.id) : ctx.canGrant(u, gid, mod.id))));
     function selectAllRow(gid, cid, list) {
       const can = changeable(gid, cid, list);
       if (can.length < 2) return "";
@@ -348,7 +349,7 @@
       const row = (mod) => {
         const r = rowOf(g.id, mod.id, cid);
         const k = g.id + "|" + cid + "|" + mod.id;
-        const canAcc = !superU() && (r ? ctx.canRevoke(u, g.id, mod.id) : ctx.canGrant(u, g.id, mod.id));
+        const canAcc = !locked() && (r ? ctx.canRevoke(u, g.id, mod.id) : ctx.canGrant(u, g.id, mod.id));
         const busy = saving;
         const changed = stagedAcc.has(k);
         const on = changed ? stagedAcc.get(k) : !!r;
@@ -372,7 +373,7 @@
             </div>
             ${list.length ? `${selectAllRow(g.id, cid, list)}<div class="max-h-80 overflow-y-auto">${list.map(row).join("")}</div>` : `<p class="p-3 text-xs text-slate-400">${esc(tu("noModulesHere"))}</p>`}`;
       const showCos = hasCos && ctx && ctx.companyMode;
-      const addCo = (place || (canPlace(g.id) && !superU())) && hasCos;
+      const addCo = (place || (canPlace(g.id) && (isSuper || !superU()))) && hasCos;
       return `<section data-biz="${g.id}" class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div class="flex items-center gap-2 px-3 py-2.5">
           <button type="button" data-toggle-biz="${g.id}" aria-expanded="${open}" class="flex min-w-0 flex-1 items-center gap-2 text-left">
@@ -400,7 +401,7 @@
     }
 
     function draw() {
-      const note = superU() ? tu("superNote") : locked() ? tu("selfNote") : !canEditAccess() ? tu("viewOnlyNote") : "";
+      const note = locked() ? tu(superU() ? "superNote" : "selfNote") : !canEditAccess() ? tu("viewOnlyNote") : "";
       const bl = bizList();
       // 角色：编辑模式（Super Admin、不是自己）是下拉；其他时候是徽章
       const roleName = (k) => (k === "super" ? t("admin.users.roles.super_admin") : k ? (roles || []).find((x) => x.id === k)?.name || t("admin.users.roles.user") : t("admin.users.roles.user"));
@@ -858,7 +859,7 @@
         })
         .sort(byModName);
     };
-    const hasMod = (u, mid, gid) => isSuperUser(u) || mm.some((r) => r.user_id === u.id && r.module_id === mid && r.group_id === gid);
+    const hasMod = (u, mid, gid) => mm.some((r) => r.user_id === u.id && r.module_id === mid && r.group_id === gid);
     const roleName = new Map(roles.map((r) => [r.id, r.name]));
     const roleBadge = (u) => (u.role_id && !isSuperUser(u) ? badge(roleName.get(u.role_id) || tu("roles.user"), "amber") : "");
     const superMark = (u) => (isSuperUser(u) ? `<span title="${esc(tu("roles.super_admin"))}" aria-label="${esc(tu("roles.super_admin"))}" class="flex size-5 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">${icon("shield-check", "size-3.5")}</span>` : "");
@@ -918,7 +919,6 @@
       const s = q.trim().toLowerCase();
       if (s && !(u.full_name.toLowerCase().includes(s) || u.email.toLowerCase().includes(s) || (u.user_code || "").toLowerCase().includes(s))) return false;
       if (!adv.open || !adv.gid) return true;
-      if (adv.mid && isSuperUser(u)) return true; // Super Admin 每个模块都有
       if (!members.some((m) => m.group_id === adv.gid && m.user_id === u.id)) return false;
       if (adv.cid && !memberCos.some((m) => m.group_id === adv.gid && m.user_id === u.id && m.company_id === adv.cid)) return false;
       return !adv.mid || hasMod(u, adv.mid, adv.gid);

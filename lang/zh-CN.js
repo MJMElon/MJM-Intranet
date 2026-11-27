@@ -1183,7 +1183,7 @@ window.GW_LANG["zh-CN"] = {
       "tickAccessFirst": "先勾 Access 才能设定其他项目。",
       "noCompany": "还没分到 Company",
       "selfNote": "这是你自己的帐号：可以看你的模块，但不能改自己的权限。",
-      "superNote": "超级管理员自动拥有所有模块（包括以后新增的）的完整权限，这里不需要勾选。",
+      "superNote": "只有 Super Admin 可以改 Super Admin 的模块。",
       "viewOnlyNote": "你可以看这个人的模块，但你的角色不能改他的权限。",
       "opisproId": "OPIS PRO ID",
       "opisproNotLinked": "还没连结（第一次用 OPIS PRO 登录时自动连结）",

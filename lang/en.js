@@ -1183,7 +1183,7 @@ window.GW_LANG["en"] = {
       "tickAccessFirst": "Tick Access first to set the other options.",
       "noCompany": "No company yet",
       "selfNote": "This is your own account: you can see your modules but cannot change your own access.",
-      "superNote": "Super Admin automatically has full access to every module, including new ones, so nothing needs to be ticked here.",
+      "superNote": "Only a Super Admin can change a Super Admin’s modules.",
       "viewOnlyNote": "You can see this person's modules but your role cannot change their access.",
       "opisproId": "OPIS PRO ID",
       "opisproNotLinked": "Not linked yet (links on first OPIS PRO sign-in)",

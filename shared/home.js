@@ -1008,7 +1008,7 @@ window.GWHome = (function () {
     const modsOfGroup = (gid) => {
       const ids = new Set(S.groupModules.filter((x) => x.group_id === gid).map((x) => x.module_id));
       // 只算在这个 Business 被开了的模块（在别的 Business 有权限不算）
-      return data.modules.filter((m) => ids.has(m.id) && (isSuper || !S.myAccess || S.myAccess.some((r) => r.group_id === gid && r.module_id === m.id)));
+      return data.modules.filter((m) => ids.has(m.id) && (!S.myAccess || S.myAccess.some((r) => r.group_id === gid && r.module_id === m.id))); // Super Admin 也一样：有勾才显示
     };
     // 从区块拿掉的 App：只是这个区块不显示（权限不变），记在 Notice Board 小工具的 config.hidden = { Business id: [模块 id] }；Add Apps 可以放回去
     const boardCfg = () => (board() && board().config) || {};
@@ -2624,8 +2624,8 @@ window.GWHome = (function () {
       const T0 = topRowsOf(pageWidgets().map((w) => w.config.pos));
       const parts = [];
       S.groups.forEach((grp) => {
-        // 一般人：Business 里有 App 才出现；super admin：新开的 Business 还没有模块也显示（空的区块）
-        if (!(isSuper || modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id) || folders.some((f) => boxesOf(f).includes(grp.id)))) return;
+        // Business 里有 App（或自己放的东西）才出现；Super Admin 也一样
+        if (!(modsOfGroup(grp.id).length || sItems.some((x) => x.group_id === grp.id) || folders.some((f) => boxesOf(f).includes(grp.id)))) return;
         const B = boxGeo(grp.id);
         parts.push([grp.id, boxShell(grp.id, grp.name, B, modeOf(grp.id) === "title" ? "" : boxTiles(grp.id, B))]);
       });

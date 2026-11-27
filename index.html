@@ -122,8 +122,8 @@
   const memberSet = new Set(memberOf);
   const sections = sectionsOn
     ? {
-        // super_admin 看得到每一个 Business 区块（新加的模块不管标在哪个 Business 都会出现）；其他人只看自己所属的
-        groups: (groupRes.data || []).filter((g) => profile.isSuper || memberSet.has(g.id)),
+        // 每个人（包括 Super Admin）只看自己所属的 Business 区块；模块要自己有勾 Access 才出现
+        groups: (groupRes.data || []).filter((g) => memberSet.has(g.id)),
         groupModules: gmodRes.data || [],
         bizCompanies: bcoRes.data || [],
         companies: coRes.data || [],

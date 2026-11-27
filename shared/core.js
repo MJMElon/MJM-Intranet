@@ -138,12 +138,10 @@ window.GW = (function () {
       profile.bizCan = (gid, f) => profile.isSuper || !!(profile.perms[gid] && profile.perms[gid][f]);
       profile.canPost = profile.can.can_post_notice;
       profile.canDeleteNotice = profile.can.can_delete_notice;
-      // 右上角齿轮（设置页）：super_admin、模块管理员、或角色有设置页里的功能（公告功能在首页 Notice Board，不需要进设置页）
+      // 右上角齿轮（管理页）：只有 super_admin，或角色可以在某个 Business 管理用户
+      // （加 / 拿掉用户、开 / 收回模块、设模块管理员）。其他人看不到齿轮（自己的设置点右上角名字）。
       const c = profile.can;
-      profile.manages =
-        profile.isSuper ||
-        profile.adminModules > 0 ||
-        ["can_grant_module", "can_revoke_module", "can_set_module_admin", "can_add_business_user", "can_remove_business_user", "can_view_user_group", "can_view_users", "can_view_audit", "can_edit_module_name", "can_manage_module_access", "can_add_business", "can_add_company", "can_add_module", "can_delete_business", "can_delete_company", "can_delete_module"].some((k) => c[k]);
+      profile.manages = profile.isSuper || ["can_add_business_user", "can_remove_business_user", "can_grant_module", "can_revoke_module", "can_set_module_admin"].some((k) => c[k]);
     }
     return { session, profile };
   }
@@ -377,9 +375,13 @@ window.GW = (function () {
               }
             </a>
             <button type="button" id="gw-theme" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"></button>
-            <a href="${BASE}${isAdmin ? "admin" : "settings"}" title="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" aria-label="${esc(t(isAdmin ? "nav.admin" : "nav.settings"))}" class="rounded-lg p-2 ${
-              active === (isAdmin ? "admin" : "settings") ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
-            }">${icon("settings", "size-5")}</a>
+            ${
+              isAdmin
+                ? `<a href="${BASE}admin" title="${esc(t("nav.admin"))}" aria-label="${esc(t("nav.admin"))}" class="rounded-lg p-2 ${
+                    active === "admin" ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+                  }">${icon("settings", "size-5")}</a>`
+                : ""
+            }
             <button id="gw-logout" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" title="${esc(
               t("nav.logout"),
             )}" aria-label="${esc(t("nav.logout"))}">${icon("log-out")}</button>

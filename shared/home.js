@@ -1114,21 +1114,26 @@ window.GWHome = (function () {
         return last.getBoundingClientRect().right <= head.getBoundingClientRect().right - pr + 0.5;
       };
       const show = (el, on) => el && el.classList.toggle("hidden", !on);
+      const btns = (head) => $$(".sec-grip, [data-mode]", head);
       $$("[data-sec-title]", scope || root).forEach((h2) => {
         const head = h2.parentElement;
+        // 先回到原本的样子
+        if (head.dataset.pad == null) head.dataset.pad = head.style.padding;
+        head.style.padding = head.dataset.pad;
+        head.style.columnGap = "";
+        btns(head).forEach((b) => ((b.style.width = ""), (b.style.height = "")));
         [...head.children].forEach((c) => (c.style.flexShrink = "0"));
         h2.classList.remove("truncate", "min-w-0");
         h2.removeAttribute("title");
         const f = $("[data-co-full]", head);
         const sh = f && f.nextElementSibling;
-        const item = f && [...head.children].find((c) => c.contains(f));
-        if (item) item.style.display = "";
-        $$("[data-mode]", head).forEach((b) => (b.style.display = ""));
+        const pill = f && f.parentElement;
+        if (pill) pill.style.paddingInline = "";
         show(f, true);
         show(sh, false);
         if (fits(head)) return;
         if (f) {
-          // 1. 公司简称  2. 只剩图示（还是可以点开选单）  3. 只有一家、不能点的：整个拿掉
+          // 1. 公司简称  2. 只剩图示（点一下看公司名 / 选公司）
           show(f, false);
           if (sh.textContent) {
             show(sh, true);
@@ -1136,17 +1141,16 @@ window.GWHome = (function () {
             show(sh, false);
           }
           if (fits(head)) return;
-          // 灰掉（按不了）的展开 / 收起箭头先收起来，空出位置
-          $$("[data-mode][disabled]", head).forEach((b) => (b.style.display = "none"));
+          pill.style.paddingInline = "6px";
           if (fits(head)) return;
-          if (!$("[data-company-menu]", item)) {
-            item.style.display = "none";
-            if (fits(head)) return;
-          }
         }
-        $$("[data-mode][disabled]", head).forEach((b) => (b.style.display = "none"));
+        // 3. 挤一点：两边留白、间距、按钮都缩小（展开 / 收起箭头一定留着，按不了的照样灰色）
+        head.style.paddingLeft = "6px";
+        head.style.paddingRight = "2px";
+        head.style.columnGap = "4px";
+        btns(head).forEach((b) => ((b.style.width = "22px"), (b.style.height = "22px")));
         if (fits(head)) return;
-        // 4. 真的太窄：区块名字才截短（滑鼠移过去看全名），展开 / 收起按钮一定看得到
+        // 4. 真的太窄：区块名字才截短（滑鼠移过去看全名）
         h2.style.flexShrink = "1";
         h2.classList.add("truncate", "min-w-0");
         h2.title = h2.textContent;
@@ -1181,12 +1185,24 @@ window.GWHome = (function () {
     // 公司名字：放得下 = 全名；放不下 = 简称；还是放不下 = 只剩图示（fitHeads 量过再决定）
     const coLabel = (full, short) => `<span data-co-full class="shrink-0 whitespace-nowrap">${esc(full)}</span><span data-co-short class="hidden shrink-0 whitespace-nowrap">${esc(short && short !== full ? short : "")}</span>`;
     const shortOf = (c) => c.short_name || c.code || "";
+    // 只有一家 Company：小框照样显示（窄的时候只剩图示），点一下看公司全名
+    const singlePill = (gid, c) => {
+      const open = companyMenuGid === gid;
+      return `<div data-pick-wrap class="relative min-w-0">
+        <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(c.name)}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(c.name, shortOf(c))}</button>
+        ${
+          open
+            ? `<div class="absolute top-full left-0 z-30 mt-1 w-max max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/60 bg-white/90 p-1.5 shadow-xl backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90"><div class="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 dark:text-slate-200">${icon("building-2", "size-3.5 shrink-0 text-slate-400")}<span>${esc(c.name)}</span>${shortOf(c) ? `<span class="shrink-0 font-mono text-[11px] text-slate-400">${esc(shortOf(c))}</span>` : ""}</div></div>`
+            : ""
+        }
+      </div>`;
+    };
     const companyPicker = (gid) => {
       const list = companiesOf(gid);
       if (!list.length) return "";
       // HQ（全部 Company）：不用选，显示「All companies」；点一下展开看包括哪几家（只看，不能选）
       if (isHq(gid)) {
-        if (list.length === 1) return `<span title="${esc(list[0].name)}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(list[0].name, shortOf(list[0]))}</span>`;
+        if (list.length === 1) return singlePill(gid, list[0]);
         const open = companyMenuGid === gid;
         return `<div data-pick-wrap class="relative min-w-0">
         <button type="button" data-company-menu="${gid}" aria-expanded="${open ? "true" : "false"}" title="${esc(t("home.hqShowCompanies"))}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur hover:bg-white/70 dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(t("home.hqAllCompanies", { count: list.length }), "")}${icon(open ? "chevron-up" : "chevron-down", "size-3.5 shrink-0")}</button>
@@ -1201,7 +1217,7 @@ window.GWHome = (function () {
       </div>`;
       }
       // 只有一个 Company：只显示它的名字，不用下拉选单
-      if (list.length === 1) return `<span title="${esc(list[0].name)}" class="inline-flex overflow-hidden max-w-[14rem] min-w-0 items-center gap-1 rounded-full border border-white/60 bg-white/50 px-2.5 py-0.5 text-xs font-medium text-slate-600 backdrop-blur dark:border-white/10 dark:bg-white/10 dark:text-slate-300">${icon("building-2", "size-3.5 shrink-0")}${coLabel(list[0].name, shortOf(list[0]))}</span>`;
+      if (list.length === 1) return singlePill(gid, list[0]);
       const sel = selectedCompany(gid);
       const cur = list.find((c) => c.id === sel);
       const label = cur ? cur.short_name || cur.code || cur.name : list[0].name;

@@ -15,6 +15,11 @@ window.GW_LANG["zh-CN"] = {
     "settings": "设置",
     "logout": "登出"
   },
+  "idle": {
+    "title": "还在吗？",
+    "body": "一段时间没有动作，{time} 后会自动登出。",
+    "stay": "保持登录"
+  },
   "unsaved": {
     "title": "还没存，要离开吗？",
     "body": "你有还没存的改动。确定要离开？",
@@ -48,6 +53,7 @@ window.GW_LANG["zh-CN"] = {
       "ssoNotReady": "OPIS PRO 登录还没设定好，请联系管理员。",
       "invalid": "Email 或密码错误。",
       "disabled": "此帐号已停用，请联系管理员。",
+      "idle": "4 小时没有动作，已自动登出。请重新登录。",
       "pending": "帐号已建立，等待管理员批准。",
       "noAccess": "此帐号尚未开通 MJM Intranet，请联系管理员。",
       "unknown": "登录失败，请稍后再试。",

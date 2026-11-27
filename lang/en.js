@@ -15,6 +15,11 @@ window.GW_LANG["en"] = {
     "settings": "Settings",
     "logout": "Sign out"
   },
+  "idle": {
+    "title": "Still there?",
+    "body": "You'll be signed out in {time} because there has been no activity for a while.",
+    "stay": "Stay signed in"
+  },
   "unsaved": {
     "title": "Leave without saving?",
     "body": "You have changes that are not saved yet. Leave anyway?",
@@ -48,6 +53,7 @@ window.GW_LANG["en"] = {
       "ssoNotReady": "Sign in with OPIS PRO is not set up yet. Please contact your administrator.",
       "invalid": "Incorrect email or password.",
       "disabled": "This account has been disabled. Please contact your administrator.",
+      "idle": "Signed out after 4 hours with no activity. Please sign in again.",
       "pending": "Account created. Waiting for admin approval.",
       "noAccess": "This account does not have access to MJM Intranet yet. Please contact your administrator.",
       "unknown": "Sign-in failed. Please try again later.",

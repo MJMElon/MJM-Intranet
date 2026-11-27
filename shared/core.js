@@ -148,11 +148,114 @@ window.GW = (function () {
     return { session, profile };
   }
 
+  // ---------------------------------------------------------------- 闲置自动登出
+  /* 4 小时没有动（滑鼠、键盘、触控、卷动）就登出。所有 Intranet 分页一起算（最后动的时间记在 localStorage）；
+     最后 2 分钟出现「还在吗？」倒数 + Stay signed in；电脑放一晚再回来，打开就直接登出。 */
+  const IDLE_MS = 4 * 60 * 60 * 1000;
+  const IDLE_WARN_MS = 2 * 60 * 1000;
+  const IDLE_KEY = "gw-last-active";
+  const idleGet = () => {
+    try {
+      return Number(localStorage.getItem(IDLE_KEY)) || 0;
+    } catch (e) {
+      return 0;
+    }
+  };
+  const idleSet = (v) => {
+    try {
+      localStorage.setItem(IDLE_KEY, String(v));
+    } catch (e) {
+      /* 忽略 */
+    }
+  };
+  async function idleSignOut() {
+    try {
+      await sb.auth.signOut();
+    } catch (e) {
+      /* 忽略 */
+    }
+    go("login.html?error=idle");
+  }
+  // 打开页面时：刚登入（登入时间比记录新）就从现在开始算；已经超过 4 小时 → 回传 true（要登出）
+  function idleExpired(session) {
+    const signedIn = Date.parse((session && session.user && session.user.last_sign_in_at) || "") || 0;
+    const last = idleGet();
+    if (!last || last < signedIn) {
+      idleSet(Date.now());
+      return false;
+    }
+    return Date.now() - last >= IDLE_MS;
+  }
+  let idleOn = false;
+  function startIdleWatch() {
+    if (idleOn) return;
+    idleOn = true;
+    let lastWrite = Date.now();
+    let warnEl = null;
+    let tick = null;
+    let out = false;
+    idleSet(Date.now());
+    const hideWarn = () => {
+      if (warnEl) warnEl.remove();
+      warnEl = null;
+      clearInterval(tick);
+    };
+    const touch = () => {
+      const n = Date.now();
+      if (warnEl || n - lastWrite > 15000) ((lastWrite = n), idleSet(n));
+      if (warnEl) hideWarn();
+    };
+    const fmtLeft = (ms) => {
+      const s = Math.max(0, Math.ceil(ms / 1000));
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    };
+    const showWarn = () => {
+      if (warnEl) return;
+      warnEl = document.createElement("div");
+      warnEl.className = "fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm";
+      warnEl.innerHTML = `<div role="alertdialog" aria-live="assertive" class="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl dark:bg-slate-900">
+          <div class="mx-auto mb-3 flex size-11 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">${icon("clock", "size-5")}</div>
+          <h2 class="text-base font-semibold">${esc(t("idle.title"))}</h2>
+          <p class="mt-1 text-sm text-slate-500" data-idle-left></p>
+          <button type="button" data-idle-stay class="${btn("primary")} mt-4 w-full">${esc(t("idle.stay"))}</button>
+        </div>`;
+      document.body.appendChild(warnEl);
+      refreshIcons();
+      warnEl.querySelector("[data-idle-stay]").onclick = touch;
+      const paint = () => {
+        const left = IDLE_MS - (Date.now() - idleGet());
+        const el = warnEl && warnEl.querySelector("[data-idle-left]");
+        if (el) el.textContent = t("idle.body", { time: fmtLeft(left) });
+        if (left <= 0) check();
+      };
+      paint();
+      tick = setInterval(paint, 1000);
+    };
+    const check = () => {
+      if (out) return;
+      const idle = Date.now() - idleGet(); // 别的分页有动也算
+      if (idle >= IDLE_MS) {
+        out = true;
+        hideWarn();
+        return idleSignOut();
+      }
+      if (idle >= IDLE_MS - IDLE_WARN_MS) showWarn();
+      else if (warnEl) hideWarn();
+    };
+    ["mousedown", "keydown", "touchstart", "wheel", "scroll", "mousemove"].forEach((ev) => addEventListener(ev, touch, { passive: true, capture: true }));
+    // 电脑睡醒 / 切回这个分页：马上检查一次
+    document.addEventListener("visibilitychange", () => !document.hidden && check());
+    // 别的分页按了 Stay signed in：这里的提醒也收起来
+    addEventListener("storage", (e) => e.key === IDLE_KEY && warnEl && Date.now() - idleGet() < IDLE_MS - IDLE_WARN_MS && hideWarn());
+    setInterval(check, 15000);
+  }
+
   /* 页面保护：未登录 → 登录页；没有 Gateway 资料或已停用 → 登录页；
      未改初始密码 → 改密码；权限不足 → 首页。need = "user" | "manage"（super_admin 或有管理权的角色）| "super" */
   async function requireProfile(need) {
     const { session, profile } = await loadProfile();
     if (!session) return go("login.html"), null;
+    if (idleExpired(session)) return idleSignOut(), null; // 超过 4 小时没用：登出
     if (!profile || profile.status !== "active") {
       await sb.auth.signOut();
       return go("login.html?error=no_access"), null;
@@ -166,6 +269,7 @@ window.GW = (function () {
     }
     applyTheme(profile.theme);
     welcomeBack(profile);
+    startIdleWatch();
     return profile;
   }
 

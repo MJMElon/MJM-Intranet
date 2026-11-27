@@ -334,7 +334,7 @@ window.addEventListener("pageshow", (e) => {
   document.getElementById("stage").classList.remove("leaving");
   document.getElementById("warp").classList.remove("on");
 });
-const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", pending: "pending", no_access: "noAccess", link_expired: "linkExpired" };
+const SSO_ERRORS = { sso_cancelled: "ssoCancelled", sso_failed: "ssoFailed", sso_expired: "ssoExpired", sso_unreachable: "ssoUnreachable", sso_not_ready: "ssoNotReady", disabled: "disabled", pending: "pending", no_access: "noAccess", link_expired: "linkExpired", idle: "idle" };
 // ok = true 绿色；ok = "warn" 黄橘色（例如：等待批准）；其他 红色
 const message = (text, ok) =>
   text ? `<div class="rounded-lg border px-3 py-2 text-sm ${ok === "warn" ? "border-amber-300 bg-amber-50 text-amber-800" : ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"}">${esc(text)}</div>` : "";
@@ -456,7 +456,7 @@ async function showChange(reset) {
   if (session && profile && profile.status === "active" && !error) {
     return go(profile.must_change_password ? "login.html?mode=change" : "index.html");
   }
-  showLogin(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : "", error === "pending" ? "warn" : undefined);
+  showLogin(SSO_ERRORS[error] ? t("login.errors." + SSO_ERRORS[error]) : "", error === "pending" || error === "idle" ? "warn" : undefined);
 })();
 </script>
 </body>

@@ -1,9 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- 积木小房子（背景透明）：深绿屋顶、橘色 + 绿色两块方块、下面黄色拱门积木，全部深绿外框 -->
-  <g stroke="#1b3d2a" stroke-width="5" stroke-linejoin="round">
-    <path d="M22 47 L64 11 L106 47 Z" fill="#245a3a"/>
-    <rect x="27" y="47" width="37" height="33" fill="#ea7a3c"/>
-    <rect x="64" y="47" width="37" height="33" fill="#3f9a5f"/>
-    <path d="M12 80 H116 V114 H85 A21 21 0 0 0 43 114 H12 Z" fill="#f6b90e"/>
+  <!-- 三块积木（背景透明）：上面深绿（一棵油棕树：叶子 + 一串橘色果实）、左下橘色、右下黄色；每块有深色外框和浅色的面 -->
+  <!-- 左下：橘 -->
+  <rect x="9" y="65" width="53" height="53" rx="11" fill="#f08a2c" stroke="#b9580f" stroke-width="4"/>
+  <rect x="18" y="74" width="35" height="35" rx="6" fill="#f7a95a"/>
+  <!-- 右下：黄 -->
+  <rect x="66" y="65" width="53" height="53" rx="11" fill="#f5c018" stroke="#b98d05" stroke-width="4"/>
+  <rect x="75" y="74" width="35" height="35" rx="6" fill="#fbd65c"/>
+  <!-- 上：深绿 + 油棕树 -->
+  <rect x="37.5" y="10" width="53" height="53" rx="11" fill="#1f6b3f" stroke="#123f25" stroke-width="4"/>
+  <rect x="46.5" y="19" width="35" height="35" rx="6" fill="#2e8a55"/>
+  <!-- 油棕：弯弯的树干、垂下来的叶子、叶子下面一串橘色果实 -->
+  <path d="M64.5 33 C65.5 40 64.5 46 62 53" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  <g fill="#ffffff">
+    <path d="M64 31 C57 24 49 25 44 33 C51 29 57 29 64 33 Z"/>
+    <path d="M64 31 C71 24 79 25 84 33 C77 29 71 29 64 33 Z"/>
+    <path d="M64 31 C58 21 52 18 47 20 C53 22 58 25 63 33 Z"/>
+    <path d="M64 31 C70 21 76 18 81 20 C75 22 70 25 65 33 Z"/>
+    <path d="M64 31 C62 24 63 19 65 16 C66 21 66 26 65 32 Z"/>
+  </g>
+  <g fill="#f08a2c" stroke="#123f25" stroke-width="0.8">
+    <circle cx="60.5" cy="36" r="2.6"/><circle cx="66.5" cy="36" r="2.6"/><circle cx="63.5" cy="39.5" r="2.6"/>
   </g>
 </svg>

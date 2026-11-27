@@ -68,6 +68,7 @@ window.GW_LANG["zh-CN"] = {
     "resetTitle": "重设密码",
     "resetDescription": "请输入新的密码。",
     "new": "新密码",
+    "current": "现在的密码",
     "confirm": "再次输入新密码",
     "rule": "至少 8 个字元，需包含英文字母和数字。",
     "submit": "更新密码",
@@ -76,6 +77,7 @@ window.GW_LANG["zh-CN"] = {
       "too_short": "密码至少需要 8 个字元。",
       "weak": "密码需要同时包含英文字母和数字。",
       "mismatch": "两次输入的密码不一致。",
+      "wrong_current": "现在的密码不对。",
       "same": "新密码不能和旧密码相同。",
       "unknown": "更新失败，请稍后再试。"
     }

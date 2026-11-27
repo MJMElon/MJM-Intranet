@@ -21,7 +21,7 @@ async function createUser(caller: Caller, input: CreateInput): Promise<CreateRes
   const me = caller.profile;
 
   const admin = serviceClient();
-  const { data: existing } = await admin.from("gw_profiles").select("id").ilike("email", email).maybeSingle();
+  const { data: existing } = await admin.from("gw_profiles").select("id").eq("email", email).maybeSingle();
   if (existing) return { ok: false, email, error: "exists" };
 
   let userId: string;

@@ -1,8 +1,11 @@
 // 登录与密码（网站是静态网页，需要 service_role 的部分放在这里执行）
 // POST { action: "login", email, password }
 //   → { session, must_change_password, locale } 或 { error, remaining?, minutes? }
-//   连续输错 5 次锁 15 分钟；帐号必须有启用中的 Gateway 资料
-// POST { action: "change_password", password }（带用户 Token）→ 在伺服器改密码，成功才清除「必须改密码」标记并记录
+//   帐号必须有启用中的 Gateway 资料
+// POST { action: "change_password", password, current_password }（带用户 Token）→ 在伺服器改密码，成功才清除「必须改密码」标记并记录
+//   一般改密码要先打对现在的密码（偷到登入 Token 的人不能把密码改掉、留后门）；
+//   第一次登入 / 被重设后的「必须改密码」不用（那时用的是管理员给的临时密码，刚刚才登入）
+//   改好后其他装置的登入全部登出
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders, getCaller, json, logEvent, serviceClient, withCors } from "../_shared/gw.ts";
 
@@ -61,14 +64,30 @@ Deno.serve(withCors(async (req) => {
     const probe = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    const { data: me } = await admin.from("gw_profiles").select("must_change_password").eq("id", caller.user.id).maybeSingle();
+    if (!me?.must_change_password) {
+      const current = String(body.current_password ?? "");
+      const check = current ? await probe.auth.signInWithPassword({ email, password: current }) : null;
+      if (!check || check.error || !check.data.session) {
+        await logEvent(caller.user.id, "auth.password_change_denied", "auth", caller.user.id, email || null);
+        return json({ error: "wrong_current" });
+      }
+      await admin.auth.admin.signOut(check.data.session.access_token, "local").catch(() => {});
+    }
     const same = await probe.auth.signInWithPassword({ email, password });
     if (!same.error && same.data.session) {
       await admin.auth.admin.signOut(same.data.session.access_token, "local").catch(() => {});
       return json({ error: "same" });
     }
     const { error: updError } = await admin.auth.admin.updateUserById(caller.user.id, { password });
-    if (updError) return json({ error: "unknown", detail: updError.message });
+    if (updError) {
+      console.error("change_password failed", updError.code ?? updError.status);
+      return json({ error: "unknown" });
+    }
     await admin.from("gw_profiles").update({ must_change_password: false }).eq("id", caller.user.id);
+    // 其他装置的登入全部登出（这一台留着）
+    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    if (jwt) await admin.auth.admin.signOut(jwt, "others").catch(() => {});
     await logEvent(caller.user.id, "auth.password_changed", "auth", caller.user.id, caller.user.email ?? null);
     return json({ ok: true });
   }

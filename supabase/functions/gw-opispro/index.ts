@@ -87,14 +87,21 @@ async function createPending(claims: Claims, email: string): Promise<SignInError
 async function signIn(claims: Claims): Promise<{ tokenHash: string } | { error: SignInError }> {
   const admin = serviceClient();
   const sub = String(claims.sub);
-  const email = String(claims.email ?? "").trim().toLowerCase();
-  const cols = "id, email, status, opispro_user_id";
+  // OPIS PRO 明确说 email 没验证过：不用 email 找人 / 开帐号（免得有人把 email 改成别人的来冒充）
+  const emailOk = claims.email_verified !== false && claims.email_verified !== "false";
+  const email = emailOk ? String(claims.email ?? "").trim().toLowerCase() : "";
+  const cols = "id, email, status, role, opispro_user_id";
   let { data: p } = await admin.from("gw_profiles").select(cols).eq("opispro_user_id", sub).maybeSingle();
   if (!p && email) {
     // 第一次：用 email 找，而且那个人还没连结别的 OPIS PRO 帐号
     const { data: byEmail } = await admin.from("gw_profiles").select(cols).eq("email", email).maybeSingle();
     if (byEmail && byEmail.opispro_user_id && byEmail.opispro_user_id !== sub) {
       await logEvent(null, "auth.opispro_link_conflict", "auth", byEmail.id, email, { opispro_user_id: sub });
+      return { error: "no_access" };
+    }
+    // 超级管理员：只有 OPIS PRO 确认 email 验证过才自动连结；不然要在 Intranet 手动连结
+    if (byEmail && byEmail.role === "super_admin" && claims.email_verified !== true && claims.email_verified !== "true") {
+      await logEvent(null, "auth.opispro_link_needs_admin", "auth", byEmail.id, email, { opispro_user_id: sub });
       return { error: "no_access" };
     }
     if (byEmail) {
@@ -110,7 +117,7 @@ async function signIn(claims: Claims): Promise<{ tokenHash: string } | { error: 
   if (!p) {
     // 用 OPIS PRO ID 和 email 都找不到（而且这个 email 没被别人用）：开等待批准的帐号
     if (email) {
-      const { data: taken } = await admin.from("gw_profiles").select("id").ilike("email", email).maybeSingle();
+      const { data: taken } = await admin.from("gw_profiles").select("id").eq("email", email).maybeSingle();
       if (!taken) return { error: await createPending(claims, email) };
     }
     await logEvent(null, "auth.login_failed", "auth", null, email || `opispro:${sub}`, { method: "opispro", reason: "no_account" });

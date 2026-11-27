@@ -240,14 +240,14 @@ window.GW = (function () {
   }
 
   /* 改密码：回传错误代码（too_short / weak / mismatch / same / unknown）或 null */
-  async function changePassword(password, confirm) {
+  async function changePassword(password, confirm, current) {
     if (password.length < 8) return "too_short";
     if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "weak";
     if (password !== confirm) return "mismatch";
     // 在伺服器改：改成功才会清掉「必须改密码」（不能只清标记不改密码）
-    const r = await invoke("gw-auth", { action: "change_password", password });
+    const r = await invoke("gw-auth", { action: "change_password", password, current_password: current || "" });
     if (r && r.ok) return null;
-    return r && ["too_short", "weak", "same"].includes(r.error) ? r.error : "unknown";
+    return r && ["too_short", "weak", "same", "wrong_current"].includes(r.error) ? r.error : "unknown";
   }
 
   // ---------------------------------------------------------------- 页面外框

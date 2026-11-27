@@ -10,6 +10,13 @@
   } catch (e) {
     /* 忽略 */
   }
+  // 不让别的网站把 Intranet 包在框框里（骗人点按钮）：只有自己网站的页面可以包；不是就跳出来整页打开
+  try {
+    if (window.top !== window.self && window.top.location.origin !== location.origin) throw 0;
+  } catch (e) {
+    document.documentElement.style.display = "none";
+    try { window.top.location = location.href; } catch (e2) { /* 被挡住：至少不显示内容 */ }
+  }
   try {
     const theme = localStorage.getItem("gw_theme") || "system";
     const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);

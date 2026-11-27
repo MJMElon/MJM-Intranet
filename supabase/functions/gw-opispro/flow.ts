@@ -113,6 +113,8 @@ export function safeSite(cfg: Config, v: string | null | undefined): string {
     const u = new URL(String(v ?? ""));
     if (u.protocol !== "https:" || u.username || u.password) return cfg.siteUrl;
     if (!(cfg.allowedOrigins ?? []).includes(u.origin) && u.origin !== new URL(cfg.siteUrl).origin) return cfg.siteUrl;
+    // github.io 是很多网站共用的网址：只接受 Intranet 自己的资料夹，不接受同一个帐号的其他网站
+    if (u.hostname.endsWith(".github.io") && !u.pathname.startsWith("/MJM-Intranet/")) return cfg.siteUrl;
     return u.origin + u.pathname.replace(/[^/]*$/, "");
   } catch { return cfg.siteUrl; }
 }

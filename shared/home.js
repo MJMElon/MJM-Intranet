@@ -386,6 +386,11 @@ window.GWHome = (function () {
       }
     }
 
+    // 自己的文件夹才能把 App / 连结拖进去（分享给我的：由拥有者 / Editor 在文件夹里面管理）
+    const ownFolder = (fid) => {
+      const f = folders.find((x) => x.id === fid);
+      return !!f && !f.shared_by;
+    };
     async function moveIntoFolder(id, fid) {
       const order = folderApps(fid).length + 1;
       layout.set(id, { folder_id: fid, sort_order: order });
@@ -787,7 +792,7 @@ window.GWHome = (function () {
           // 便条：上面是待办清单（圆圈打勾，像 Apple 备忘录），下面是自由文字
           const todos = w.config && Array.isArray(w.config.todos) ? w.config.todos : [];
           const item = (td) => `<li class="flex items-center gap-2">
-              <button type="button" data-todo-toggle="${w.id}:${td.id}" ${readOnly ? "disabled" : ""} aria-label="${esc(t("widgets.todoDone"))}" class="no-drag flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${td.done ? "border-amber-500 bg-amber-500 text-white" : "border-slate-400 hover:border-amber-500 dark:border-slate-500"}">${td.done ? icon("check", "size-3") : ""}</button>
+              <button type="button" data-todo-toggle="${esc(w.id)}:${esc(td.id)}" ${readOnly ? "disabled" : ""} aria-label="${esc(t("widgets.todoDone"))}" class="no-drag flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${td.done ? "border-amber-500 bg-amber-500 text-white" : "border-slate-400 hover:border-amber-500 dark:border-slate-500"}">${td.done ? icon("check", "size-3") : ""}</button>
               <input data-todo-text="${w.id}:${td.id}" value="${esc(td.text || "")}" maxlength="200" ${readOnly ? "disabled" : ""} placeholder="${esc(t("widgets.todoPlaceholder"))}" class="no-drag min-w-0 flex-1 bg-transparent text-sm outline-none ${td.done ? "text-slate-400 line-through" : ""}">
             </li>`;
           return `${wTitle("sticky-note", t("widgets.types.notes"))}
@@ -1511,7 +1516,7 @@ window.GWHome = (function () {
       else if (hits.length === 1) {
         const other = B.model.find((x) => x.key === hits[0]);
         const p = B.L.pos.get(hits[0]);
-        if (other.kind === "folder" && ["module", "app", "link"].includes(bdrag.kind)) action = { type: "folder", fid: other.id };
+        if (other.kind === "folder" && ["module", "app", "link"].includes(bdrag.kind) && ownFolder(other.id)) action = { type: "folder", fid: other.id };
         else if (other.kind !== "fw" && other.kind !== "sfolder" && w === 1 && h === 1 && p.w === 1 && p.h === 1) action = { type: "swap", key: hits[0], c: p.c, r: p.r };
       }
       return { c, r, action };
@@ -2781,7 +2786,7 @@ window.GWHome = (function () {
         const key = [...hits][0];
         const [kind, id] = key.split(":");
         const p = P.pos.get(key);
-        if (kind === "folder" && (drag.kind === "app" || drag.kind === "lib" || drag.kind === "link")) action = { type: "folder", fid: id };
+        if (kind === "folder" && (drag.kind === "app" || drag.kind === "lib" || drag.kind === "link") && ownFolder(id)) action = { type: "folder", fid: id };
         else if (drag.w === 1 && drag.h === 1 && p.w === 1 && p.h === 1 && drag.kind !== "lib") action = { type: "swap", kind, id, theirSlot: p.slot, mySlot: drag.slot };
       }
       return { c, r, g, action };
@@ -3240,7 +3245,7 @@ window.GWHome = (function () {
         if (b.dataset.open) return close(), open(b.dataset.open);
         if (b.dataset.openLink) {
           const l = links.find((x) => x.id === b.dataset.openLink);
-          return l && window.open(l.url, "_blank", "noopener,noreferrer");
+          return l && /^https?:\/\//i.test(l.url) && window.open(l.url, "_blank", "noopener,noreferrer");
         }
         if (b.dataset.outLink) {
           close();
@@ -5507,7 +5512,7 @@ window.GWHome = (function () {
       if (d.openLink) {
         if (editing || Date.now() - lastDragEnd < 300) return;
         const l = links.find((x) => x.id === d.openLink);
-        return l && window.open(l.url, "_blank", "noopener,noreferrer");
+        return l && /^https?:\/\//i.test(l.url) && window.open(l.url, "_blank", "noopener,noreferrer");
       }
       if (d.editLink) return linkDialog(links.find((x) => x.id === d.editLink));
       if (d.removeLink) return removeLink(d.removeLink);

@@ -68,6 +68,7 @@ window.GW_LANG["en"] = {
     "resetTitle": "Reset password",
     "resetDescription": "Enter your new password.",
     "new": "New password",
+    "current": "Current password",
     "confirm": "Confirm new password",
     "rule": "At least 8 characters, including letters and numbers.",
     "submit": "Update password",
@@ -76,6 +77,7 @@ window.GW_LANG["en"] = {
       "too_short": "Password must be at least 8 characters.",
       "weak": "Password must contain both letters and numbers.",
       "mismatch": "The two passwords do not match.",
+      "wrong_current": "Your current password is not correct.",
       "same": "The new password must be different from the old one.",
       "unknown": "Update failed. Please try again later."
     }

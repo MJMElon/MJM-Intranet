@@ -90,7 +90,10 @@ Deno.serve(withCors(async (req) => {
     if (!ds) throw new Error(`Unknown dataset "${name}". Datasets: ${DATASETS.map((d) => d.name).join(", ")}`);
     if (!rowsCache.has(name)) {
       const { data, error } = await caller.supabase.from(ds.table).select(ds.select).order(ds.order, { ascending: false }).limit(MAX_ROWS);
-      if (error) throw new Error("Could not read that dataset (" + error.message + ")");
+      if (error) {
+        console.error("ai-chat dataset read failed", error.code);
+        throw new Error("Could not read that dataset.");
+      }
       rowsCache.set(name, (data ?? []).map(ds.flatten));
     }
     return { ds, rows: rowsCache.get(name)! };

@@ -55,7 +55,10 @@ Deno.serve(withCors(async (req) => {
     for (const c of companies.data as Record<string, unknown>[]) c.location_id = byId.get(c.id as string) ?? null;
   }
   const failed = [businesses, companies, links, tagged, taggedBiz, members, groupMembers, profiles, memberCompanies].find((r) => r.error);
-  if (failed?.error) return json({ error: "query_failed", detail: failed.error.message }, 500);
+  if (failed?.error) {
+    console.error("master-data query failed", failed.error.code);
+    return json({ error: "query_failed" }, 500);
+  }
 
   // Who may use this Icon right now — the same rule as gw__effective_module_ids:
   // active super admins always; others need the Icon opened for them in a

@@ -42,10 +42,12 @@
       </div>
     </div>
     <div id="connector" class="${cls.card} space-y-4 p-5"></div>
-    <div class="${cls.card} p-5">
+    ${profile.isSuper ? `<div class="${cls.card} p-5">
       <h2 class="mb-4 font-semibold">${esc(t("settings.changePassword"))}</h2>
       <form id="pw" class="space-y-4">
         <div id="pw-msg"></div>
+        <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("password.current"))}</span>
+          <input name="current" type="password" autocomplete="current-password" required class="${cls.input}"></label>
         <label class="block space-y-1.5"><span class="${cls.label}">${esc(t("password.new"))}</span>
           <input name="password" type="password" autocomplete="new-password" required minlength="8" class="${cls.input}">
           <span class="block text-xs text-slate-500">${esc(t("password.rule"))}</span></label>
@@ -53,7 +55,7 @@
           <input name="confirm" type="password" autocomplete="new-password" required minlength="8" class="${cls.input}"></label>
         <button type="submit" class="${btn("primary")}">${esc(t("password.submit"))}</button>
       </form>
-    </div>
+    </div>` : ""}
   </div>`;
 
   let theme = profile.theme;
@@ -173,10 +175,11 @@
     );
   }
   drawConnector();
-  document.getElementById("pw").addEventListener("submit", async (e) => {
+  const pwForm = document.getElementById("pw");
+  if (pwForm) pwForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
-    const error = await GW.changePassword(String(form.get("password") || ""), String(form.get("confirm") || ""));
+    const error = await GW.changePassword(String(form.get("password") || ""), String(form.get("confirm") || ""), String(form.get("current") || ""));
     document.getElementById("pw-msg").innerHTML = error ? alertBox(t("password.errors." + error)) : alertBox(t("password.changed"), "green");
     if (!error) e.target.reset();
   });

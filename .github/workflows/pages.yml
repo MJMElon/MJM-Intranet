@@ -35,6 +35,10 @@ jobs:
       - run: grep -rlF "__GW_VERSION__" --include=*.html --include=*.js . | grep -v node_modules | xargs -r sed -i "s/__GW_VERSION__/${GITHUB_SHA::8}/g"
       # 每个网页加上安全政策（只准载入自己网站的脚本；资料只能送到自己的 Supabase）：要在上面换好版本号之后才算指纹
       - run: node scripts/csp.mjs .
+      # 检查：每个网页都一定要有安全政策，少了就不发布
+      - run: |
+          missing=$(grep -rL --include=*.html "Content-Security-Policy" . --exclude-dir=node_modules --exclude-dir=.git || true)
+          if [ -n "$missing" ]; then echo "::error::Missing Content-Security-Policy in: $missing"; exit 1; fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .

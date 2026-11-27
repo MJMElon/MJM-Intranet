@@ -40,7 +40,7 @@ Deno.serve(withCors(async (req) => {
   } else if (typeof body.user_id === "string") {
     userId = body.user_id;
   } else if (typeof body.email === "string") {
-    const { data } = await supabase.from("gw_profiles").select("id").ilike("email", body.email).maybeSingle();
+    const { data } = await supabase.from("gw_profiles").select("id").eq("email", String(body.email).trim().toLowerCase()).maybeSingle();
     userId = data?.id ?? null;
   } else {
     return json({ error: "token_or_user_required" }, 400);

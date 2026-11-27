@@ -72,7 +72,10 @@ async function runTool(userId: string, name: string, input: any): Promise<string
   if (!ds) throw new Error(`Unknown dataset "${input?.dataset}". Datasets: ${DATASETS.map((d) => d.name).join(", ")}`);
   const supabase = await clientFor(userId);
   const { data, error } = await supabase.from(ds.table).select(ds.select).order(ds.order, { ascending: false }).limit(MAX_LOAD);
-  if (error) throw new Error("Could not read that dataset (" + error.message + ")");
+  if (error) {
+    console.error("mcp dataset read failed", error.code);
+    throw new Error("Could not read that dataset.");
+  }
   const rows = (data ?? []).map(ds.flatten);
   const spec: Spec = {
     filters: input.filters, columns: input.columns, group_by: input.group_by, metrics: input.metrics, order_by: input.order_by, descending: input.descending,

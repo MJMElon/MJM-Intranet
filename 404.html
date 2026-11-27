@@ -9,7 +9,8 @@
    首页：github.io 旧网址在 /MJM-Intranet/ 底下，自己的网域在最上层 */
 (function () {
   var root = /github\.io$/.test(location.hostname) ? "/MJM-Intranet/" : "/";
-  var path = location.pathname.replace(/\/+$/, "");
+  // 一定留在本站：开头的多个 / 合成一个（//evil.com/login 不会跳到别的网站）
+  var path = "/" + location.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
   var name = path.split("/").pop();
   if (["admin", "login", "settings", "library", "index"].indexOf(name) >= 0) {
     location.replace(path + ".html" + location.search + location.hash);

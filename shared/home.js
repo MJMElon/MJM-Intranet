@@ -86,6 +86,204 @@ window.GWHome = (function () {
     const widgetsEnabled = !!(opts && Array.isArray(opts.widgets));
     const uninitialized = readOnly && !data.profile.layout_initialized;
 
+    /* ---- 手机版自己的排列（跟电脑分开存）
+       手机上（宽度 < 640px）移动区块 / 小工具、改区块大小、排 App 的位置，只存在 Notice Board 小工具的 config.mobile：
+         so  = { "app:模块 id" | "link:id" | "folder:id" | "widget:id" | "sec:id": [sort_order, 在哪个文件夹 / 区块] }
+         pos = { 小工具 id: 页面上 / 区块里的位置 }，cfg = 区块的 layout、boxPos、order、homeFolders、homeGrid
+       第一次在手机上改的时候，把现在（电脑的）排法整个复制一份当手机的起点；之后两边各改各的。
+       做法：手机模式时，记忆中的位置换成手机的（电脑的先收在 DK），存档时位置的部分不送进资料库，改存到 config.mobile。 */
+    const CFG_KEYS = ["layout", "boxPos", "order", "homeFolders", "homeGrid"];
+    const PHONE_Q = matchMedia("(max-width: 639px)");
+    let phoneMode = false;
+    let PH = null; // 手机的排法（config.mobile）
+    const DK = { so: new Map(), pos: new Map(), cfg: null }; // 手机模式时收起来的电脑位置
+    const PH_KEY = {
+      gw_user_folders: (f) => ["folder:" + f.id],
+      gw_folder_shares: (f) => ["folder:" + f.folder_id],
+      gw_user_links: (f) => ["link:" + f.id, "folder_id"],
+      gw_user_widgets: (f) => ["widget:" + f.id],
+      gw_user_section_items: (f) => ["sec:" + f.id, "parent_id"],
+    };
+    let phoneTimer = null;
+    const sb = {
+      auth: GW.sb.auth,
+      storage: GW.sb.storage,
+      from(table) {
+        const q = GW.sb.from(table);
+        if (!PH_KEY[table]) return q;
+        return new Proxy(q, {
+          get(tgt, k) {
+            if (k === "update") return (payload, o) => (phoneMode ? phoneUpdate(table, payload, o) : tgt.update(payload, o));
+            const v = tgt[k];
+            return typeof v === "function" ? v.bind(tgt) : v;
+          },
+        });
+      },
+      rpc(name, args, o) {
+        if (phoneMode && name === "gw_save_layout") return phoneSaveLayout(args, o);
+        return GW.sb.rpc(name, args, o);
+      },
+    };
+    // 手机模式的 update：等知道是哪一笔（.eq）才决定送什么
+    function phoneUpdate(table, payload, o) {
+      const filters = [];
+      let run = null;
+      const go = () =>
+        (run =
+          run ||
+          (async () => {
+            const f = Object.fromEntries(filters.filter((x) => x[0] === "eq").map((x) => [x[1], x[2]]));
+            const body = phoneBody(table, f, { ...payload });
+            schedulePhone();
+            if (!Object.keys(body).length) return { data: null, error: null };
+            let q = GW.sb.from(table).update(body, o);
+            filters.forEach(([m, k, v]) => (q = q[m](k, v)));
+            return q;
+          })());
+      const b = {
+        eq: (k, v) => (filters.push(["eq", k, v]), b),
+        in: (k, v) => (filters.push(["in", k, v]), b),
+        then: (res, rej) => go().then(res, rej),
+        catch: (rej) => go().catch(rej),
+        finally: (fn) => go().finally(fn),
+      };
+      return b;
+    }
+    // 送进资料库的内容：位置换回电脑的（或拿掉）；搬进 / 搬出文件夹（换地方）照送
+    function phoneBody(table, f, body) {
+      const [key, cField] = PH_KEY[table](f);
+      if ("sort_order" in body) {
+        const dk = DK.so.get(key);
+        const moved = cField && cField in body;
+        const where = table === "gw_user_section_items" ? (sItems.find((x) => x.id === f.id) || {}).group_id + "/" + (body.parent_id || "") : body[cField] || null;
+        if (moved && (!dk || dk[1] !== where)) DK.so.set(key, [body.sort_order, where]);
+        else delete body.sort_order;
+      }
+      if (table === "gw_user_widgets" && body.config) {
+        const bw = board();
+        if (bw && f.id === bw.id) body.config = deskBoardConfig(body.config);
+        else if (body.config.pos) {
+          if (DK.pos.has(f.id)) body.config = { ...body.config, pos: DK.pos.get(f.id) };
+          else DK.pos.set(f.id, body.config.pos);
+        } else DK.pos.delete(f.id);
+      }
+      return body;
+    }
+    function phoneSaveLayout(args, o) {
+      const items = ((args && args.p_items) || []).filter((it) => {
+        const key = "app:" + it.module_id;
+        const dk = DK.so.get(key);
+        if (dk && dk[1] === (it.folder_id || null)) return false; // 只是换位置
+        DK.so.set(key, [it.sort_order, it.folder_id || null]);
+        return true;
+      });
+      schedulePhone();
+      return items.length ? GW.sb.rpc("gw_save_layout", { ...args, p_items: items }, o) : Promise.resolve({ data: null, error: null });
+    }
+    // Notice Board 设定送进资料库时：区块的排法用电脑的，手机的放在 mobile
+    function deskBoardConfig(cfg) {
+      snapPhone();
+      const out = { ...cfg, mobile: PH };
+      // My Home 里有哪些文件夹两边一样（加 / 拿掉照送），只有位置分开
+      if (DK.cfg) DK.cfg.homeFolders = mergeSlots(cfg.homeFolders, DK.cfg.homeFolders);
+      CFG_KEYS.forEach((k) => (DK.cfg && DK.cfg[k] !== undefined ? (out[k] = DK.cfg[k]) : delete out[k]));
+      return out;
+    }
+    // 用 keysFrom 有的文件夹，位置先拿 slots 的（没有就用 keysFrom 自己的）
+    function mergeSlots(keysFrom, slots) {
+      if (!keysFrom) return undefined;
+      const o = {};
+      Object.keys(keysFrom).forEach((k) => (o[k] = slots && slots[k] != null ? slots[k] : keysFrom[k]));
+      return o;
+    }
+    // 记忆中现在（手机）的位置全部记下来
+    function snapPhone() {
+      const bw = board();
+      if (!bw) return;
+      const so = {};
+      layout.forEach((l, id) => (so["app:" + id] = [l.sort_order, l.folder_id || null]));
+      links.forEach((l) => (so["link:" + l.id] = [l.sort_order, l.folder_id || null]));
+      folders.forEach((f) => (so["folder:" + f.id] = [f.sort_order, null]));
+      widgets.forEach((w) => (so["widget:" + w.id] = [w.sort_order, null]));
+      sItems.forEach((x) => !String(x.id).startsWith("tmp:") && (so["sec:" + x.id] = [x.sort_order, x.group_id + "/" + (x.parent_id || "")]));
+      const pos = {};
+      widgets.forEach((w) => w.config && w.config.pos && (pos[w.id] = w.config.pos));
+      const cfg = {};
+      CFG_KEYS.forEach((k) => bw.config && bw.config[k] !== undefined && (cfg[k] = bw.config[k]));
+      PH = { v: 1, so, pos, cfg };
+      bw.config = { ...(bw.config || {}), mobile: PH };
+    }
+    function schedulePhone() {
+      clearTimeout(phoneTimer);
+      phoneTimer = setTimeout(() => {
+        const bw = board();
+        if (!bw || !phoneMode) return;
+        GW.sb.from("gw_user_widgets").update({ config: deskBoardConfig(bw.config) }).eq("id", bw.id).then(({ error }) => error && toast(t("home.saveFailed")));
+      }, 400);
+    }
+    // 一个东西换成手机的位置（电脑的先收起来）；已经换过的跳过
+    function toPhone(key, obj, where) {
+      if (DK.so.has(key)) return;
+      DK.so.set(key, [obj.sort_order, where]);
+      const m = PH && PH.so && PH.so[key];
+      if (m && m[1] === where) obj.sort_order = m[0];
+    }
+    // 手机 / 电脑模式对不对（每次画之前检查；转方向、拉窗口宽度跨过 640px 也会换）
+    function syncPhone() {
+      const want = !readOnly && PHONE_Q.matches && !!board();
+      const bw = board();
+      if (want && !phoneMode) {
+        PH = (bw.config && bw.config.mobile) || null;
+        DK.cfg = {};
+        CFG_KEYS.forEach((k) => (DK.cfg[k] = bw.config[k]));
+        if (PH && PH.cfg) {
+          const next = { ...bw.config };
+          CFG_KEYS.forEach((k) => (PH.cfg[k] !== undefined ? (next[k] = PH.cfg[k]) : delete next[k]));
+          next.homeFolders = mergeSlots(bw.config.homeFolders, PH.cfg.homeFolders);
+          if (next.homeFolders === undefined) delete next.homeFolders;
+          bw.config = next;
+        }
+        phoneMode = true;
+        shown.clear();
+        boxShown.clear();
+      } else if (!want && phoneMode) {
+        clearTimeout(phoneTimer);
+        if (bw && bw.config) {
+          snapPhone();
+          DK.cfg.homeFolders = mergeSlots(bw.config.homeFolders, DK.cfg.homeFolders);
+          const c = { ...bw.config };
+          CFG_KEYS.forEach((k) => (DK.cfg[k] !== undefined ? (c[k] = DK.cfg[k]) : delete c[k]));
+          bw.config = c;
+        }
+        layout.forEach((l, id) => DK.so.has("app:" + id) && (l.sort_order = DK.so.get("app:" + id)[0]));
+        links.forEach((l) => DK.so.has("link:" + l.id) && (l.sort_order = DK.so.get("link:" + l.id)[0]));
+        folders.forEach((f) => DK.so.has("folder:" + f.id) && (f.sort_order = DK.so.get("folder:" + f.id)[0]));
+        widgets.forEach((w) => DK.so.has("widget:" + w.id) && (w.sort_order = DK.so.get("widget:" + w.id)[0]));
+        sItems.forEach((x) => DK.so.has("sec:" + x.id) && (x.sort_order = DK.so.get("sec:" + x.id)[0]));
+        widgets.forEach((w) => DK.pos.has(w.id) && w.config && w.config.pos && (w.config = { ...w.config, pos: DK.pos.get(w.id) }));
+        DK.so.clear();
+        DK.pos.clear();
+        DK.cfg = null;
+        phoneMode = false;
+        shown.clear();
+        boxShown.clear();
+        return;
+      }
+      if (!phoneMode) return;
+      // 新拿到的东西（分享的文件夹、刚新增的）也换成手机的位置
+      layout.forEach((l, id) => toPhone("app:" + id, l, l.folder_id || null));
+      links.forEach((l) => toPhone("link:" + l.id, l, l.folder_id || null));
+      folders.forEach((f) => toPhone("folder:" + f.id, f, null));
+      widgets.forEach((w) => toPhone("widget:" + w.id, w, null));
+      sItems.forEach((x) => !String(x.id).startsWith("tmp:") && toPhone("sec:" + x.id, x, x.group_id + "/" + (x.parent_id || "")));
+      widgets.forEach((w) => {
+        if (DK.pos.has(w.id) || !w.config || !w.config.pos) return;
+        DK.pos.set(w.id, w.config.pos);
+        const m = PH && PH.pos && PH.pos[w.id];
+        if (m) w.config = { ...w.config, pos: m };
+      });
+    }
+
     const modules = new Map(data.modules.map((m) => [m.id, m]));
     // Notice Board 的表情反应：{ announcement_id, emoji, user_id, full_name }
     let reactions = ((opts && opts.reactions) || []).map((r) => ({ ...r }));
@@ -1404,15 +1602,32 @@ window.GWHome = (function () {
       const moduleId = id.slice(4);
       it = { id: "tmp:" + moduleId, user_id: data.profile.id, group_id: gid, kind: "module", module_id: moduleId, parent_id: parentId || null, sort_order: slot };
       sItems.push(it);
+      // 在手机上排的：电脑那边不用手机的位置，接在电脑上最后一行的下面
+      const desk = phoneMode && !parentId ? deskSlotFor(gid) : slot;
       return sb
         .from("gw_user_section_items")
-        .insert({ user_id: data.profile.id, group_id: gid, kind: "module", module_id: moduleId, parent_id: parentId || null, sort_order: slot })
+        .insert({ user_id: data.profile.id, group_id: gid, kind: "module", module_id: moduleId, parent_id: parentId || null, sort_order: desk })
         .select()
         .single()
         .then(({ data: created, error }) => {
           if (error) return toast(t("home.saveFailed"));
           it.id = created.id;
+          if (phoneMode) (DK.so.set("sec:" + created.id, [desk, gid + "/" + (parentId || "")]), schedulePhone());
         });
+    }
+    // 手机上第一次排到的 App：电脑那边的位置 = 电脑上最后一行的下一行，一个接一个（每行最多 4 个，或区块设定的栏数）
+    const deskTaken = new Map();
+    function deskSlotFor(gid) {
+      const real = [...DK.so.entries()].filter(([k, v]) => k.startsWith("sec:") && v[1] === gid + "/").map(([, v]) => v[0]);
+      const taken = deskTaken.get(gid) || new Set();
+      deskTaken.set(gid, taken);
+      const lay = DK.cfg && DK.cfg.layout && DK.cfg.layout[gid];
+      const n = Math.max(2, (lay && lay.cols) || 4);
+      const r0 = real.length ? Math.max(...real.map((s) => Math.floor(s / 100))) + 1 : 0;
+      for (let i = 0; ; i++) {
+        const s = (r0 + Math.floor(i / n)) * 100 + (i % n);
+        if (!real.includes(s) && !taken.has(s)) return taken.add(s), s;
+      }
     }
     // 小工具的位置（格子单位，v = 2）
     function saveWidgetPos(w, pos) {
@@ -2652,6 +2867,7 @@ window.GWHome = (function () {
 
     function draw() {
       if (drawHeld) return;
+      syncPhone();
       clearInterval(clockTimer);
       // 还没被分配到任何群组：主画面什么都不显示，只显示等待分配
       if (opts && opts.pending) {
